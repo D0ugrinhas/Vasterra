@@ -1,232 +1,1429 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { CLASSES, RACAS, STATUS_CFG, RECURSOS_CFG, ARSENAL_RANKS, ARSENAL_TIPOS, RANK_COR } from "./data/gameData";
-import { novaFicha, novoItem } from "./core/factories";
-import { stGet, stSet } from "./core/storage";
-import { btnStyle, G, inpStyle } from "./ui/theme";
-import { Card, Field } from "./components/LayoutBits";
+import React, { useState, useEffect } from "react";
 
-function FichasPanel({ fichas, setFichas }) {
-  const [selecionada, setSelecionada] = useState(null);
-  const ficha = useMemo(() => fichas.find((f) => f.id === selecionada) ?? null, [fichas, selecionada]);
+// ─────────────────────────────────────────────
+// DADOS
+// ─────────────────────────────────────────────
+const RACAS = ["Humano","Anão","Elfo","Adroxxiano","Thiliano","Demi-Humano","Druida","Anjo","Demônio","Yalk","Glastinniano","Fada","Draconauta"];
 
-  const updateFicha = (patch) => {
-    setFichas((prev) => prev.map((f) => (f.id === selecionada ? { ...f, ...patch, atualizado: Date.now() } : f)));
+const CLASSES = {
+  Estrutural: ["Lutador","Paladino","Amaldiçoado","Mago","Zoner Leve","Zoner Pesado","Aéreo","Gêmeos","Bardo","Aura","Mártir","Artífice","Clérigo","Invocador"],
+  Funcional:  ["Erudito","Especialista","Suporte","Curandeiro","Tanker","Atacante","Assassino","Versátil","Rushdown","Velocista","Ladino","Pesquisador","Caçador","Domador"],
+  Dominante:  ["Buffer","Debuffer","Purificador","Sedutor","Hit Killer","Vidente","Ancorador","Arcanista","Mercador","Construtor","Anomalia","Astrólogo","Necromante","Místico","Palhaço","Ilusionista"],
+};
+
+const ATRIBUTOS = [
+  { sigla:"FOR",  nome:"Força",        desc:"Poder físico bruto",              bonus:null },
+  { sigla:"VIG",  nome:"Vigor",         desc:"Resistência; define ESF (X=VIG)", bonus:null },
+  { sigla:"DES",  nome:"Destreza",      desc:"Agilidade e reflexos",            bonus:"+3 EST" },
+  { sigla:"CONST",nome:"Constituição",  desc:"Robustez e HP",                   bonus:"+5 VIT" },
+  { sigla:"INT",  nome:"Inteligência",  desc:"Conhecimento arcano",             bonus:"+3 MAN" },
+  { sigla:"SAB",  nome:"Sabedoria",     desc:"Conexão espiritual",              bonus:"+3 MAN" },
+  { sigla:"CAR",  nome:"Carisma",       desc:"Presença e magnetismo",           bonus:null },
+  { sigla:"MENT", nome:"Mentalidade",   desc:"Estabilidade mental",             bonus:null },
+];
+
+const PERICIAS_GRUPOS = [
+  { g:"Combate",   cor:"#e74c3c", list:["Lâminas Pesadas","Lâminas Grandes","Lâminas Médias","Lâminas Pequenas","Contundentes Pesados","Contundentes Grandes","Contundentes Médios","Contundentes Pequenos","Punhos","Chutes","Arte Marcial","Pontaria"] },
+  { g:"Físico",    cor:"#e67e22", list:["Agilidade","Acrobacia","Atletismo","Fortitude"] },
+  { g:"Social",    cor:"#f39c12", list:["Enganação","Diplomacia","Intimidação","Social","Carisma Pessoal"] },
+  { g:"Mental",    cor:"#9b59b6", list:["Conhecimento","Cognitiva","Misticismo","Religiões","Nobreza","Atualidades","Vontade","Mentalidade","Estratégia"] },
+  { g:"Percepção", cor:"#3498db", list:["Percepção","Intuição","Iniciativa"] },
+  { g:"Furtivo",   cor:"#2ecc71", list:["Furtividade","Ladinagem"] },
+  { g:"Sobrev.",   cor:"#27ae60", list:["Sobrevivência","Primeiros-Socorros","Adestramento","Cavalgar","Pilotagem"] },
+  { g:"Especial",  cor:"#c8a96e", list:["Artística","Poder","Profissão 1","Profissão 2"] },
+];
+
+const ESSENCIAS_VIRTUDES = [
+  { nome:"O Cinza",  tag:"Humildade",  cor:"#888888", coringa:false, forma:"Poeira cinzenta levitando, opaca e estável" },
+  { nome:"Luz",      tag:"Caridade",   cor:"#e0d8c8", coringa:true,  forma:"Vórtice circular preto que clareia ao puro branco" },
+  { nome:"Mecânico", tag:"Diligência", cor:"#6a9fd8", coringa:false, forma:"Engrenagens flutuantes em padrões complexos" },
+  { nome:"Raiz",     tag:"Paciência",  cor:"#5c8a3a", coringa:true,  forma:"Emaranhado de raízes flutuantes levemente brilhantes" },
+  { nome:"Cristal",  tag:"Pureza",     cor:"#a0d8ef", coringa:false, forma:"Diamante negro reluzente refratando prismas harmônicos" },
+  { nome:"Éter",     tag:"Sabedoria",  cor:"#2d9e5a", coringa:false, forma:"Rachadura verde-escura estilhaçada — portal para a galáxia" },
+  { nome:"Água",     tag:"Temperança", cor:"#3a7abf", coringa:false, forma:"Esfera líquida com reflexo da lua em órbita suave" },
+];
+
+const ESSENCIAS_PECADOS = [
+  { nome:"Sangue",     tag:"Fúria",    cor:"#c0392b", coringa:false, forma:"Coração líquido vermelho que explode em jatos pulsantes" },
+  { nome:"Víscera",    tag:"Gula",     cor:"#7b1a1a", coringa:false, forma:"Massa de carne negra com brilho vermelho pulsante e mandíbulas" },
+  { nome:"Sombra",     tag:"Inveja",   cor:"#7b2fbe", coringa:false, forma:"Véu escuro de fumaça com olhar rosa claro espiando" },
+  { nome:"Ouro Negro", tag:"Ganância", cor:"#5a4a0a", coringa:true,  forma:"Metal de ouro negro cintilante com veios de substância escuríssima" },
+  { nome:"Ouro",       tag:"Soberba",  cor:"#d4a017", coringa:false, forma:"Lâminas douradas levitantes girando como coroas partidas" },
+  { nome:"Néctar",     tag:"Luxúria",  cor:"#e8507a", coringa:false, forma:"Véu de néctar rosa com fios viscosos exalando fragrâncias" },
+  { nome:"Corrosão",   tag:"Preguiça", cor:"#8b6914", coringa:true,  forma:"Placas enferrujadas ou casulo elétrico com magnetismo sobrenatural" },
+];
+
+const STATUS_CFG = [
+  { sigla:"VIT",  nome:"Vitalidade",  cor:"#e74c3c", msg:"MORRENDO — incapacitado!" },
+  { sigla:"EST",  nome:"Estamina",    cor:"#e67e22", msg:"Pode desmaiar / cair / dormir" },
+  { sigla:"MAN",  nome:"Mana",        cor:"#9b59b6", msg:"Sem magia — suscetível a ataques arcanos" },
+  { sigla:"SAN",  nome:"Sanidade",    cor:"#1abc9c", msg:"BREAKMENTAL D100 + Trauma permanente!" },
+  { sigla:"CONS", nome:"Consciência", cor:"#3498db", msg:"DESMAIA imediatamente!" },
+];
+
+const RECURSOS_CFG = [
+  { sigla:"ACO", nome:"Ação",      cor:"#e74c3c" },
+  { sigla:"MOV", nome:"Movimento", cor:"#e67e22" },
+  { sigla:"REA", nome:"Reação",    cor:"#3498db" },
+  { sigla:"ESF", nome:"Esforço",   cor:"#9b59b6" },
+];
+
+const ARSENAL_TIPOS = ["Arma","Ferramenta","Armadura","Vestimenta","Acessório","Marcas","Consumível","Outros"];
+const ARSENAL_RANKS = ["Comum","Incomum","Raro","Épico","Lendário","Único","Mítico","Divino"];
+const RANK_COR = { Comum:"#7f8c8d", Incomum:"#27ae60", Raro:"#2980b9", Épico:"#8e44ad", Lendário:"#e67e22", Único:"#c0392b", Mítico:"#ff69b4", Divino:"#f0e68c" };
+
+// ─────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────
+const uid = () => Math.random().toString(36).slice(2, 10);
+
+const novaFicha = (nome = "Novo Personagem") => ({
+  id: uid(), nome, raca: "Humano", classes: [], essencia: null, exposicao: 0,
+  aparencia: "", historico: "", notas: "",
+  status: {
+    VIT:  { val: 20, max: 20 },
+    EST:  { val: 15, max: 15 },
+    MAN:  { val: 10, max: 10 },
+    SAN:  { val: 20, max: 20 },
+    CONS: { val: 15, max: 15 },
+  },
+  atributos: Object.fromEntries(ATRIBUTOS.map(a => [a.sigla, { val: 5, ae: false, ne: false }])),
+  pericias:  Object.fromEntries(PERICIAS_GRUPOS.flatMap(g => g.list.map(p => [p, 0]))),
+  recursos: {
+    ACO: { total: 2, usado: 0 },
+    MOV: { total: 1, usado: 0 },
+    REA: { total: 1, usado: 0 },
+    ESF: { total: 1, usado: 0 },
+  },
+  inventario: [], criado: Date.now(), atualizado: Date.now(),
+});
+
+const novoItem = () => ({
+  id: uid(), nome: "Novo Item", icone: "⚔️", tipo: "Arma", rank: "Comum",
+  peso: 0, valor: "", dano: "", critico: "", alcance: "", tamanho: "",
+  defesa: "", regiao: "", efeitoCorpo: "", tags: [], quantidade: 1, consumo: 1,
+  bonus: [], efeitos: [], descricao: "", criado: Date.now(),
+});
+
+const storageProvider = () => {
+  if (typeof window === "undefined") return null;
+  if (window.storage && typeof window.storage.get === "function" && typeof window.storage.set === "function") {
+    return window.storage;
+  }
+  return {
+    async get(k) {
+      const value = window.localStorage.getItem(k);
+      return value == null ? null : { value };
+    },
+    async set(k, value) {
+      window.localStorage.setItem(k, value);
+    },
   };
+};
+
+const stGet = async (k) => {
+  try {
+    const provider = storageProvider();
+    if (!provider) return null;
+    const r = await provider.get(k);
+    return r ? JSON.parse(r.value) : null;
+  } catch {
+    return null;
+  }
+};
+
+const stSet = async (k, v) => {
+  try {
+    const provider = storageProvider();
+    if (!provider) return;
+    await provider.set(k, JSON.stringify(v));
+  } catch (e) {
+    console.error(e);
+  }
+};
+
+// ─────────────────────────────────────────────
+// ESTILOS BASE
+// ─────────────────────────────────────────────
+const G = {
+  bg:  "#050505", bg2: "#0a0a0a", bg3: "#0d0d0d",
+  border: "#1e1e1e", border2: "#2a2a2a",
+  gold: "#c8a96e", gold2: "#e8d5b0",
+  text: "#e8d5b0", muted: "#555",
+};
+
+const inpStyle = (extra) => Object.assign({
+  background: "#050505", border: "1px solid #2a2a2a", color: G.text,
+  borderRadius: 6, padding: "6px 10px", fontFamily: "monospace",
+  fontSize: 13, outline: "none", width: "100%",
+}, extra || {});
+
+const btnStyle = (extra) => Object.assign({
+  background: "linear-gradient(135deg,#1a1208,#2a1e08)",
+  border: "1px solid rgba(200,169,110,0.27)", color: G.gold,
+  borderRadius: 6, padding: "6px 14px",
+  fontFamily: "'Cinzel',serif", fontSize: 11, letterSpacing: 1, cursor: "pointer",
+}, extra || {});
+
+// ─────────────────────────────────────────────
+// COMPONENTES PEQUENOS
+// ─────────────────────────────────────────────
+function Pill({ label, cor, small }) {
+  return (
+    <span style={{
+      padding: small ? "2px 7px" : "3px 10px",
+      background: cor + "22", border: "1px solid " + cor + "55",
+      borderRadius: 20, color: cor, fontFamily: "'Cinzel',serif",
+      fontSize: small ? 9 : 10, letterSpacing: 1,
+    }}>
+      {label}
+    </span>
+  );
+}
+
+function Modal({ title, children, onClose, wide }) {
+  return (
+    <div
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,.75)",
+        display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
+      }}
+    >
+      <div style={{
+        background: "#080808", border: "1px solid #2a2a2a", borderRadius: 12,
+        padding: 20, width: wide ? 860 : 480, maxWidth: "95vw",
+        maxHeight: "90vh", overflow: "auto",
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <span style={{ fontFamily: "'Cinzel',serif", color: G.gold, letterSpacing: 2, fontSize: 14 }}>{title}</span>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: G.muted, cursor: "pointer", fontSize: 18 }}>✕</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function StatusBar({ sigla, nome, cor, val, max, onVal, onMax }) {
+  const pct = max > 0 ? Math.min(100, (val / max) * 100) : 0;
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+        <span style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: cor, letterSpacing: 2 }}>
+          {sigla} <span style={{ color: G.muted, fontSize: 10 }}>— {nome}</span>
+        </span>
+        <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+          <input
+            type="number" min={0} max={max} value={val}
+            onChange={e => onVal(Math.max(0, Math.min(max, Number(e.target.value) || 0)))}
+            style={inpStyle({ width: 44, textAlign: "center", padding: "2px 4px", fontSize: 13, color: cor })}
+          />
+          <span style={{ color: G.muted }}>/</span>
+          <input
+            type="number" min={1} value={max}
+            onChange={e => onMax(Math.max(1, Number(e.target.value) || 1))}
+            style={inpStyle({ width: 44, textAlign: "center", padding: "2px 4px", fontSize: 13 })}
+          />
+        </div>
+      </div>
+      <div style={{ height: 6, background: "#111", borderRadius: 3, overflow: "hidden" }}>
+        <div style={{
+          height: "100%", width: pct + "%",
+          background: "linear-gradient(90deg," + cor + "88," + cor + ")",
+          transition: "width .3s", boxShadow: "0 0 8px " + cor + "66",
+        }} />
+      </div>
+      {val === 0 && (
+        <div style={{ fontSize: 10, color: "#ff4444", fontFamily: "monospace", marginTop: 2 }}>
+          ⚠ {STATUS_CFG.find(s => s.sigla === sigla)?.msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// ITEM EDITOR (ARSENAL)
+// ─────────────────────────────────────────────
+function ItemEditor({ item, onSave, onClose }) {
+  const [d, setD] = useState(() => item
+    ? { ...item, bonus: [...item.bonus], efeitos: [...item.efeitos] }
+    : novoItem()
+  );
+  const up = (k, v) => setD(p => Object.assign({}, p, { [k]: v }));
+
+  const isArma     = d.tipo === "Arma";
+  const isArmadura = d.tipo === "Armadura";
+  const isConsumivel = d.tipo === "Consumível";
+  const hasRegiao  = ["Armadura","Vestimenta","Acessório","Marcas"].includes(d.tipo);
+  const hasEfeito  = ["Vestimenta","Acessório","Marcas"].includes(d.tipo);
+
+  const addBonus  = () => up("bonus",  [...d.bonus,  { tipo: "Bônus", texto: "", ativo: true }]);
+  const addEfeito = () => up("efeitos",[...d.efeitos, { titulo: "", desc: "", ativo: true }]);
+
+  const setBonus = (i, patch) => {
+    const nb = d.bonus.map((b, j) => j === i ? Object.assign({}, b, patch) : b);
+    up("bonus", nb);
+  };
+  const setEfeito = (i, patch) => {
+    const ne = d.efeitos.map((e, j) => j === i ? Object.assign({}, e, patch) : e);
+    up("efeitos", ne);
+  };
+
+  return (
+    <Modal title={item ? "Editar Item" : "Criar Item"} onClose={onClose} wide={true}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+
+        {/* COLUNA ESQUERDA */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div>
+            <label style={{ color: G.gold, fontFamily: "'Cinzel',serif", fontSize: 11, letterSpacing: 1, display: "block", marginBottom: 4 }}>Nome</label>
+            <input value={d.nome} onChange={e => up("nome", e.target.value)} style={inpStyle()} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div>
+              <label style={{ color: G.gold, fontFamily: "'Cinzel',serif", fontSize: 10, display: "block", marginBottom: 4 }}>Tipo</label>
+              <select value={d.tipo} onChange={e => up("tipo", e.target.value)} style={inpStyle()}>
+                {ARSENAL_TIPOS.map(t => <option key={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ color: G.gold, fontFamily: "'Cinzel',serif", fontSize: 10, display: "block", marginBottom: 4 }}>Rank</label>
+              <select
+                value={d.rank}
+                onChange={e => up("rank", e.target.value)}
+                style={inpStyle({ color: RANK_COR[d.rank] || G.text, borderColor: (RANK_COR[d.rank] || "#444") + "55" })}
+              >
+                {ARSENAL_RANKS.map(r => <option key={r}>{r}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {isArma && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div>
+                <label style={{ color: "#fad24b", fontFamily: "'Cinzel',serif", fontSize: 10, display: "block", marginBottom: 4 }}>Dano</label>
+                <input value={d.dano} onChange={e => up("dano", e.target.value)} placeholder="ex: 1d6+2" style={inpStyle({ borderColor: "#fad24b44" })} />
+              </div>
+              <div>
+                <label style={{ color: "#ff9640", fontFamily: "'Cinzel',serif", fontSize: 10, display: "block", marginBottom: 4 }}>Crítico</label>
+                <input value={d.critico} onChange={e => up("critico", e.target.value)} placeholder="ex: 19-20/x2" style={inpStyle({ borderColor: "#ff964044" })} />
+              </div>
+            </div>
+          )}
+
+          {isArma && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div>
+                <label style={{ color: G.muted, fontFamily: "'Cinzel',serif", fontSize: 10, display: "block", marginBottom: 4 }}>Alcance</label>
+                <input value={d.alcance} onChange={e => up("alcance", e.target.value)} placeholder="ex: 5m" style={inpStyle()} />
+              </div>
+              <div>
+                <label style={{ color: G.muted, fontFamily: "'Cinzel',serif", fontSize: 10, display: "block", marginBottom: 4 }}>Tamanho</label>
+                <input value={d.tamanho} onChange={e => up("tamanho", e.target.value)} placeholder="ex: 0.8m" style={inpStyle()} />
+              </div>
+            </div>
+          )}
+
+          {isArmadura && (
+            <div>
+              <label style={{ color: G.gold, fontFamily: "'Cinzel',serif", fontSize: 10, display: "block", marginBottom: 4 }}>Defesa</label>
+              <input value={d.defesa} onChange={e => up("defesa", e.target.value)} style={inpStyle()} />
+            </div>
+          )}
+
+          {hasRegiao && (
+            <div>
+              <label style={{ color: G.muted, fontFamily: "'Cinzel',serif", fontSize: 10, display: "block", marginBottom: 4 }}>Região do Corpo</label>
+              <input value={d.regiao} onChange={e => up("regiao", e.target.value)} placeholder="ex: Torso, Mãos..." style={inpStyle()} />
+            </div>
+          )}
+
+          {hasEfeito && (
+            <div>
+              <label style={{ color: G.gold, fontFamily: "'Cinzel',serif", fontSize: 10, display: "block", marginBottom: 4 }}>Efeito no corpo</label>
+              <textarea value={d.efeitoCorpo} onChange={e => up("efeitoCorpo", e.target.value)} rows={2} style={inpStyle({ resize: "vertical" })} />
+            </div>
+          )}
+
+          {isConsumivel && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div>
+                <label style={{ color: G.gold, fontFamily: "'Cinzel',serif", fontSize: 10, display: "block", marginBottom: 4 }}>Quantidade</label>
+                <input type="number" min={0} value={d.quantidade} onChange={e => up("quantidade", Number(e.target.value) || 0)} style={inpStyle()} />
+              </div>
+              <div>
+                <label style={{ color: G.muted, fontFamily: "'Cinzel',serif", fontSize: 10, display: "block", marginBottom: 4 }}>Consumo/uso</label>
+                <input type="number" min={1} value={d.consumo} onChange={e => up("consumo", Number(e.target.value) || 1)} style={inpStyle()} />
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label style={{ color: G.muted, fontFamily: "'Cinzel',serif", fontSize: 10, display: "block", marginBottom: 4 }}>Descrição</label>
+            <textarea value={d.descricao} onChange={e => up("descricao", e.target.value)} rows={3} style={inpStyle({ resize: "vertical" })} />
+          </div>
+        </div>
+
+        {/* COLUNA DIREITA */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div>
+              <label style={{ color: G.muted, fontFamily: "'Cinzel',serif", fontSize: 10, display: "block", marginBottom: 4 }}>Ícone / Emoji</label>
+              <input value={d.icone} onChange={e => up("icone", e.target.value)} style={inpStyle()} />
+            </div>
+            <div>
+              <label style={{ color: G.muted, fontFamily: "'Cinzel',serif", fontSize: 10, display: "block", marginBottom: 4 }}>Peso (kg)</label>
+              <input type="number" min={0} step={0.1} value={d.peso} onChange={e => up("peso", Number(e.target.value))} style={inpStyle()} />
+            </div>
+          </div>
+
+          <div>
+            <label style={{ color: G.muted, fontFamily: "'Cinzel',serif", fontSize: 10, display: "block", marginBottom: 4 }}>Valor (moeda)</label>
+            <input value={d.valor} onChange={e => up("valor", e.target.value)} style={inpStyle()} />
+          </div>
+
+          {/* BONUS */}
+          <div style={{ background: G.bg3, border: "1px solid " + G.border, borderRadius: 8, padding: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <span style={{ fontFamily: "'Cinzel',serif", fontSize: 11, color: G.gold, letterSpacing: 1 }}>Bônus / Ônus</span>
+              <button style={btnStyle({ padding: "3px 8px", fontSize: 10 })} onClick={addBonus}>+ Add</button>
+            </div>
+            {d.bonus.map((b, i) => (
+              <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                <select
+                  value={b.tipo}
+                  onChange={e => setBonus(i, { tipo: e.target.value })}
+                  style={inpStyle({ width: 80, color: b.tipo === "Bônus" ? "#2ecc71" : "#e74c3c", padding: "4px 6px", fontSize: 11 })}
+                >
+                  <option>Bônus</option>
+                  <option>Ônus</option>
+                </select>
+                <input
+                  value={b.texto}
+                  onChange={e => setBonus(i, { texto: e.target.value })}
+                  placeholder="Nome"
+                  style={inpStyle({ flex: 1, padding: "4px 6px", fontSize: 12 })}
+                />
+                <button onClick={() => up("bonus", d.bonus.filter((_, j) => j !== i))} style={{ background: "transparent", border: "none", color: "#e74c3c", cursor: "pointer", fontSize: 14 }}>✕</button>
+              </div>
+            ))}
+          </div>
+
+          {/* EFEITOS */}
+          <div style={{ background: G.bg3, border: "1px solid " + G.border, borderRadius: 8, padding: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <span style={{ fontFamily: "'Cinzel',serif", fontSize: 11, color: G.gold, letterSpacing: 1 }}>Efeitos</span>
+              <button style={btnStyle({ padding: "3px 8px", fontSize: 10 })} onClick={addEfeito}>+ Add</button>
+            </div>
+            {d.efeitos.map((ef, i) => (
+              <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                <input
+                  value={ef.titulo}
+                  onChange={e => setEfeito(i, { titulo: e.target.value })}
+                  placeholder="Título do efeito"
+                  style={inpStyle({ flex: 1, padding: "4px 6px", fontSize: 12 })}
+                />
+                <button onClick={() => up("efeitos", d.efeitos.filter((_, j) => j !== i))} style={{ background: "transparent", border: "none", color: "#e74c3c", cursor: "pointer", fontSize: 14 }}>✕</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+        <button style={btnStyle({ background: "transparent", border: "1px solid #333", color: G.muted })} onClick={onClose}>Cancelar</button>
+        <button style={btnStyle()} onClick={() => onSave(d)}>Salvar Item</button>
+      </div>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────
+// ARSENAL SECTION
+// ─────────────────────────────────────────────
+function ArsenalSection({ arsenal, onArsenal }) {
+  const [sel, setSel]         = useState(null);
+  const [search, setSearch]   = useState("");
+  const [fTipo, setFTipo]     = useState("");
+  const [fRank, setFRank]     = useState("");
+  const [editItem, setEditItem] = useState(null);
+  const [editOpen, setEditOpen] = useState(false);
+
+  const filtered = arsenal.filter(it => {
+    if (fTipo && it.tipo !== fTipo) return false;
+    if (fRank && it.rank !== fRank) return false;
+    if (!search) return true;
+    return (it.nome + " " + it.descricao + " " + it.tipo).toLowerCase().includes(search.toLowerCase());
+  });
+
+  const saveItem = (d) => {
+    const existe = arsenal.some(x => x.id === d.id);
+    const novo   = existe ? arsenal.map(x => x.id === d.id ? Object.assign({}, d) : x) : [Object.assign({}, d), ...arsenal];
+    onArsenal(novo);
+    setEditOpen(false);
+    setSel(d.id);
+  };
+
+  const dupItem = (it) => {
+    const n = Object.assign({}, it, { id: uid(), nome: it.nome + " (cópia)", criado: Date.now() });
+    onArsenal([n, ...arsenal]);
+  };
+
+  const delItem = (id) => {
+    onArsenal(arsenal.filter(x => x.id !== id));
+    if (sel === id) setSel(null);
+  };
+
+  const selItem = arsenal.find(x => x.id === sel) || null;
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", height: "calc(100vh - 54px)" }}>
+
+      {/* SIDEBAR */}
+      <div style={{ borderRight: "1px solid " + G.border, display: "flex", flexDirection: "column", overflow: "hidden", background: G.bg2 }}>
+        <div style={{ padding: "12px 10px 8px", borderBottom: "1px solid " + G.border }}>
+          <button style={Object.assign({}, btnStyle(), { width: "100%", padding: "7px", marginBottom: 8, display: "block" })} onClick={() => { setEditItem(null); setEditOpen(true); }}>
+            + Criar Item
+          </button>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Pesquisar..." style={Object.assign({}, inpStyle(), { marginBottom: 6 })} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+            <select value={fTipo} onChange={e => setFTipo(e.target.value)} style={inpStyle({ padding: "4px 6px", fontSize: 11 })}>
+              <option value="">Todos tipos</option>
+              {ARSENAL_TIPOS.map(t => <option key={t}>{t}</option>)}
+            </select>
+            <select value={fRank} onChange={e => setFRank(e.target.value)} style={inpStyle({ padding: "4px 6px", fontSize: 11 })}>
+              <option value="">Todos ranks</option>
+              {ARSENAL_RANKS.map(r => <option key={r}>{r}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div style={{ flex: 1, overflow: "auto", padding: 8 }}>
+          {filtered.length === 0 && (
+            <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 12, textAlign: "center", padding: 20 }}>Nenhum item.</div>
+          )}
+          {filtered.map(it => {
+            const cor = RANK_COR[it.rank] || "#7f8c8d";
+            const isSel = sel === it.id;
+            return (
+              <div
+                key={it.id}
+                onClick={() => setSel(isSel ? null : it.id)}
+                style={{
+                  background: isSel ? cor + "11" : G.bg3,
+                  border: "1px solid " + (isSel ? cor + "44" : G.border),
+                  borderRadius: 8, padding: "8px 10px", marginBottom: 6, cursor: "pointer",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 18 }}>{it.icone || "📦"}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.nome}</div>
+                    <div style={{ fontSize: 10, color: G.muted, fontFamily: "monospace" }}>{it.tipo}</div>
+                  </div>
+                  <span style={{ fontSize: 10, color: cor, fontFamily: "'Cinzel',serif", fontWeight: 700 }}>{it.rank}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ padding: 8, borderTop: "1px solid " + G.border, fontSize: 10, color: G.muted, fontFamily: "monospace", textAlign: "center" }}>
+          {arsenal.length} itens no Arsenal
+        </div>
+      </div>
+
+      {/* DETALHE */}
+      <div style={{ overflow: "auto", padding: 20 }}>
+        {!selItem && (
+          <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: G.muted, fontFamily: "Georgia,serif", fontStyle: "italic", fontSize: 16 }}>
+            Selecione um item para ver os detalhes
+          </div>
+        )}
+        {selItem && (
+          <ArsenalDetalhe
+            item={selItem}
+            onEdit={() => { setEditItem(selItem); setEditOpen(true); }}
+            onDup={() => dupItem(selItem)}
+            onDel={() => { if (window.confirm("Apagar \"" + selItem.nome + "\"?")) delItem(selItem.id); }}
+          />
+        )}
+      </div>
+
+      {editOpen && <ItemEditor item={editItem} onSave={saveItem} onClose={() => setEditOpen(false)} />}
+    </div>
+  );
+}
+
+function ArsenalDetalhe({ item, onEdit, onDup, onDel }) {
+  const cor = RANK_COR[item.rank] || "#7f8c8d";
+  return (
+    <div style={{ maxWidth: 640 }}>
+      <div style={{ display: "flex", gap: 16, marginBottom: 20 }}>
+        <div style={{ width: 72, height: 72, background: cor + "11", border: "1px solid " + cor + "33", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, flexShrink: 0 }}>
+          {item.icone || "📦"}
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontFamily: "'Cinzel',serif", fontSize: 20, color: G.gold2, marginBottom: 6 }}>{item.nome}</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Pill label={item.tipo} cor="#888" />
+            <Pill label={item.rank} cor={cor} />
+            {item.dano    && <Pill label={"Dano: " + item.dano} cor="#fad24b" />}
+            {item.critico && <Pill label={"Crit: " + item.critico} cor="#ff9640" />}
+            {item.defesa  && <Pill label={"DEF: " + item.defesa} cor="#3498db" />}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <button style={btnStyle()} onClick={onEdit}>✎ Editar</button>
+        <button style={btnStyle({ borderColor: "#3498db44", color: "#3498db" })} onClick={onDup}>⊕ Duplicar</button>
+        <button style={Object.assign({}, btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c" }), { marginLeft: "auto" })} onClick={onDel}>✕ Apagar</button>
+      </div>
+
+      {item.descricao && (
+        <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 8, padding: 12, marginBottom: 12, fontStyle: "italic", fontSize: 13, color: "#aaa", lineHeight: 1.7 }}>
+          {item.descricao}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 12, fontFamily: "monospace", color: "#888", marginBottom: 12 }}>
+        {item.peso > 0 && <span>Peso: <span style={{ color: G.gold }}>{item.peso}kg</span></span>}
+        {item.valor    && <span>Valor: <span style={{ color: G.gold }}>{item.valor}</span></span>}
+        {item.alcance  && <span>Alcance: <span style={{ color: G.gold }}>{item.alcance}</span></span>}
+        {item.tamanho  && <span>Tamanho: <span style={{ color: G.gold }}>{item.tamanho}</span></span>}
+        {item.regiao   && <span>Região: <span style={{ color: G.gold }}>{item.regiao}</span></span>}
+      </div>
+
+      {item.bonus.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontFamily: "'Cinzel',serif", fontSize: 11, color: G.gold, letterSpacing: 2, marginBottom: 6 }}>BÔNUS / ÔNUS</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {item.bonus.map((b, i) => <Pill key={i} label={b.texto} cor={b.tipo === "Bônus" ? "#2ecc71" : "#e74c3c"} />)}
+          </div>
+        </div>
+      )}
+
+      {item.efeitos.length > 0 && (
+        <div>
+          <div style={{ fontFamily: "'Cinzel',serif", fontSize: 11, color: G.gold, letterSpacing: 2, marginBottom: 6 }}>EFEITOS</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {item.efeitos.map((ef, i) => <Pill key={i} label={ef.titulo} cor="#3498db" />)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// FICHAS — ABA STATUS
+// ─────────────────────────────────────────────
+function TabStatus({ ficha, onUpdate }) {
+  const [c1, setC1] = useState("FOR");
+  const [c2, setC2] = useState("FOR");
+  const [cRes, setCRes] = useState(null);
+  const [burstRes, setBurstRes] = useState(null);
+
+  const upStatus  = (sigla, field, val) => onUpdate({ status:   Object.assign({}, ficha.status,   { [sigla]: Object.assign({}, ficha.status[sigla], { [field]: val }) }) });
+  const upRecurso = (sigla, field, val) => onUpdate({ recursos: Object.assign({}, ficha.recursos, { [sigla]: Object.assign({}, ficha.recursos[sigla], { [field]: val }) }) });
+
+  const novaRodada = () => {
+    const r = {};
+    RECURSOS_CFG.forEach(rc => { r[rc.sigla] = Object.assign({}, ficha.recursos[rc.sigla], { usado: 0 }); });
+    onUpdate({ recursos: r });
+  };
+
+  const rolarConfronto = () => {
+    const v1 = ficha.atributos[c1]?.val || 5;
+    const v2 = ficha.atributos[c2]?.val || 5;
+    const diff = v1 - v2;
+    setCRes({
+      r1: Math.max(1, Math.ceil(Math.random() * 20) + diff),
+      r2: Math.ceil(Math.random() * 20),
+    });
+  };
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+
+      {/* STATUS */}
+      <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 16 }}>
+        <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 14, paddingBottom: 8, borderBottom: "1px solid " + G.border }}>◈ STATUS</div>
+        {STATUS_CFG.map(s => (
+          <StatusBar
+            key={s.sigla} {...s}
+            val={ficha.status[s.sigla].val}
+            max={ficha.status[s.sigla].max}
+            onVal={v => upStatus(s.sigla, "val", v)}
+            onMax={v => upStatus(s.sigla, "max", v)}
+          />
+        ))}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+
+        {/* RECURSOS */}
+        <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <span style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3 }}>◈ RECURSOS/RODADA</span>
+            <button style={btnStyle({ padding: "3px 10px", fontSize: 10 })} onClick={novaRodada}>Nova Rodada</button>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {RECURSOS_CFG.map(rc => {
+              const rec   = ficha.recursos[rc.sigla];
+              const disp  = rec.total - rec.usado;
+              return (
+                <div key={rc.sigla} style={{ flex: 1, textAlign: "center" }}>
+                  <div style={{ fontFamily: "'Cinzel',serif", fontSize: 10, color: rc.cor, letterSpacing: 1, marginBottom: 5 }}>{rc.sigla}</div>
+                  <div style={{ display: "flex", gap: 3, justifyContent: "center", flexWrap: "wrap", marginBottom: 5 }}>
+                    {Array.from({ length: rec.total }).map((_, i) => (
+                      <div key={i} style={{ width: 16, height: 16, borderRadius: 3, background: i < disp ? rc.cor : "#1a1a1a", border: "1px solid " + (i < disp ? rc.cor : "#333") }} />
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 3, justifyContent: "center", marginBottom: 4 }}>
+                    <button
+                      onClick={() => upRecurso(rc.sigla, "usado", Math.min(rec.total, rec.usado + 1))}
+                      disabled={rec.usado >= rec.total}
+                      style={btnStyle({ padding: "1px 7px", fontSize: 11, color: rc.cor })}
+                    >−</button>
+                    <button onClick={() => upRecurso(rc.sigla, "usado", 0)} style={btnStyle({ padding: "1px 7px", fontSize: 10 })}>↺</button>
+                  </div>
+                  <div style={{ fontSize: 11, fontFamily: "monospace", color: disp === 0 ? "#ff4444" : G.gold }}>{disp}/{rec.total}</div>
+                  <input
+                    type="number" min={1} max={10} value={rec.total}
+                    onChange={e => upRecurso(rc.sigla, "total", Math.max(1, Number(e.target.value) || 1))}
+                    style={inpStyle({ textAlign: "center", fontSize: 11, padding: "2px", color: rc.cor, borderColor: rc.cor + "33", marginTop: 4 })}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* CONFRONTO */}
+        <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 14 }}>
+          <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 10 }}>⚔ CONFRONTO</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+            <select value={c1} onChange={e => { setC1(e.target.value); setCRes(null); }} style={inpStyle({ flex: 1, padding: "6px", fontSize: 12 })}>
+              {ATRIBUTOS.map(a => <option key={a.sigla}>{a.sigla}</option>)}
+            </select>
+            <span style={{ color: G.gold, fontFamily: "'Cinzel',serif" }}>vs</span>
+            <select value={c2} onChange={e => { setC2(e.target.value); setCRes(null); }} style={inpStyle({ flex: 1, padding: "6px", fontSize: 12 })}>
+              {ATRIBUTOS.map(a => <option key={a.sigla}>{a.sigla}</option>)}
+            </select>
+            <button style={btnStyle({ padding: "7px 12px" })} onClick={rolarConfronto}>🎲</button>
+          </div>
+          {cRes && (
+            <div style={{ display: "flex", gap: 8 }}>
+              {[{ v: cRes.r1, lbl: c1, win: cRes.r1 > cRes.r2 }, { v: cRes.r2, lbl: c2, win: cRes.r2 > cRes.r1 }].map((x, i) => (
+                <div key={i} style={{ flex: 1, textAlign: "center", padding: "10px 6px", background: x.win ? "#0a2a0a" : "#1a0a0a", border: "1px solid " + (x.win ? "#2ecc7144" : "#e74c3c44"), borderRadius: 8 }}>
+                  <div style={{ fontSize: 10, color: G.muted, fontFamily: "monospace", marginBottom: 2 }}>{x.lbl}</div>
+                  <div style={{ fontFamily: "'Cinzel',serif", fontSize: 28, color: x.win ? "#2ecc71" : "#e74c3c" }}>{x.v}</div>
+                  {cRes.r1 === cRes.r2 && <div style={{ fontSize: 9, color: "#e67e22", fontFamily: "monospace" }}>EMPATE</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* BURST */}
+        <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 14 }}>
+          <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 8 }}>⚡ BURST</div>
+          <button style={Object.assign({}, btnStyle({ borderColor: "#9b59b644", color: "#bf8fe8" }), { width: "100%", padding: "10px", display: "block" })} onClick={() => setBurstRes(Math.ceil(Math.random() * 20))}>
+            Tentar Burst (1D20)
+          </button>
+          {burstRes !== null && (
+            <div style={{ marginTop: 10, textAlign: "center", padding: 12, background: burstRes >= 1 ? "#0a1a0a" : "#1a0a0a", border: "1px solid " + (burstRes >= 1 ? "#2ecc7144" : "#e74c3c44"), borderRadius: 8 }}>
+              <div style={{ fontFamily: "'Cinzel',serif", fontSize: 36, color: burstRes >= 1 ? "#2ecc71" : "#e74c3c" }}>{burstRes}</div>
+              <div style={{ fontSize: 10, color: burstRes >= 1 ? "#2ecc71" : "#e74c3c", fontFamily: "monospace" }}>
+                {burstRes === 20 ? "🔥 CRÍTICO PERFEITO" : burstRes >= 1 ? "✓ BURST ATIVADO" : "✗ FALHOU"}
+              </div>
+              {burstRes >= 1 && (
+                <div style={{ fontSize: 10, color: "#2ecc71", fontFamily: "monospace", marginTop: 6, textAlign: "left", lineHeight: 1.8, background: "#050505", borderRadius: 6, padding: "8px 12px" }}>
+                  🔄 Recupera todos os recursos gastos<br />
+                  ⛔ Alvo não pode usar Reações<br />
+                  🧃 Próxima rodada: inimigo com 50% dos recursos
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// FICHAS — ABA ATRIBUTOS & PERÍCIAS
+// ─────────────────────────────────────────────
+function TabAtributos({ ficha, onUpdate }) {
+  const [grupoAtivo, setGrupoAtivo] = useState(PERICIAS_GRUPOS[0].g);
+  const grp = PERICIAS_GRUPOS.find(g => g.g === grupoAtivo);
+
+  const upA = (sigla, k, v) => onUpdate({
+    atributos: Object.assign({}, ficha.atributos, {
+      [sigla]: Object.assign({}, ficha.atributos[sigla], { [k]: v }),
+    }),
+  });
+
+  const upP = (nome, v) => onUpdate({
+    pericias: Object.assign({}, ficha.pericias, { [nome]: Math.max(0, Math.min(20, v)) }),
+  });
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 16 }}>
-      <Card
-        title="Fichas"
-        right={<button style={btnStyle({ padding: "4px 8px" })} onClick={() => {
-          const f = novaFicha();
-          setFichas((prev) => [f, ...prev]);
-          setSelecionada(f.id);
-        }}>+ Nova</button>}
-      >
-        <div style={{ display: "grid", gap: 6 }}>
-          {fichas.map((f) => (
-            <button key={f.id} onClick={() => setSelecionada(f.id)} style={{
-              textAlign: "left",
-              background: selecionada === f.id ? "#1a1208" : G.bg3,
-              border: `1px solid ${selecionada === f.id ? "#c8a96e55" : G.border}`,
-              borderRadius: 8,
-              color: G.gold2,
-              padding: "8px 10px",
-              cursor: "pointer",
-            }}>
-              <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12 }}>{f.nome}</div>
-              <div style={{ color: G.muted, fontSize: 10, fontFamily: "monospace" }}>{f.raca}</div>
-            </button>
-          ))}
-          {fichas.length === 0 && <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 12 }}>Nenhuma ficha criada.</div>}
+
+      {/* ATRIBUTOS */}
+      <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 14 }}>
+        <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 12, paddingBottom: 8, borderBottom: "1px solid " + G.border }}>◈ ATRIBUTOS</div>
+        <div style={{ fontSize: 10, color: G.muted, fontFamily: "monospace", marginBottom: 10, background: "#050505", padding: "6px 10px", borderRadius: 6, border: "1px solid " + G.border }}>
+          <span style={{ color: "#4eff4e" }}>AE</span> = Especializado (+ATRIB) &nbsp;|&nbsp; <span style={{ color: "#ff4e4e" }}>NE</span> = Não Especializado (−ATRIB)
         </div>
-      </Card>
+        {ATRIBUTOS.map(a => {
+          const av = ficha.atributos[a.sigla];
+          return (
+            <div key={a.sigla} style={{ background: G.bg3, border: "1px solid " + G.border, borderRadius: 8, padding: "8px 10px", marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 1 }}>{a.sigla}</div>
+                {a.bonus && <div style={{ fontSize: 9, color: "#2ecc71", fontFamily: "monospace" }}>{a.bonus}</div>}
+              </div>
+              <input
+                type="number" min={0} max={30} value={av.val}
+                onChange={e => upA(a.sigla, "val", Number(e.target.value) || 0)}
+                style={inpStyle({ width: 52, textAlign: "center", fontSize: 15, fontWeight: "bold", color: G.gold, padding: "4px" })}
+              />
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <button
+                  onClick={() => upA(a.sigla, "ae", !av.ae)}
+                  style={{ width: 24, height: 20, background: av.ae ? "#1a4a1a" : "#111", border: "1px solid " + (av.ae ? "#2d8a2d" : "#333"), borderRadius: 3, color: av.ae ? "#4eff4e" : "#555", fontSize: 9, cursor: "pointer", fontWeight: "bold" }}
+                >AE</button>
+                <button
+                  onClick={() => upA(a.sigla, "ne", !av.ne)}
+                  style={{ width: 24, height: 20, background: av.ne ? "#4a1a1a" : "#111", border: "1px solid " + (av.ne ? "#8a2d2d" : "#333"), borderRadius: 3, color: av.ne ? "#ff4e4e" : "#555", fontSize: 9, cursor: "pointer", fontWeight: "bold" }}
+                >NE</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
-      <Card title="Editor de Ficha">
-        {!ficha && <div style={{ color: G.muted, fontStyle: "italic" }}>Selecione uma ficha para editar.</div>}
-        {ficha && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <div>
-              <Field label="Nome">
-                <input value={ficha.nome} onChange={(e) => updateFicha({ nome: e.target.value })} style={inpStyle()} />
-              </Field>
-              <Field label="Raça">
-                <select value={ficha.raca} onChange={(e) => updateFicha({ raca: e.target.value })} style={inpStyle()}>
-                  {RACAS.map((r) => <option key={r}>{r}</option>)}
-                </select>
-              </Field>
-              <Field label="Classes (selecione até 3)">
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {Object.values(CLASSES).flat().map((classe) => {
-                    const active = ficha.classes.includes(classe);
-                    return (
-                      <button
-                        key={classe}
-                        onClick={() => {
-                          if (active) {
-                            updateFicha({ classes: ficha.classes.filter((c) => c !== classe) });
-                            return;
-                          }
-                          if (ficha.classes.length < 3) {
-                            updateFicha({ classes: [...ficha.classes, classe] });
-                          }
-                        }}
-                        style={btnStyle({
-                          padding: "3px 8px",
-                          fontSize: 10,
-                          color: active ? G.gold : G.muted,
-                          borderColor: active ? "#c8a96e55" : "#333",
-                          background: active ? "#1a1208" : "transparent",
-                        })}
-                      >
-                        {classe}
-                      </button>
-                    );
-                  })}
+      {/* PERÍCIAS */}
+      <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, paddingBottom: 8, borderBottom: "1px solid " + G.border }}>
+          <span style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3 }}>◈ PERÍCIAS</span>
+          <span style={{ fontSize: 10, color: G.muted, fontFamily: "monospace" }}>DT = 20 − Nível</span>
+        </div>
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 12 }}>
+          {PERICIAS_GRUPOS.map(g => (
+            <button
+              key={g.g}
+              onClick={() => setGrupoAtivo(g.g)}
+              style={{
+                padding: "4px 10px",
+                background: grupoAtivo === g.g ? g.cor + "22" : "transparent",
+                border: "1px solid " + (grupoAtivo === g.g ? g.cor + "55" : G.border),
+                borderRadius: 14,
+                color: grupoAtivo === g.g ? g.cor : G.muted,
+                fontFamily: "monospace", fontSize: 10, cursor: "pointer",
+              }}
+            >{g.g}</button>
+          ))}
+        </div>
+        {grp && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+            {grp.list.map(p => {
+              const nivel = ficha.pericias[p] || 0;
+              const dt    = Math.max(1, 20 - nivel);
+              return (
+                <div key={p} style={{ background: G.bg3, border: "1px solid " + G.border, borderRadius: 8, padding: "7px 10px", display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ flex: 1, fontFamily: "monospace", fontSize: 11, color: nivel > 0 ? G.gold2 : "#888" }}>{p}</div>
+                  <button onClick={() => upP(p, nivel - 1)} style={{ width: 20, height: 20, background: "transparent", border: "1px solid " + G.border, borderRadius: 3, color: G.muted, cursor: "pointer", fontSize: 12 }}>−</button>
+                  <input
+                    type="number" min={0} max={20} value={nivel}
+                    onChange={e => upP(p, Number(e.target.value) || 0)}
+                    style={inpStyle({ width: 36, textAlign: "center", fontSize: 13, fontWeight: "bold", color: grp.cor, padding: "2px", borderColor: grp.cor + "33" })}
+                  />
+                  <button onClick={() => upP(p, nivel + 1)} style={{ width: 20, height: 20, background: "transparent", border: "1px solid " + G.border, borderRadius: 3, color: G.muted, cursor: "pointer", fontSize: 12 }}>+</button>
+                  <div style={{ width: 38, textAlign: "right", fontFamily: "monospace", fontSize: 11, color: nivel === 20 ? "#ffd700" : nivel > 0 ? grp.cor : G.muted }}>
+                    DT:{dt}
+                  </div>
                 </div>
-              </Field>
-            </div>
-
-            <div>
-              <Field label="Aparência">
-                <textarea value={ficha.aparencia} onChange={(e) => updateFicha({ aparencia: e.target.value })} rows={3} style={inpStyle({ resize: "vertical" })} />
-              </Field>
-              <Field label="Histórico">
-                <textarea value={ficha.historico} onChange={(e) => updateFicha({ historico: e.target.value })} rows={4} style={inpStyle({ resize: "vertical" })} />
-              </Field>
-              <Field label="Notas">
-                <textarea value={ficha.notas} onChange={(e) => updateFicha({ notas: e.target.value })} rows={3} style={inpStyle({ resize: "vertical" })} />
-              </Field>
-            </div>
-
-            <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <Card title="Status">
-                {STATUS_CFG.map((s) => (
-                  <div key={s.sigla} style={{ display: "grid", gridTemplateColumns: "48px 1fr 1fr", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                    <strong style={{ color: s.cor, fontSize: 11 }}>{s.sigla}</strong>
-                    <input
-                      type="number"
-                      value={ficha.status[s.sigla]?.val ?? 0}
-                      onChange={(e) => updateFicha({
-                        status: {
-                          ...ficha.status,
-                          [s.sigla]: { ...ficha.status[s.sigla], val: Number(e.target.value) || 0 },
-                        },
-                      })}
-                      style={inpStyle({ padding: "4px 8px" })}
-                    />
-                    <input
-                      type="number"
-                      value={ficha.status[s.sigla]?.max ?? 0}
-                      onChange={(e) => updateFicha({
-                        status: {
-                          ...ficha.status,
-                          [s.sigla]: { ...ficha.status[s.sigla], max: Number(e.target.value) || 0 },
-                        },
-                      })}
-                      style={inpStyle({ padding: "4px 8px" })}
-                    />
-                  </div>
-                ))}
-              </Card>
-
-              <Card title="Recursos / rodada">
-                {RECURSOS_CFG.map((r) => (
-                  <div key={r.sigla} style={{ display: "grid", gridTemplateColumns: "48px 1fr 1fr", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                    <strong style={{ color: r.cor, fontSize: 11 }}>{r.sigla}</strong>
-                    <input
-                      type="number"
-                      value={ficha.recursos[r.sigla]?.total ?? 0}
-                      onChange={(e) => updateFicha({
-                        recursos: {
-                          ...ficha.recursos,
-                          [r.sigla]: { ...ficha.recursos[r.sigla], total: Number(e.target.value) || 0 },
-                        },
-                      })}
-                      style={inpStyle({ padding: "4px 8px" })}
-                    />
-                    <input
-                      type="number"
-                      value={ficha.recursos[r.sigla]?.usado ?? 0}
-                      onChange={(e) => updateFicha({
-                        recursos: {
-                          ...ficha.recursos,
-                          [r.sigla]: { ...ficha.recursos[r.sigla], usado: Number(e.target.value) || 0 },
-                        },
-                      })}
-                      style={inpStyle({ padding: "4px 8px" })}
-                    />
-                  </div>
-                ))}
-              </Card>
-            </div>
+              );
+            })}
           </div>
         )}
-      </Card>
+      </div>
     </div>
   );
 }
 
-function ArsenalPanel({ arsenal, setArsenal }) {
-  const [item, setItem] = useState(novoItem());
+// ─────────────────────────────────────────────
+// FICHAS — ABA IDENTIDADE
+// ─────────────────────────────────────────────
+function TabIdentidade({ ficha, onUpdate }) {
+  const [filtro, setFiltro] = useState("");
 
-  const addItem = () => {
-    setArsenal((prev) => [{ ...item, id: crypto.randomUUID?.() ?? `${Date.now()}` }, ...prev]);
-    setItem(novoItem());
+  const toggleClasse = (c) => {
+    if (ficha.classes.includes(c)) {
+      onUpdate({ classes: ficha.classes.filter(x => x !== c) });
+    } else if (ficha.classes.length < 3) {
+      onUpdate({ classes: [...ficha.classes, c] });
+    }
   };
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 16 }}>
-      <Card title={`Arsenal (${arsenal.length})`}>
-        <div style={{ display: "grid", gap: 8 }}>
-          {arsenal.map((it) => (
-            <div key={it.id} style={{ background: G.bg3, border: `1px solid ${RANK_COR[it.rank] || G.border}`, borderRadius: 8, padding: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
-                <div style={{ color: G.gold2, fontFamily: "'Cinzel',serif" }}>{it.nome}</div>
-                <div style={{ color: G.muted, fontSize: 10, fontFamily: "monospace" }}>{it.tipo} · {it.rank}</div>
-              </div>
-              <button style={btnStyle({ color: "#e74c3c", borderColor: "#e74c3c44" })} onClick={() => setArsenal((prev) => prev.filter((x) => x.id !== it.id))}>Excluir</button>
-            </div>
-          ))}
-          {arsenal.length === 0 && <div style={{ color: G.muted, fontFamily: "monospace" }}>Nenhum item no arsenal.</div>}
-        </div>
-      </Card>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
 
-      <Card title="Novo item">
-        <Field label="Nome">
-          <input value={item.nome} onChange={(e) => setItem((p) => ({ ...p, nome: e.target.value }))} style={inpStyle()} />
-        </Field>
-        <Field label="Tipo">
-          <select value={item.tipo} onChange={(e) => setItem((p) => ({ ...p, tipo: e.target.value }))} style={inpStyle()}>
-            {ARSENAL_TIPOS.map((t) => <option key={t}>{t}</option>)}
-          </select>
-        </Field>
-        <Field label="Rank">
-          <select value={item.rank} onChange={(e) => setItem((p) => ({ ...p, rank: e.target.value }))} style={inpStyle()}>
-            {ARSENAL_RANKS.map((r) => <option key={r}>{r}</option>)}
-          </select>
-        </Field>
-        <Field label="Descrição">
-          <textarea value={item.descricao} onChange={(e) => setItem((p) => ({ ...p, descricao: e.target.value }))} rows={4} style={inpStyle({ resize: "vertical" })} />
-        </Field>
-        <button style={btnStyle({ width: "100%" })} onClick={addItem}>Salvar item</button>
-      </Card>
+      {/* ESQUERDA: raça + perfil */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 14 }}>
+          <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 10 }}>◈ RAÇA</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+            {RACAS.map(r => (
+              <button
+                key={r}
+                onClick={() => onUpdate({ raca: r })}
+                style={{
+                  padding: "5px 12px",
+                  background: ficha.raca === r ? "#1a1208" : "#080808",
+                  border: "1px solid " + (ficha.raca === r ? "#c8a96e88" : "#1a1a1a"),
+                  borderRadius: 6,
+                  color: ficha.raca === r ? G.gold : "#666",
+                  fontFamily: "'Cinzel',serif", fontSize: 11, cursor: "pointer",
+                }}
+              >{r}</button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 14 }}>
+          <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 10 }}>◈ PERFIL</div>
+          <label style={{ color: G.muted, fontFamily: "monospace", fontSize: 11, display: "block", marginBottom: 4 }}>Aparência física</label>
+          <textarea value={ficha.aparencia} onChange={e => onUpdate({ aparencia: e.target.value })} rows={3} style={Object.assign({}, inpStyle(), { resize: "vertical", marginBottom: 8 })} />
+          <label style={{ color: G.muted, fontFamily: "monospace", fontSize: 11, display: "block", marginBottom: 4 }}>Histórico / Background</label>
+          <textarea value={ficha.historico} onChange={e => onUpdate({ historico: e.target.value })} rows={4} style={Object.assign({}, inpStyle(), { resize: "vertical", marginBottom: 8 })} />
+          <label style={{ color: G.muted, fontFamily: "monospace", fontSize: 11, display: "block", marginBottom: 4 }}>Notas da sessão</label>
+          <textarea value={ficha.notas} onChange={e => onUpdate({ notas: e.target.value })} rows={3} style={Object.assign({}, inpStyle(), { resize: "vertical" })} />
+        </div>
+      </div>
+
+      {/* DIREITA: classes */}
+      <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <span style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3 }}>◈ CLASSES</span>
+          <span style={{ fontSize: 10, color: G.muted, fontFamily: "monospace" }}>{ficha.classes.length}/3</span>
+        </div>
+
+        {ficha.classes.length > 0 && (
+          <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid " + G.border }}>
+            {ficha.classes.map(c => (
+              <span key={c} style={{ padding: "3px 10px", background: "#1a1208", border: "1px solid #c8a96e55", borderRadius: 20, fontSize: 11, color: G.gold, fontFamily: "'Cinzel',serif" }}>{c}</span>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 5, marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid " + G.border }}>
+          {["", "Estrutural", "Funcional", "Dominante"].map(t => (
+            <button
+              key={t || "all"}
+              onClick={() => setFiltro(t)}
+              style={{
+                flex: 1, padding: "5px",
+                background: filtro === t ? "#1a1208" : "transparent",
+                border: "1px solid " + (filtro === t ? "#c8a96e44" : G.border),
+                borderRadius: 6, color: filtro === t ? G.gold : G.muted,
+                fontFamily: "'Cinzel',serif", fontSize: 10, cursor: "pointer",
+              }}
+            >{t || "Todas"}</button>
+          ))}
+        </div>
+
+        {Object.entries(CLASSES).map(([tipo, lista]) => {
+          if (filtro && filtro !== tipo) return null;
+          const cor = tipo === "Estrutural" ? "#3498db" : tipo === "Funcional" ? "#2ecc71" : "#e74c3c";
+          return (
+            <div key={tipo}>
+              <div style={{ fontSize: 9, color: G.muted, fontFamily: "'Cinzel',serif", letterSpacing: 2, marginBottom: 6, marginTop: 8 }}>{tipo.toUpperCase()}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 4 }}>
+                {lista.map(c => (
+                  <button
+                    key={c}
+                    onClick={() => toggleClasse(c)}
+                    style={{
+                      padding: "4px 9px",
+                      background: ficha.classes.includes(c) ? cor + "22" : "#0a0a0a",
+                      border: "1px solid " + (ficha.classes.includes(c) ? cor + "55" : "#222"),
+                      borderRadius: 16,
+                      color: ficha.classes.includes(c) ? cor : "#555",
+                      fontFamily: "monospace", fontSize: 10, cursor: "pointer",
+                    }}
+                  >{c}</button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
+// ─────────────────────────────────────────────
+// FICHAS — ABA ESSÊNCIA
+// ─────────────────────────────────────────────
+const EXP_LABELS = ["Sem Mutação", "Sutil", "Moderada", "Total"];
+const EXP_CORES  = ["#555", "#c8a96e", "#e67e22", "#e74c3c"];
+
+function EssenciaBtn({ es, sel, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        width: "100%", textAlign: "left", padding: "6px 10px", marginBottom: 4,
+        background: sel ? es.cor + "22" : "#080808",
+        border: "1px solid " + (sel ? es.cor + "66" : "#1a1a1a"),
+        borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
+      }}
+    >
+      <div style={{ width: 10, height: 10, borderRadius: "50%", background: es.cor, boxShadow: sel ? "0 0 8px " + es.cor : "none", flexShrink: 0 }} />
+      <span style={{ fontFamily: "'Cinzel',serif", fontSize: 11, color: sel ? es.cor : "#666", flex: 1 }}>{es.nome}</span>
+      {es.tag && <span style={{ fontSize: 9, color: sel ? es.cor + "99" : "#444", fontFamily: "monospace" }}>{es.tag}</span>}
+      {es.coringa && <span style={{ fontSize: 10, color: "#ffd70099" }}>🃏</span>}
+    </button>
+  );
+}
+
+function TabEssencia({ ficha, onUpdate }) {
+  const e = ficha.essencia;
+
+  const selectEssencia = (es) => {
+    onUpdate({ essencia: e && e.nome === es.nome ? null : es });
+  };
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "240px 1fr", gap: 16 }}>
+
+      {/* SELETOR */}
+      <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 14 }}>
+        <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 12 }}>◈ ESSÊNCIA</div>
+        <div style={{ fontSize: 10, color: "#c8a96e88", fontFamily: "monospace", marginBottom: 6, letterSpacing: 2 }}>✨ VIRTUDES</div>
+        {ESSENCIAS_VIRTUDES.map(es => <EssenciaBtn key={es.nome} es={es} sel={!!e && e.nome === es.nome} onClick={() => selectEssencia(es)} />)}
+        <div style={{ fontSize: 10, color: "#c8a96e88", fontFamily: "monospace", marginTop: 10, marginBottom: 6, letterSpacing: 2 }}>💀 PECADOS</div>
+        {ESSENCIAS_PECADOS.map(es => <EssenciaBtn key={es.nome} es={es} sel={!!e && e.nome === es.nome} onClick={() => selectEssencia(es)} />)}
+      </div>
+
+      {/* DETALHE */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {!e && (
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: G.muted, fontStyle: "italic", fontSize: 15 }}>
+            Nenhuma essência selecionada
+          </div>
+        )}
+        {e && (
+          <>
+            <div style={{ background: e.cor + "0d", border: "1px solid " + e.cor + "44", borderRadius: 10, padding: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                <div style={{ width: 52, height: 52, borderRadius: 8, background: e.cor + "22", border: "1px solid " + e.cor + "55", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 16px " + e.cor + "44" }}>
+                  <div style={{ width: 20, height: 20, borderRadius: "50%", background: e.cor, boxShadow: "0 0 12px " + e.cor }} />
+                </div>
+                <div>
+                  <div style={{ fontFamily: "'Cinzel',serif", fontSize: 20, color: e.cor }}>{e.nome}</div>
+                  <div style={{ fontSize: 11, color: e.cor + "99", fontStyle: "italic" }}>
+                    {e.tag}{e.coringa ? " · 🃏 Coringa" : ""}
+                  </div>
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: "#888", fontStyle: "italic", background: "#050505", borderRadius: 6, padding: "8px 12px" }}>{e.forma}</div>
+            </div>
+
+            {/* EXPOSIÇÃO */}
+            <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 14 }}>
+              <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 10 }}>◈ EXPOSIÇÃO DE ESSÊNCIA</div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                {EXP_LABELS.map((l, i) => (
+                  <button
+                    key={l}
+                    onClick={() => onUpdate({ exposicao: i })}
+                    style={{
+                      flex: 1, padding: "8px 4px",
+                      background: ficha.exposicao === i ? EXP_CORES[i] + "22" : "#0d0d0d",
+                      border: "1px solid " + (ficha.exposicao === i ? EXP_CORES[i] : G.border),
+                      borderRadius: 7,
+                      color: ficha.exposicao === i ? EXP_CORES[i] : G.muted,
+                      fontFamily: "'Cinzel',serif", fontSize: 10, cursor: "pointer", letterSpacing: 1,
+                    }}
+                  >{l}</button>
+                ))}
+              </div>
+              {ficha.exposicao > 0 && (
+                <div style={{ padding: "10px 14px", background: "#050505", borderRadius: 8, border: "1px solid " + EXP_CORES[ficha.exposicao] + "33", fontSize: 12, color: EXP_CORES[ficha.exposicao], fontStyle: "italic", lineHeight: 1.7 }}>
+                  {ficha.exposicao === 1 && "Primeiras marcas físicas — sutis, quase imperceptíveis. O poder começa a moldar o corpo."}
+                  {ficha.exposicao === 2 && "O corpo muda visivelmente. Bênçãos e maldições se equilibram. O retorno ainda é possível."}
+                  {ficha.exposicao === 3 && "⚠ Mutação total — beira o ponto de não-retorno. O poder é imenso. O controle, uma ilusão."}
+                </div>
+              )}
+            </div>
+
+            {/* SUPERIORES */}
+            <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 14 }}>
+              <div style={{ fontFamily: "'Cinzel',serif", fontSize: 11, color: G.gold, letterSpacing: 2, marginBottom: 8 }}>◈ ESSÊNCIAS SUPERIORES</div>
+              <div style={{ fontSize: 10, color: G.muted, fontFamily: "monospace", marginBottom: 5 }}>PRIMORDIAIS</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 10 }}>
+                {["Sabedoria","Inexistência","Perfeição","Vida","Morte","Espaço","Tempo"].map(s => (
+                  <span key={s} style={{ padding: "3px 9px", background: G.bg3, border: "1px solid #333", borderRadius: 12, fontSize: 10, color: "#888", fontFamily: "monospace" }}>{s}</span>
+                ))}
+              </div>
+              <div style={{ fontSize: 10, color: G.muted, fontFamily: "monospace", marginBottom: 5 }}>DO OUTRO LADO</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {["Inexistência","Caótica","Nulo","???"].map(s => (
+                  <span key={s} style={{ padding: "3px 9px", background: G.bg3, border: "1px solid #333", borderRadius: 12, fontSize: 10, color: "#555", fontFamily: "monospace" }}>{s}</span>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// FICHAS — ABA INVENTÁRIO
+// ─────────────────────────────────────────────
+function TabInventario({ ficha, onUpdate, arsenal, onArsenal }) {
+  const [search, setSearch]           = useState("");
+  const [arsenalOpen, setArsenalOpen] = useState(false);
+  const [localEdit, setLocalEdit]     = useState(null);
+  const [localOpen, setLocalOpen]     = useState(false);
+
+  const addFromArsenal = (it) => {
+    const idx = ficha.inventario.findIndex(x => x.tipo === "arsenal" && x.itemId === it.id);
+    if (idx >= 0) {
+      const inv = ficha.inventario.map((x, i) => i === idx ? Object.assign({}, x, { qtd: (x.qtd || 1) + 1 }) : x);
+      onUpdate({ inventario: inv });
+    } else {
+      onUpdate({ inventario: [...ficha.inventario, { id: uid(), tipo: "arsenal", itemId: it.id, qtd: 1 }] });
+    }
+    setArsenalOpen(false);
+  };
+
+  const saveLocal = (d) => {
+    const idx = ficha.inventario.findIndex(x => x.id === d.id);
+    if (idx >= 0) {
+      const inv = ficha.inventario.map((x, i) => i === idx ? Object.assign({}, x, { item: d }) : x);
+      onUpdate({ inventario: inv });
+    } else {
+      onUpdate({ inventario: [...ficha.inventario, { id: d.id, tipo: "local", item: d, qtd: 1 }] });
+    }
+    setLocalOpen(false);
+  };
+
+  const exportToArsenal = (entry) => {
+    if (window.confirm("Exportar \"" + entry.item.nome + "\" para o Arsenal global?")) {
+      const item = Object.assign({}, entry.item, { id: uid(), criado: Date.now() });
+      onArsenal([item, ...arsenal]);
+    }
+  };
+
+  const removeInv = (id) => onUpdate({ inventario: ficha.inventario.filter(x => x.id !== id) });
+  const upQtd     = (id, v) => onUpdate({ inventario: ficha.inventario.map(x => x.id === id ? Object.assign({}, x, { qtd: Math.max(0, v) }) : x) });
+
+  const entries = ficha.inventario.filter(x => {
+    const n = x.tipo === "arsenal" ? arsenal.find(a => a.id === x.itemId)?.nome : x.item?.nome;
+    return !search || (n || "").toLowerCase().includes(search.toLowerCase());
+  });
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar no inventário..." style={Object.assign({}, inpStyle(), { flex: 1 })} />
+        <button style={btnStyle()} onClick={() => setArsenalOpen(true)}>+ Do Arsenal</button>
+        <button style={btnStyle({ borderColor: "#2ecc7144", color: "#2ecc71" })} onClick={() => { setLocalEdit(null); setLocalOpen(true); }}>+ Item Local</button>
+      </div>
+
+      {entries.length === 0 && (
+        <div style={{ textAlign: "center", color: G.muted, fontStyle: "italic", padding: 40, background: G.bg2, borderRadius: 10, border: "1px solid " + G.border }}>
+          Inventário vazio — adicione itens do Arsenal ou crie itens locais.
+        </div>
+      )}
+
+      <div style={{ display: "grid", gap: 8 }}>
+        {entries.map(entry => {
+          const isA  = entry.tipo === "arsenal";
+          const item = isA ? arsenal.find(a => a.id === entry.itemId) : entry.item;
+
+          if (!item) {
+            return (
+              <div key={entry.id} style={{ color: G.muted, fontFamily: "monospace", fontSize: 11, padding: "8px 12px", background: G.bg2, borderRadius: 8 }}>
+                Item não encontrado
+                <button onClick={() => removeInv(entry.id)} style={{ marginLeft: 8, background: "transparent", border: "none", color: "#e74c3c", cursor: "pointer" }}>✕</button>
+              </div>
+            );
+          }
+
+          const cor = RANK_COR[item.rank] || "#7f8c8d";
+          return (
+            <div key={entry.id} style={{ background: G.bg2, border: "1px solid " + (isA ? cor + "33" : G.border), borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ fontSize: 22, flexShrink: 0 }}>{item.icone || "📦"}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold2 }}>{item.nome}</span>
+                  {isA  && <span style={{ fontSize: 9, color: cor, fontFamily: "monospace", padding: "1px 5px", background: cor + "22", borderRadius: 8 }}>Arsenal</span>}
+                  {!isA && <span style={{ fontSize: 9, color: "#2ecc71", fontFamily: "monospace", padding: "1px 5px", background: "#2ecc7122", borderRadius: 8 }}>Local</span>}
+                </div>
+                <div style={{ fontSize: 10, color: G.muted, fontFamily: "monospace" }}>
+                  {item.tipo}{item.dano ? " · Dano: " + item.dano : ""}{item.rank ? " · " + item.rank : ""}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                <button onClick={() => upQtd(entry.id, (entry.qtd || 1) - 1)} style={btnStyle({ padding: "3px 8px", fontSize: 12 })}>−</button>
+                <span style={{ fontFamily: "monospace", fontSize: 13, color: G.gold, width: 28, textAlign: "center" }}>{entry.qtd || 1}</span>
+                <button onClick={() => upQtd(entry.id, (entry.qtd || 1) + 1)} style={btnStyle({ padding: "3px 8px", fontSize: 12 })}>+</button>
+                {!isA && <button onClick={() => { setLocalEdit(entry.item); setLocalOpen(true); }} style={btnStyle({ padding: "3px 8px", fontSize: 11, borderColor: "#3498db44", color: "#3498db" })}>✎</button>}
+                {!isA && <button onClick={() => exportToArsenal(entry)} style={btnStyle({ padding: "3px 8px", fontSize: 11, borderColor: "#f39c1244", color: "#f39c12" })}>↑</button>}
+                <button onClick={() => removeInv(entry.id)} style={btnStyle({ padding: "3px 8px", fontSize: 11, borderColor: "#e74c3c44", color: "#e74c3c" })}>✕</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Modal Arsenal Picker */}
+      {arsenalOpen && (
+        <Modal title="Adicionar do Arsenal" onClose={() => setArsenalOpen(false)} wide={true}>
+          {arsenal.length === 0 && (
+            <div style={{ textAlign: "center", color: G.muted, fontFamily: "monospace", padding: 20 }}>
+              Arsenal vazio. Crie itens na aba Arsenal.
+            </div>
+          )}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, maxHeight: "60vh", overflow: "auto" }}>
+            {arsenal.map(it => {
+              const cor = RANK_COR[it.rank] || "#7f8c8d";
+              return (
+                <div
+                  key={it.id}
+                  onClick={() => addFromArsenal(it)}
+                  style={{ background: G.bg2, border: "1px solid " + cor + "33", borderRadius: 8, padding: 10, cursor: "pointer" }}
+                >
+                  <div style={{ fontSize: 20, marginBottom: 4 }}>{it.icone || "📦"}</div>
+                  <div style={{ fontFamily: "'Cinzel',serif", fontSize: 11, color: G.gold2, marginBottom: 2 }}>{it.nome}</div>
+                  <div style={{ fontSize: 9, color: cor, fontFamily: "monospace" }}>{it.tipo} · {it.rank}</div>
+                </div>
+              );
+            })}
+          </div>
+        </Modal>
+      )}
+
+      {localOpen && <ItemEditor item={localEdit} onSave={saveLocal} onClose={() => setLocalOpen(false)} />}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// FICHAS SECTION
+// ─────────────────────────────────────────────
+const FICHA_TABS = [
+  { id: "status",     label: "Status" },
+  { id: "atributos",  label: "Atributos & Perícias" },
+  { id: "identidade", label: "Identidade" },
+  { id: "essencia",   label: "Essência" },
+  { id: "inventario", label: "Inventário" },
+];
+
+function FichasSection({ fichas, onFichas, arsenal, onArsenal }) {
+  const [sel, setSel]           = useState(null);
+  const [search, setSearch]     = useState("");
+  const [tab, setTab]           = useState("status");
+  const [createOpen, setCreate] = useState(false);
+  const [newNome, setNewNome]   = useState("");
+
+  const ficha = fichas.find(f => f.id === sel) || null;
+
+  const updateFicha = (partial) => {
+    onFichas(fichas.map(f => f.id === sel ? Object.assign({}, f, partial, { atualizado: Date.now() }) : f));
+  };
+
+  const criar = () => {
+    const f = novaFicha(newNome || "Novo Personagem");
+    onFichas([f, ...fichas]);
+    setSel(f.id);
+    setCreate(false);
+    setNewNome("");
+  };
+
+  const duplicar = (f) => {
+    const n = Object.assign({}, f, { id: uid(), nome: f.nome + " (cópia)", criado: Date.now(), atualizado: Date.now() });
+    onFichas([n, ...fichas]);
+  };
+
+  const apagar = (id) => {
+    onFichas(fichas.filter(x => x.id !== id));
+    if (sel === id) setSel(null);
+  };
+
+  const filtered = fichas.filter(f => {
+    if (!search) return true;
+    return (f.nome + " " + f.raca + " " + f.classes.join(" ")).toLowerCase().includes(search.toLowerCase());
+  });
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", height: "calc(100vh - 54px)" }}>
+
+      {/* SIDEBAR */}
+      <div style={{ borderRight: "1px solid " + G.border, display: "flex", flexDirection: "column", overflow: "hidden", background: G.bg2 }}>
+        <div style={{ padding: "12px 10px 8px", borderBottom: "1px solid " + G.border }}>
+          <button
+            style={Object.assign({}, btnStyle(), { width: "100%", padding: "8px", marginBottom: 8, display: "block" })}
+            onClick={() => setCreate(true)}
+          >+ Nova Ficha</button>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Pesquisar fichas..." style={inpStyle()} />
+        </div>
+
+        <div style={{ flex: 1, overflow: "auto", padding: 8 }}>
+          {filtered.length === 0 && (
+            <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 11, textAlign: "center", padding: 16 }}>Nenhuma ficha.</div>
+          )}
+          {filtered.map(f => {
+            const isSel = sel === f.id;
+            const ec    = f.essencia?.cor || null;
+            return (
+              <div
+                key={f.id}
+                onClick={() => { setSel(isSel ? null : f.id); setTab("status"); }}
+                style={{
+                  background: isSel ? "#1a1208" : G.bg3,
+                  border: "1px solid " + (isSel ? "#c8a96e44" : G.border),
+                  borderRadius: 9, padding: "9px 11px", marginBottom: 6,
+                  cursor: "pointer", position: "relative",
+                }}
+              >
+                <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: isSel ? G.gold : G.gold2, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.nome}</div>
+                <div style={{ fontSize: 10, color: G.muted, fontFamily: "monospace" }}>
+                  {f.raca}{f.classes.length > 0 ? " · " + f.classes.slice(0, 2).join("/") : ""}
+                </div>
+                {ec && <div style={{ position: "absolute", right: 8, top: 8, width: 8, height: 8, borderRadius: "50%", background: ec, boxShadow: "0 0 6px " + ec }} />}
+                {isSel && (
+                  <div style={{ display: "flex", gap: 5, marginTop: 8 }}>
+                    <button
+                      onClick={e => { e.stopPropagation(); duplicar(f); }}
+                      style={Object.assign({}, btnStyle({ padding: "3px 8px", fontSize: 10 }), { flex: 1 })}
+                    >⊕ Dup</button>
+                    <button
+                      onClick={e => { e.stopPropagation(); if (window.confirm("Apagar \"" + f.nome + "\"?")) apagar(f.id); }}
+                      style={btnStyle({ padding: "3px 8px", fontSize: 10, borderColor: "#e74c3c44", color: "#e74c3c" })}
+                    >✕</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ padding: 8, borderTop: "1px solid " + G.border, fontSize: 10, color: G.muted, fontFamily: "monospace", textAlign: "center" }}>
+          {fichas.length} personagens
+        </div>
+      </div>
+
+      {/* ÁREA PRINCIPAL */}
+      <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {!ficha && (
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: G.muted, fontStyle: "italic", fontSize: 16 }}>
+            Selecione ou crie uma ficha
+          </div>
+        )}
+        {ficha && (
+          <>
+            {/* HEADER DA FICHA */}
+            <div style={{ padding: "10px 20px", borderBottom: "1px solid " + G.border, background: G.bg2, display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+              <div style={{ flex: 1 }}>
+                <input
+                  value={ficha.nome}
+                  onChange={e => updateFicha({ nome: e.target.value })}
+                  style={{ background: "transparent", border: "none", outline: "none", fontFamily: "'Cinzel',serif", fontSize: 20, color: G.gold2, width: "100%" }}
+                />
+                <div style={{ fontSize: 11, color: G.muted, fontFamily: "monospace" }}>
+                  {ficha.raca}
+                  {ficha.classes.length > 0 ? " · " + ficha.classes.join(" / ") : ""}
+                  {ficha.essencia ? " · " + ficha.essencia.nome : ""}
+                </div>
+              </div>
+              {ficha.essencia && (
+                <div style={{ padding: "5px 12px", borderRadius: 6, background: ficha.essencia.cor + "22", border: "1px solid " + ficha.essencia.cor + "55", color: ficha.essencia.cor, fontFamily: "'Cinzel',serif", fontSize: 10, letterSpacing: 1 }}>
+                  ⬡ {ficha.essencia.nome}
+                </div>
+              )}
+            </div>
+
+            {/* TABS */}
+            <div style={{ display: "flex", borderBottom: "1px solid " + G.border, background: G.bg2, flexShrink: 0, overflowX: "auto" }}>
+              {FICHA_TABS.map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => setTab(t.id)}
+                  style={{
+                    padding: "10px 16px", background: "transparent", border: "none",
+                    borderBottom: tab === t.id ? "2px solid #c8a96e" : "2px solid transparent",
+                    color: tab === t.id ? G.gold : G.muted,
+                    fontFamily: "'Cinzel',serif", fontSize: 11, letterSpacing: 1,
+                    cursor: "pointer", whiteSpace: "nowrap",
+                  }}
+                >{t.label}</button>
+              ))}
+            </div>
+
+            {/* CONTEÚDO DA ABA */}
+            <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
+              {tab === "status"     && <TabStatus     ficha={ficha} onUpdate={updateFicha} />}
+              {tab === "atributos"  && <TabAtributos  ficha={ficha} onUpdate={updateFicha} />}
+              {tab === "identidade" && <TabIdentidade ficha={ficha} onUpdate={updateFicha} />}
+              {tab === "essencia"   && <TabEssencia   ficha={ficha} onUpdate={updateFicha} />}
+              {tab === "inventario" && <TabInventario ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} onArsenal={onArsenal} />}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* MODAL CRIAR FICHA */}
+      {createOpen && (
+        <Modal title="◈ Nova Ficha de Personagem" onClose={() => setCreate(false)}>
+          <label style={{ color: G.muted, fontFamily: "monospace", fontSize: 12, display: "block", marginBottom: 6 }}>Nome do personagem</label>
+          <input
+            value={newNome}
+            onChange={e => setNewNome(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && criar()}
+            placeholder="Ex: Alaric von Grave..."
+            style={Object.assign({}, inpStyle(), { fontSize: 16, marginBottom: 16 })}
+            autoFocus
+          />
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button style={btnStyle({ background: "transparent", border: "1px solid #333", color: G.muted })} onClick={() => setCreate(false)}>Cancelar</button>
+            <button style={btnStyle()} onClick={criar}>Criar Personagem</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// APP ROOT
+// ─────────────────────────────────────────────
 export default function VasterraApp() {
   const [section, setSection] = useState("fichas");
-  const [fichas, setFichas] = useState([]);
+  const [fichas,  setFichas]  = useState([]);
   const [arsenal, setArsenal] = useState([]);
-  const [loaded, setLoaded] = useState(false);
+  const [loaded,  setLoaded]  = useState(false);
 
   useEffect(() => {
     (async () => {
       const f = await stGet("vasterra:fichas");
       const a = await stGet("vasterra:arsenal");
-      if (Array.isArray(f)) setFichas(f);
-      if (Array.isArray(a)) setArsenal(a);
+      if (f) setFichas(f);
+      if (a) setArsenal(a);
       setLoaded(true);
     })();
   }, []);
@@ -235,27 +1432,49 @@ export default function VasterraApp() {
   useEffect(() => { if (loaded) stSet("vasterra:arsenal", arsenal); }, [arsenal, loaded]);
 
   if (!loaded) {
-    return <div style={{ minHeight: "100vh", background: G.bg, color: G.gold, display: "grid", placeItems: "center" }}>VASTERRA</div>;
+    return (
+      <div style={{ background: G.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: G.gold, fontFamily: "'Cinzel Decorative',serif", fontSize: 18, letterSpacing: 4 }}>
+        VASTERRA
+      </div>
+    );
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: G.bg, color: G.text }}>
+    <div style={{ background: G.bg, minHeight: "100vh", color: G.text }}>
       <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&display=swap');
-      * { box-sizing: border-box; }
-      body { margin: 0; background: #050505; }
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=Cinzel+Decorative:wght@400;700&display=swap');
+        * { box-sizing: border-box; }
+        body { margin: 0; background: #050505; }
+        input[type=number]::-webkit-inner-spin-button { opacity: 0.3; }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: #0a0a0a; }
+        ::-webkit-scrollbar-thumb { background: rgba(200,169,110,.25); border-radius: 2px; }
+        select option { background: #0a0a0a; color: #e8d5b0; }
       `}</style>
 
-      <header style={{ height: 54, borderBottom: `1px solid ${G.border}`, background: "#060606", display: "flex", alignItems: "center", padding: "0 20px", gap: 10 }}>
-        <strong style={{ letterSpacing: 2, color: G.gold }}>VASTERRA</strong>
-        <button style={btnStyle({ background: "transparent", border: "none", color: section === "fichas" ? G.gold : G.muted })} onClick={() => setSection("fichas")}>FICHAS</button>
-        <button style={btnStyle({ background: "transparent", border: "none", color: section === "arsenal" ? G.gold : G.muted })} onClick={() => setSection("arsenal")}>ARSENAL</button>
-      </header>
+      {/* NAV */}
+      <div style={{ height: 54, borderBottom: "1px solid " + G.border, background: "#060606", display: "flex", alignItems: "center", padding: "0 20px", gap: 24, position: "sticky", top: 0, zIndex: 50 }}>
+        <div style={{ fontFamily: "'Cinzel Decorative',serif", fontSize: 16, color: G.gold, letterSpacing: 4, marginRight: 8 }}>VASTERRA</div>
+        {[{ id: "fichas", label: "FICHAS" }, { id: "arsenal", label: "ARSENAL" }].map(s => (
+          <button
+            key={s.id}
+            onClick={() => setSection(s.id)}
+            style={{
+              background: "transparent", border: "none",
+              borderBottom: section === s.id ? "2px solid #c8a96e" : "2px solid transparent",
+              color: section === s.id ? G.gold : G.muted,
+              fontFamily: "'Cinzel',serif", fontSize: 12, letterSpacing: 3,
+              cursor: "pointer", padding: "0 4px", height: 54,
+            }}
+          >{s.label}</button>
+        ))}
+        <div style={{ marginLeft: "auto", fontSize: 10, color: G.muted, fontFamily: "monospace" }}>
+          {fichas.length} fichas · {arsenal.length} itens
+        </div>
+      </div>
 
-      <main style={{ padding: 16 }}>
-        {section === "fichas" && <FichasPanel fichas={fichas} setFichas={setFichas} />}
-        {section === "arsenal" && <ArsenalPanel arsenal={arsenal} setArsenal={setArsenal} />}
-      </main>
+      {section === "fichas"  && <FichasSection  fichas={fichas}  onFichas={setFichas}  arsenal={arsenal} onArsenal={setArsenal} />}
+      {section === "arsenal" && <ArsenalSection arsenal={arsenal} onArsenal={setArsenal} />}
     </div>
   );
 }
