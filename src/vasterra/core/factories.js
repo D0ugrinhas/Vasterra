@@ -1,0 +1,57 @@
+import { ATRIBUTOS } from "../data/gameData";
+
+export const uid = () => Math.random().toString(36).slice(2, 10);
+
+export const novaFicha = (nome = "Novo Personagem") => ({
+  id: uid(),
+  nome,
+  raca: "Humano",
+  classes: [],
+  essencia: null,
+  exposicao: 0,
+  aparencia: "",
+  historico: "",
+  notas: "",
+  status: {
+    VIT:  { val: 20, max: 20 },
+    EST:  { val: 15, max: 15 },
+    MAN:  { val: 10, max: 10 },
+    SAN:  { val: 20, max: 20 },
+    CONS: { val: 15, max: 15 },
+  },
+  atributos: Object.fromEntries(ATRIBUTOS.map((a) => [a.sigla, { val: 5, ae: false, ne: false }])),
+  pericias: {},
+  recursos: {
+    ACO: { total: 2, usado: 0 },
+    MOV: { total: 1, usado: 0 },
+    REA: { total: 1, usado: 0 },
+    ESF: { total: 1, usado: 0 },
+  },
+  inventario: [],
+  criado: Date.now(),
+  atualizado: Date.now(),
+});
+
+export const novoItem = () => ({
+  id: uid(),
+  nome: "Novo Item",
+  icone: "⚔️",
+  tipo: "Arma",
+  rank: "Comum",
+  peso: 0,
+  valor: "",
+  dano: "",
+  critico: "",
+  alcance: "",
+  tamanho: "",
+  defesa: "",
+  regiao: "",
+  efeitoCorpo: "",
+  tags: [],
+  quantidade: 1,
+  consumo: 1,
+  bonus: [],
+  efeitos: [],
+  descricao: "",
+  criado: Date.now(),
+});
