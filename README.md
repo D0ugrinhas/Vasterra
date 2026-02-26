@@ -36,6 +36,19 @@ Abra:
 https://stackblitz.com/github/SEU_USUARIO/SEU_REPO
 ```
 
+
+## Troubleshooting
+
+Se `npm install` retornar `403 Forbidden` no ambiente atual, isso normalmente indica bloqueio de registry/rede da própria infraestrutura, não erro do projeto.
+
+- Tente novamente em outra rede/ambiente (GitHub Codespaces, máquina local, CI com acesso ao npm).
+- Depois execute:
+
+```bash
+npm install
+npm run build
+```
+
 ## Próximos passos de modularização
 
 A base já está separada por responsabilidade. Para continuar evoluindo:
