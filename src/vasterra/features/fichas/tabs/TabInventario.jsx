@@ -5,9 +5,9 @@ import { G, inpStyle, btnStyle } from "../../../ui/theme";
 import { RANK_COR } from "../../../data/gameData";
 import { Modal, ItemIcon } from "../../shared/components";
 import { ItemEditor } from "../../arsenal/ItemEditor";
+import { ArsenalDetalhe } from "../../arsenal/ArsenalDetalhe";
 
 const blankAdj = () => ({ id: uid(), nome: "", tipo: "peso", valor: 0 });
-
 const sumByType = (list, type) => (list || []).filter((x) => x.tipo === type).reduce((s, x) => s + (Number(x.valor) || 0), 0);
 
 function VastosCalc({ vastos, onUpdate }) {
@@ -49,6 +49,7 @@ export function TabInventario({ ficha, onUpdate, arsenal, onArsenal, onNotify, o
   const [arsenalOpen, setArsenalOpen] = useState(false);
   const [localEdit, setLocalEdit] = useState(null);
   const [localOpen, setLocalOpen] = useState(false);
+  const [detail, setDetail] = useState(null);
   const cfg = ficha.inventarioCfg || { slotsBase: 10, capacidadePorForca: 5, ajustes: [], vastos: { cobre: 0, prata: 0, ouro: 0, platina: 0 } };
 
   const addFromArsenal = (it) => {
@@ -64,7 +65,7 @@ export function TabInventario({ ficha, onUpdate, arsenal, onArsenal, onNotify, o
 
   const saveLocal = (d) => {
     const idx = ficha.inventario.findIndex((x) => x.id === d.id);
-    if (idx >= 0) onUpdate({ inventario: ficha.inventario.map((x, i) => (i === idx ? { ...x, item: d } : x)) });
+    if (idx >= 0) onUpdate({ inventario: ficha.inventario.map((x, i) => (i === idx ? { ...x, item: d, tipo: "local" } : x)) });
     else onUpdate({ inventario: [...ficha.inventario, { id: d.id, tipo: "local", item: d, qtd: 1 }] });
     setLocalOpen(false);
   };
@@ -77,14 +78,13 @@ export function TabInventario({ ficha, onUpdate, arsenal, onArsenal, onNotify, o
     const forca = Number(ficha.atributos?.FOR?.val || 0);
     const usedWeight = entries.reduce((sum, { entry, item }) => sum + (Number(item.peso || 0) * (entry.qtd || 1)), 0);
     const usedSlots = entries.reduce((sum, { entry, item }) => sum + (Number(item.slots || 1) * (entry.qtd || 1)), 0);
-    const buffPeso = sumByType(cfg.ajustes, "peso");
     const buffSlots = sumByType(cfg.ajustes, "slot");
     const buffCapFor = sumByType(cfg.ajustes, "capacidadePorForca");
     const buffCap = sumByType(cfg.ajustes, "capacidade");
     const capForca = Number(cfg.capacidadePorForca || 5) + buffCapFor;
     const maxWeight = Math.max(0, forca * capForca + buffCap);
     const maxSlots = Math.max(0, Number(cfg.slotsBase || 10) + buffSlots);
-    return { usedWeight, usedSlots, maxWeight, maxSlots, buffPeso };
+    return { usedWeight, usedSlots, maxWeight, maxSlots };
   }, [cfg, entries, ficha.atributos?.FOR?.val]);
 
   const removeInv = (id) => onUpdate({ inventario: ficha.inventario.filter((x) => x.id !== id) });
@@ -93,6 +93,12 @@ export function TabInventario({ ficha, onUpdate, arsenal, onArsenal, onNotify, o
   const addAjuste = () => onUpdate({ inventarioCfg: { ...cfg, ajustes: [...(cfg.ajustes || []), blankAdj()] } });
   const upAjuste = (id, patch) => onUpdate({ inventarioCfg: { ...cfg, ajustes: (cfg.ajustes || []).map((a) => (a.id === id ? { ...a, ...patch } : a)) } });
   const delAjuste = (id) => onUpdate({ inventarioCfg: { ...cfg, ajustes: (cfg.ajustes || []).filter((a) => a.id !== id) } });
+
+  const makeLocalFromArsenal = (entry, item) => {
+    const local = { ...item, id: uid(), nome: `${item.nome} (local)` };
+    onUpdate({ inventario: ficha.inventario.map((x) => (x.id === entry.id ? { ...x, tipo: "local", item: local, itemId: undefined } : x)) });
+    onNotify?.("Item do arsenal convertido para edição local.", "success");
+  };
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 12 }}>
@@ -150,8 +156,10 @@ export function TabInventario({ ficha, onUpdate, arsenal, onArsenal, onNotify, o
                   <span style={{ fontFamily: "monospace", width: 24, textAlign: "center" }}>{entry.qtd || 1}</span>
                   <button onClick={() => upQtd(entry.id, (entry.qtd || 1) + 1)} style={btnStyle({ padding: "2px 8px" })}>+</button>
                 </div>
-                <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+                <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <button onClick={() => setDetail(item)} style={btnStyle({ padding: "3px 8px", borderColor: "#7f8cff44", color: "#91a0ff" })}>Detalhes</button>
                   {!isA && <button onClick={() => { setLocalEdit(item); setLocalOpen(true); }} style={btnStyle({ padding: "3px 8px", borderColor: "#3498db44", color: "#3498db" })}>Editar</button>}
+                  {isA && <button onClick={() => makeLocalFromArsenal(entry, item)} style={btnStyle({ padding: "3px 8px", borderColor: "#2ecc7144", color: "#2ecc71" })}>Editar Local</button>}
                   {!isA && <button onClick={() => onArsenal([{ ...item, id: uid(), nome: item.nome + " (cópia arsenal)" }, ...arsenal])} style={btnStyle({ padding: "3px 8px", borderColor: "#9b59b644", color: "#bf8fe8" })}>Copiar p/ Arsenal</button>}
                   {!isA && <button onClick={() => onArsenal(arsenal.some((a) => a.nome === item.nome) ? arsenal.map((a) => (a.nome === item.nome ? { ...item, id: a.id } : a)) : arsenal)} style={btnStyle({ padding: "3px 8px", borderColor: "#f39c1244", color: "#f39c12" })}>Substituir mesmo nome</button>}
                   <button onClick={() => onConfirmAction?.({ title: "Remover item", message: `Remover ${item.nome}?`, onConfirm: () => removeInv(entry.id) })} style={btnStyle({ marginLeft: "auto", padding: "3px 8px", borderColor: "#e74c3c44", color: "#e74c3c" })}>Apagar</button>
@@ -173,6 +181,7 @@ export function TabInventario({ ficha, onUpdate, arsenal, onArsenal, onNotify, o
       )}
 
       {localOpen && <ItemEditor item={localEdit} onSave={saveLocal} onClose={() => setLocalOpen(false)} />}
+      {detail && <Modal title={`Detalhes: ${detail.nome}`} onClose={() => setDetail(null)} wide><ArsenalDetalhe item={detail} onEdit={() => { setLocalEdit(detail); setLocalOpen(true); setDetail(null); }} onDup={() => {}} onDel={() => {}} /></Modal>}
     </div>
   );
 }

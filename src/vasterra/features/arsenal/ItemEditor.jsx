@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { ARSENAL_TIPOS, ARSENAL_RANKS, RANK_COR } from "../../data/gameData";
+import { ARSENAL_TIPOS, ARSENAL_RANKS, RANK_COR, ESSENCIAS_VIRTUDES, ESSENCIAS_PECADOS } from "../../data/gameData";
 import { novoItem, uid } from "../../core/factories";
 import { parseMechanicalEffect } from "../../core/effects";
 import { G, inpStyle, btnStyle } from "../../ui/theme";
@@ -7,12 +7,18 @@ import { Modal } from "../shared/components";
 
 const blankEffect = () => ({ id: uid(), nome: "", descricao: "", valor: "", ativo: true });
 
+const WEAPON_TYPES = ["Espada Longa", "Espada Pesada", "Arco", "Cajado", "Glaive", "Polearm", "Machado", "Adaga", "Lança", "Martelo", "Outros"];
+const BODY_REGIONS = ["Cabeça", "Torso", "Braço Direito", "Braço Esquerdo", "Mão Direita", "Mão Esquerda", "Pernas", "Pés", "Costas", "Outro"];
+
 function VastosInput({ value = {}, onChange }) {
   const set = (k, v) => onChange({ ...(value || {}), [k]: Math.max(0, Number(v) || 0) });
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>
       {["cobre", "prata", "ouro", "platina"].map((k) => (
-        <input key={k} type="number" min={0} value={Number(value?.[k] || 0)} onChange={(e) => set(k, e.target.value)} placeholder={k} style={inpStyle({ textTransform: "capitalize" })} />
+        <div key={k}>
+          <label style={{ display: "block", fontSize: 10, color: G.muted, marginBottom: 2 }}>{k}</label>
+          <input type="number" min={0} value={Number(value?.[k] || 0)} onChange={(e) => set(k, e.target.value)} style={inpStyle()} />
+        </div>
       ))}
     </div>
   );
@@ -33,13 +39,13 @@ function EffectListEditor({ title, list, onChange }) {
           const parsed = parseMechanicalEffect(ef.valor || "");
           return (
             <div key={ef.id} style={{ border: "1px solid #2a2a2a", borderRadius: 8, padding: 8, display: "grid", gap: 6 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px auto", gap: 6 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 140px auto", gap: 6 }}>
                 <input value={ef.nome} onChange={(e) => up(ef.id, { nome: e.target.value })} placeholder="Nome" style={inpStyle()} />
                 <input value={ef.descricao} onChange={(e) => up(ef.id, { descricao: e.target.value })} placeholder="Descrição" style={inpStyle()} />
-                <input value={ef.valor} onChange={(e) => up(ef.id, { valor: e.target.value })} placeholder="+4FOR" style={inpStyle()} />
+                <input value={ef.valor} onChange={(e) => up(ef.id, { valor: e.target.value })} placeholder="+4FOR / +5%ÉTER" style={inpStyle()} />
                 <button onClick={() => del(ef.id)} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c", padding: "4px 8px" })}>✕</button>
               </div>
-              <div style={{ fontFamily: "monospace", fontSize: 10, color: parsed ? "#6fe39b" : "#777" }}>{parsed ? `Aplica ${parsed.value >= 0 ? "+" : ""}${parsed.value} em ${parsed.key} (${parsed.scope}).` : "Formato sugerido: +4FOR, -2VIT, +3AGILIDADE"}</div>
+              <div style={{ fontFamily: "monospace", fontSize: 10, color: parsed ? "#6fe39b" : "#777" }}>{parsed ? `Aplica ${parsed.raw || `${parsed.value >= 0 ? "+" : ""}${parsed.value}${parsed.key}`}` : "Aceita: +4FOR, -2VIT, +5%SABEDORIA, +5%ÉTER"}</div>
             </div>
           );
         })}
@@ -47,6 +53,8 @@ function EffectListEditor({ title, list, onChange }) {
     </div>
   );
 }
+
+const allEssencias = [...ESSENCIAS_VIRTUDES, ...ESSENCIAS_PECADOS];
 
 export function ItemEditor({ item, onSave, onClose }) {
   const [d, setD] = useState(() => {
@@ -57,42 +65,115 @@ export function ItemEditor({ item, onSave, onClose }) {
       efeitos: (base.efeitos || []).map((e) => ({ id: e.id || uid(), nome: e.nome || e.titulo || "", descricao: e.descricao || e.desc || "", valor: e.valor || "", ativo: e.ativo !== false })),
       slots: Number(base.slots || 1),
       vastos: base.vastos || { cobre: 0, prata: 0, ouro: 0, platina: 0 },
+      iconeModo: base.iconeModo || "emoji",
+      subtipo: base.subtipo || "",
+      comentario: base.comentario || "",
+      regiaoEfeito: base.regiaoEfeito || "",
+      regiaoEfeitoOutro: base.regiaoEfeitoOutro || "",
+      empilhavel: base.empilhavel ?? true,
+      quantidadeMax: Number(base.quantidadeMax || 1),
+      gastoPorUso: Number(base.gastoPorUso || 1),
+      consumoTipo: base.consumoTipo || "quantidade",
+      essenciaAtribuida: base.essenciaAtribuida || "",
     };
   });
 
   const up = (k, v) => setD((p) => ({ ...p, [k]: v }));
   const isArma = d.tipo === "Arma";
-  const isArmadura = d.tipo === "Armadura";
+  const isArmaduraLike = ["Armadura", "Vestimenta", "Acessório", "Marcas"].includes(d.tipo);
+  const isConsumivel = d.tipo === "Consumível";
 
   const parsedCount = useMemo(() => [...d.bonus, ...d.efeitos].filter((e) => parseMechanicalEffect(e.valor || "")).length, [d]);
+
+  const onUploadIcon = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => up("iconeData", String(reader.result || ""));
+    reader.readAsDataURL(file);
+  };
 
   return (
     <Modal title={item ? "Editar Item" : "Criar Item"} onClose={onClose} wide>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         <div style={{ display: "grid", gap: 8 }}>
-          <input value={d.nome} onChange={(e) => up("nome", e.target.value)} placeholder="Nome do item" style={inpStyle()} />
+          <div>
+            <label style={{ display: "block", color: G.muted, fontSize: 11, marginBottom: 4 }}>Nome do item</label>
+            <input value={d.nome} onChange={(e) => up("nome", e.target.value)} placeholder="Nome do item" style={inpStyle()} />
+          </div>
+          <div>
+            <label style={{ display: "block", color: G.muted, fontSize: 11, marginBottom: 4 }}>Comentário de Rank (frase de efeito)</label>
+            <input value={d.comentario} onChange={(e) => up("comentario", e.target.value)} placeholder="Ex: Forjada para reis caídos." style={inpStyle()} />
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             <select value={d.tipo} onChange={(e) => up("tipo", e.target.value)} style={inpStyle()}>{ARSENAL_TIPOS.map((t) => <option key={t}>{t}</option>)}</select>
             <select value={d.rank} onChange={(e) => up("rank", e.target.value)} style={inpStyle({ color: RANK_COR[d.rank] || G.text })}>{ARSENAL_RANKS.map((r) => <option key={r}>{r}</option>)}</select>
           </div>
+
+          {isArma && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <select value={d.subtipo || ""} onChange={(e) => up("subtipo", e.target.value)} style={inpStyle()}>
+                <option value="">Tipo de arma</option>
+                {WEAPON_TYPES.map((w) => <option key={w} value={w}>{w}</option>)}
+              </select>
+              {d.subtipo === "Outros" && <input value={d.subtipoOutro || ""} onChange={(e) => up("subtipoOutro", e.target.value)} placeholder="Nome próprio" style={inpStyle()} />}
+            </div>
+          )}
+
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             <input type="number" min={0} step={0.1} value={Number(d.peso || 0)} onChange={(e) => up("peso", Number(e.target.value) || 0)} placeholder="Peso" style={inpStyle()} />
             <input type="number" min={1} value={Number(d.slots || 1)} onChange={(e) => up("slots", Math.max(1, Number(e.target.value) || 1))} placeholder="Slots" style={inpStyle()} />
           </div>
+
           {isArma && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><input value={d.dano || ""} onChange={(e) => up("dano", e.target.value)} placeholder="Dano" style={inpStyle()} /><input value={d.critico || ""} onChange={(e) => up("critico", e.target.value)} placeholder="Crítico" style={inpStyle()} /></div>}
-          {isArmadura && <input value={d.defesa || ""} onChange={(e) => up("defesa", e.target.value)} placeholder="Defesa" style={inpStyle()} />}
-          <input value={d.regiao || ""} onChange={(e) => up("regiao", e.target.value)} placeholder="Região" style={inpStyle()} />
-          <textarea value={d.descricao || ""} onChange={(e) => up("descricao", e.target.value)} rows={4} placeholder="Descrição" style={inpStyle({ resize: "vertical" })} />
+          {isArmaduraLike && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <select value={d.regiaoEfeito || ""} onChange={(e) => up("regiaoEfeito", e.target.value)} style={inpStyle()}>
+                <option value="">Região do efeito</option>
+                {BODY_REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+              {(d.regiaoEfeito === "Outro") && <input value={d.regiaoEfeitoOutro || ""} onChange={(e) => up("regiaoEfeitoOutro", e.target.value)} placeholder="Outra região" style={inpStyle()} />}
+            </div>
+          )}
+
+          {isConsumivel && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <select value={String(d.empilhavel)} onChange={(e) => up("empilhavel", e.target.value === "true")} style={inpStyle()}><option value="true">Empilhável</option><option value="false">Não empilhável</option></select>
+              <input type="number" min={1} value={Number(d.quantidadeMax || 1)} onChange={(e) => up("quantidadeMax", Math.max(1, Number(e.target.value) || 1))} placeholder="Qtd Máx." style={inpStyle()} />
+              <select value={d.consumoTipo || "quantidade"} onChange={(e) => up("consumoTipo", e.target.value)} style={inpStyle()}><option value="quantidade">Consumo por quantidade</option><option value="desgaste">Consumo por desgaste</option></select>
+              <input type="number" min={1} value={Number(d.gastoPorUso || 1)} onChange={(e) => up("gastoPorUso", Math.max(1, Number(e.target.value) || 1))} placeholder="Gasto por uso" style={inpStyle()} />
+            </div>
+          )}
+
+          <div>
+            <label style={{ display: "block", color: G.muted, fontSize: 11, marginBottom: 4 }}>Descrição</label>
+            <textarea value={d.descricao || ""} onChange={(e) => up("descricao", e.target.value)} rows={4} placeholder="Descrição do item..." style={inpStyle({ resize: "vertical" })} />
+          </div>
         </div>
 
         <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ background: G.bg3, border: "1px solid " + G.border, borderRadius: 10, padding: 10 }}>
+            <div style={{ fontSize: 11, color: G.gold, marginBottom: 5 }}>Imagem / Ícone</div>
+            <select value={d.iconeModo || "emoji"} onChange={(e) => up("iconeModo", e.target.value)} style={{ ...inpStyle(), marginBottom: 6 }}>
+              <option value="emoji">Ícone (emoji)</option>
+              <option value="url">Imagem por URL</option>
+              <option value="upload">Imagem local</option>
+            </select>
+            {(d.iconeModo || "emoji") === "emoji" && <input value={d.icone || ""} onChange={(e) => up("icone", e.target.value)} placeholder="⚔️" style={inpStyle()} />}
+            {(d.iconeModo || "emoji") === "url" && <input value={d.iconeUrl || ""} onChange={(e) => up("iconeUrl", e.target.value)} placeholder="https://..." style={inpStyle()} />}
+            {(d.iconeModo || "emoji") === "upload" && <input type="file" accept="image/*" onChange={(e) => onUploadIcon(e.target.files?.[0])} style={inpStyle()} />}
+          </div>
+
           <div>
             <div style={{ fontSize: 11, color: G.gold, marginBottom: 5 }}>Preço em Vastos</div>
             <VastosInput value={d.vastos} onChange={(v) => up("vastos", v)} />
           </div>
+
           <div>
-            <div style={{ fontSize: 11, color: G.gold, marginBottom: 5 }}>Ícone</div>
-            <input value={d.icone || ""} onChange={(e) => up("icone", e.target.value)} placeholder="Emoji (ex: ⚔️)" style={inpStyle()} />
+            <div style={{ fontSize: 11, color: G.gold, marginBottom: 5 }}>Atribuir Essência</div>
+            <select value={d.essenciaAtribuida || ""} onChange={(e) => up("essenciaAtribuida", e.target.value)} style={inpStyle()}>
+              <option value="">Sem essência</option>
+              {allEssencias.map((es) => <option key={es.nome} value={es.nome}>{es.nome}</option>)}
+            </select>
           </div>
 
           <EffectListEditor title="Bônus" list={d.bonus} onChange={(next) => up("bonus", next)} />

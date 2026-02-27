@@ -121,7 +121,7 @@ export function ItemIcon({ item, size = 20 }) {
   if (item.iconeModo === "upload" && item.iconeData) {
     return <img src={item.iconeData} alt={item.nome} style={{ width: size, height: size, objectFit: "cover", borderRadius: 4 }} />;
   }
-  return <span style={{ fontSize: size }}>{item.icone || "📦"}</span>;
+  return <span style={{ fontSize: size }}>{item.icone || "?"}</span>;
 }
 
 export function BackgroundParticles() {
