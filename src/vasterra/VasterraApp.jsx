@@ -779,7 +779,7 @@ function TabEssencia({ ficha, onUpdate }) {
         {ESSENCIAS_VIRTUDES.map(es => <EssenciaBtn key={es.nome} es={es} sel={!!e && e.nome === es.nome} onClick={() => selectEssencia(es)} />)}
         <div style={{ fontSize: 10, color: "#c8a96e88", fontFamily: "monospace", marginTop: 10, marginBottom: 6, letterSpacing: 2 }}>💀 PECADOS</div>
         {ESSENCIAS_PECADOS.map(es => <EssenciaBtn key={es.nome} es={es} sel={!!e && e.nome === es.nome} onClick={() => selectEssencia(es)} />)}
-      </div>}
+      </div>
 
       {/* DETALHE */}
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1024,7 +1024,7 @@ function FichasSection({ fichas, onFichas, arsenal, onArsenal, onNotify, onConfi
     <div style={{ display: focusFicha ? "block" : "grid", gridTemplateColumns: "260px 1fr", height: "calc(100vh - 54px)" }}>
 
       {/* SIDEBAR */}
-      {!focus && <div style={{ borderRight: "1px solid " + G.border, display: "flex", flexDirection: "column", overflow: "hidden", background: G.bg2 }}>
+      {!focusFicha && <div style={{ borderRight: "1px solid " + G.border, display: "flex", flexDirection: "column", overflow: "hidden", background: G.bg2 }}>
         <div style={{ padding: "12px 10px 8px", borderBottom: "1px solid " + G.border }}>
           <button
             style={Object.assign({}, btnStyle(), { width: "100%", padding: "8px", marginBottom: 8, display: "block" })}
@@ -1080,7 +1080,8 @@ function FichasSection({ fichas, onFichas, arsenal, onArsenal, onNotify, onConfi
 
       {/* ÁREA PRINCIPAL */}
       <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {focusFicha && <div style={{ padding: "10px 16px 0" }}><HoverButton style={btnStyle({ padding: "4px 10px" })} onClick={() => setFocusFicha(false)}>← Voltar para fichas</HoverButton></div>}
+        {focusFicha && <div style={{ padding: "10px 16px 0" }}><HoverButton style={btnStyle({ padding: "4px 10px" })} onClick={() => { setFocusFicha(false); setSel(null); }}
+>← Voltar para fichas</HoverButton></div>}
         {!ficha && (
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: G.muted, fontStyle: "italic", fontSize: 16 }}>
             Selecione ou crie uma ficha
