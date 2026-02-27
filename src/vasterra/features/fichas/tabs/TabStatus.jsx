@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { STATUS_CFG, RECURSOS_CFG } from "../../../data/gameData";
+import { STATUS_CFG, RECURSOS_CFG, ATRIBUTOS } from "../../../data/gameData";
 import { G, inpStyle, btnStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
 import { StatusBar, ModificadoresEditor } from "../../shared/components";
