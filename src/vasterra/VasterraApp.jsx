@@ -20,6 +20,7 @@ import { G, inpStyle, btnStyle } from "./ui/theme";
 import { useFeedback } from "./hooks/useFeedback";
 import { ToastViewport, ConfirmWindow } from "./components/feedback/FeedbackUI";
 import { HoverButton } from "./components/primitives/Interactive";
+import { FichaCardInventory, getFichaTitulos } from "./components/fichas/FichaCardInventory";
 
 function Pill({ label, cor, small }) {
   return (
@@ -682,6 +683,10 @@ function TabAtributos({ ficha, onUpdate, inventarioNomes = [] }) {
 // ─────────────────────────────────────────────
 function TabIdentidade({ ficha, onUpdate }) {
   const [filtro, setFiltro] = useState("");
+  const [novoTitulo, setNovoTitulo] = useState("");
+
+  const titulos = getFichaTitulos(ficha);
+  const tituloSelecionado = ficha.tituloSelecionado || titulos[0] || "";
 
   const toggleClasse = (c) => {
     if (ficha.classes.includes(c)) onUpdate({ classes: ficha.classes.filter(x => x !== c) });
@@ -695,6 +700,19 @@ function TabIdentidade({ ficha, onUpdate }) {
     if (r === ficha.raca) return;
     if (racasExtras.includes(r)) onUpdate({ racasExtras: racasExtras.filter((x) => x !== r) });
     else onUpdate({ racasExtras: [...racasExtras, r] });
+  };
+
+  const addTitulo = () => {
+    const titulo = novoTitulo.trim();
+    if (!titulo) return;
+    if (titulos.includes(titulo)) return;
+    onUpdate({ titulos: [...titulos, titulo], tituloSelecionado: titulo });
+    setNovoTitulo("");
+  };
+
+  const removeTitulo = (titulo) => {
+    const next = titulos.filter((t) => t !== titulo);
+    onUpdate({ titulos: next, tituloSelecionado: (ficha.tituloSelecionado === titulo ? (next[0] || "") : ficha.tituloSelecionado) });
   };
 
   return (
@@ -714,6 +732,35 @@ function TabIdentidade({ ficha, onUpdate }) {
 
         <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 14 }}>
           <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 10 }}>◈ PERFIL</div>
+
+          <label style={{ color: G.muted, fontFamily: "monospace", fontSize: 11, display: "block", marginBottom: 4 }}>Títulos</label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 6, marginBottom: 6 }}>
+            <select
+              value={tituloSelecionado}
+              onChange={(e) => onUpdate({ tituloSelecionado: e.target.value, titulos })}
+              style={inpStyle()}
+            >
+              <option value="">Sem título</option>
+              {titulos.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <button onClick={addTitulo} style={btnStyle({ padding: "6px 10px" })}>Adicionar</button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 6, marginBottom: 10 }}>
+            <input
+              value={novoTitulo}
+              onChange={(e) => setNovoTitulo(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addTitulo()}
+              placeholder="Novo título..."
+              style={inpStyle()}
+            />
+            <button
+              onClick={() => tituloSelecionado && removeTitulo(tituloSelecionado)}
+              style={btnStyle({ padding: "6px 10px", borderColor: "#e74c3c44", color: "#ff6b5f" })}
+            >
+              Remover
+            </button>
+          </div>
+
           <label style={{ color: G.muted, fontFamily: "monospace", fontSize: 11, display: "block", marginBottom: 4 }}>Aparência física</label>
           <textarea value={ficha.aparencia} onChange={e => onUpdate({ aparencia: e.target.value })} rows={3} style={Object.assign({}, inpStyle(), { resize: "vertical", marginBottom: 8 })} />
           <label style={{ color: G.muted, fontFamily: "monospace", fontSize: 11, display: "block", marginBottom: 4 }}>Histórico / Background</label>
@@ -980,21 +1027,30 @@ const FICHA_TABS = [
 ];
 
 function FichasSection({ fichas, onFichas, arsenal, onArsenal, onNotify, onConfirmAction }) {
-  const [sel, setSel]           = useState(null);
-  const [search, setSearch]     = useState("");
-  const [tab, setTab]           = useState("status");
+  const [sel, setSel] = useState(null);
+  const [search, setSearch] = useState("");
+  const [tab, setTab] = useState("status");
   const [createOpen, setCreate] = useState(false);
-  const [newNome, setNewNome]   = useState("");
+  const [newNome, setNewNome] = useState("");
   const [focusFicha, setFocusFicha] = useState(false);
+  const [deleteMode, setDeleteMode] = useState(false);
+  const [selectedForDelete, setSelectedForDelete] = useState([]);
+  const [filters, setFilters] = useState({ tempo: "all", essencia: "all", classe: "all", raca: "all" });
 
-  const ficha = fichas.find(f => f.id === sel) || null;
+  const classesDisponiveis = [...new Set(fichas.flatMap((f) => f.classes || []))].sort();
+  const essenciasDisponiveis = [...new Set(fichas.map((f) => f.essencia?.nome).filter(Boolean))].sort();
+  const racasDisponiveis = [...new Set(fichas.map((f) => resolverNomeRaca(f.raca, f.racasExtras || [])))].sort();
+
+  const ficha = fichas.find((f) => f.id === sel) || null;
 
   const updateFicha = (partial) => {
-    onFichas(fichas.map(f => f.id === sel ? Object.assign({}, f, partial, { atualizado: Date.now() }) : f));
+    onFichas(fichas.map((f) => (f.id === sel ? Object.assign({}, f, partial, { atualizado: Date.now() }) : f)));
   };
 
   const criar = () => {
     const f = novaFicha(newNome || "Novo Personagem");
+    f.titulos = ["Aventureiro"];
+    f.tituloSelecionado = "Aventureiro";
     onFichas([f, ...fichas]);
     setSel(f.id);
     setFocusFicha(true);
@@ -1003,150 +1059,182 @@ function FichasSection({ fichas, onFichas, arsenal, onArsenal, onNotify, onConfi
     onNotify?.(`Ficha criada: ${f.nome}`, "success");
   };
 
-  const duplicar = (f) => {
-    const n = Object.assign({}, f, { id: uid(), nome: f.nome + " (cópia)", criado: Date.now(), atualizado: Date.now() });
+  const duplicarFicha = (f) => {
+    const titulos = getFichaTitulos(f);
+    const n = Object.assign({}, f, {
+      id: uid(),
+      nome: f.nome + " (cópia)",
+      titulos,
+      tituloSelecionado: f.tituloSelecionado || titulos[0] || "",
+      criado: Date.now(),
+      atualizado: Date.now(),
+    });
     onFichas([n, ...fichas]);
     onNotify?.(`Ficha duplicada: ${f.nome}`, "success");
   };
 
-  const apagar = (id) => {
-    onFichas(fichas.filter(x => x.id !== id));
-    if (sel === id) setSel(null);
-    onNotify?.("Ficha apagada.", "info");
+  const apagar = (ids) => {
+    const idList = Array.isArray(ids) ? ids : [ids];
+    onFichas(fichas.filter((x) => !idList.includes(x.id)));
+    if (idList.includes(sel)) setSel(null);
+    setSelectedForDelete([]);
+    setDeleteMode(false);
+    onNotify?.(idList.length > 1 ? `${idList.length} fichas apagadas.` : "Ficha apagada.", "info");
   };
 
-  const filtered = fichas.filter(f => {
-    if (!search) return true;
-    return (f.nome + " " + f.raca + " " + f.classes.join(" ")).toLowerCase().includes(search.toLowerCase());
-  });
+  const filtered = fichas
+    .filter((f) => {
+      if (search) {
+        const pool = [
+          f.nome,
+          resolverNomeRaca(f.raca, f.racasExtras || []),
+          ...(f.classes || []),
+          ...(getFichaTitulos(f)),
+          f.tituloSelecionado || "",
+          f.essencia?.nome || "",
+        ]
+          .join(" ")
+          .toLowerCase();
+        if (!pool.includes(search.toLowerCase())) return false;
+      }
+      if (filters.essencia !== "all" && (f.essencia?.nome || "") !== filters.essencia) return false;
+      if (filters.classe !== "all" && !(f.classes || []).includes(filters.classe)) return false;
+      if (filters.raca !== "all" && resolverNomeRaca(f.raca, f.racasExtras || []) !== filters.raca) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (filters.tempo === "recent") return (b.atualizado || 0) - (a.atualizado || 0);
+      if (filters.tempo === "old") return (a.atualizado || 0) - (b.atualizado || 0);
+      return (b.atualizado || 0) - (a.atualizado || 0);
+    });
+
+  if (!focusFicha) {
+    return (
+      <FichaCardInventory
+        fichas={filtered}
+        selectedId={sel}
+        search={search}
+        onSearch={setSearch}
+        filters={{ ...filters, classesDisponiveis, essenciasDisponiveis, racasDisponiveis }}
+        onFilter={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
+        deleteMode={deleteMode}
+        selectedForDelete={selectedForDelete}
+        onToggleDeleteMode={() => {
+          setDeleteMode((d) => !d);
+          setSelectedForDelete([]);
+        }}
+        onToggleDeleteSelection={(id) => setSelectedForDelete((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))}
+        onCreate={() => setCreate(true)}
+        onDuplicate={() => {
+          if (!sel) {
+            onNotify?.("Selecione uma carta para duplicar.", "info");
+            return;
+          }
+          const alvo = fichas.find((f) => f.id === sel);
+          if (alvo) duplicarFicha(alvo);
+        }}
+        onDeleteSelected={() => {
+          if (!deleteMode) {
+            setDeleteMode(true);
+            return;
+          }
+          if (selectedForDelete.length === 0) {
+            onNotify?.("Selecione ao menos uma carta para apagar.", "info");
+            return;
+          }
+          onConfirmAction?.({
+            title: "Apagar cartas",
+            message: `Deseja apagar ${selectedForDelete.length} ficha(s)?`,
+            onConfirm: () => apagar(selectedForDelete),
+          });
+        }}
+        onSelect={(id) => {
+          setSel(id);
+          setFocusFicha(true);
+        }}
+      />
+    );
+  }
 
   return (
-    <div style={{ display: focusFicha ? "block" : "grid", gridTemplateColumns: "260px 1fr", height: "calc(100vh - 54px)" }}>
-
-      {/* SIDEBAR */}
-      {!focusFicha && <div style={{ borderRight: "1px solid " + G.border, display: "flex", flexDirection: "column", overflow: "hidden", background: G.bg2 }}>
-        <div style={{ padding: "12px 10px 8px", borderBottom: "1px solid " + G.border }}>
-          <button
-            style={Object.assign({}, btnStyle(), { width: "100%", padding: "8px", marginBottom: 8, display: "block" })}
-            onClick={() => setCreate(true)}
-          >+ Nova Ficha</button>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Pesquisar fichas..." style={inpStyle()} />
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 54px)" }}>
+      <div style={{ padding: "10px 16px 0" }}>
+        <HoverButton style={btnStyle({ padding: "4px 10px" })} onClick={() => { setFocusFicha(false); setDeleteMode(false); setSelectedForDelete([]); }}>
+          ← Voltar para fichas
+        </HoverButton>
+      </div>
+      {!ficha && (
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: G.muted, fontStyle: "italic", fontSize: 16 }}>
+          Selecione ou crie uma ficha
         </div>
+      )}
+      {ficha && (
+        <>
+          <div style={{ padding: "10px 20px", borderBottom: "1px solid " + G.border, background: G.bg2, display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+            <div style={{ flex: 1 }}>
+              <input
+                value={ficha.nome}
+                onChange={(e) => updateFicha({ nome: e.target.value })}
+                style={{ background: "transparent", border: "none", outline: "none", fontFamily: "'Cinzel',serif", fontSize: 20, color: G.gold2, width: "100%" }}
+              />
+              <div style={{ fontSize: 11, color: G.muted, fontFamily: "monospace" }}>
+                {resolverNomeRaca(ficha.raca, ficha.racasExtras || [])}
+                {ficha.classes.length > 0 ? " · " + ficha.classes.join(" / ") : ""}
+                {ficha.essencia ? " · " + ficha.essencia.nome : ""}
+              </div>
+            </div>
+            <button onClick={() => duplicarFicha(ficha)} style={btnStyle({ borderColor: "#3498db55", color: "#61b8ff" })}>Duplicar</button>
+            <button
+              onClick={() => onConfirmAction?.({ title: "Apagar ficha", message: `Deseja apagar "${ficha.nome}"?`, onConfirm: () => apagar(ficha.id) })}
+              style={btnStyle({ borderColor: "#e74c3c55", color: "#ff6b5f" })}
+            >Apagar</button>
+            {ficha.essencia && (
+              <div style={{ padding: "5px 12px", borderRadius: 6, background: ficha.essencia.cor + "22", border: "1px solid " + ficha.essencia.cor + "55", color: ficha.essencia.cor, fontFamily: "'Cinzel',serif", fontSize: 10, letterSpacing: 1 }}>
+                ⬡ {ficha.essencia.nome}
+              </div>
+            )}
+          </div>
 
-        <div style={{ flex: 1, overflow: "auto", padding: 8 }}>
-          {filtered.length === 0 && (
-            <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 11, textAlign: "center", padding: 16 }}>Nenhuma ficha.</div>
-          )}
-          {filtered.map(f => {
-            const isSel = sel === f.id;
-            const ec    = f.essencia?.cor || null;
-            return (
-              <div
-                key={f.id}
-                onClick={() => { setSel(isSel ? null : f.id); setTab("status"); setFocusFicha(true); }}
+          <div style={{ display: "flex", borderBottom: "1px solid " + G.border, background: G.bg2, flexShrink: 0, overflowX: "auto" }}>
+            {FICHA_TABS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
                 style={{
-                  background: isSel ? "#1a1208" : G.bg3,
-                  border: "1px solid " + (isSel ? "#c8a96e44" : G.border),
-                  borderRadius: 9, padding: "9px 11px", marginBottom: 6,
-                  cursor: "pointer", position: "relative",
+                  padding: "10px 16px",
+                  background: "transparent",
+                  border: "none",
+                  borderBottom: tab === t.id ? "2px solid #c8a96e" : "2px solid transparent",
+                  color: tab === t.id ? G.gold : G.muted,
+                  fontFamily: "'Cinzel',serif",
+                  fontSize: 11,
+                  letterSpacing: 1,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
                 }}
               >
-                <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: isSel ? G.gold : G.gold2, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.nome}</div>
-                <div style={{ fontSize: 10, color: G.muted, fontFamily: "monospace" }}>
-                  {f.raca}{f.classes.length > 0 ? " · " + f.classes.slice(0, 2).join("/") : ""}
-                </div>
-                {ec && <div style={{ position: "absolute", right: 8, top: 8, width: 8, height: 8, borderRadius: "50%", background: ec, boxShadow: "0 0 6px " + ec }} />}
-                {isSel && (
-                  <div style={{ display: "flex", gap: 5, marginTop: 8 }}>
-                    <button
-                      onClick={e => { e.stopPropagation(); duplicar(f); }}
-                      style={Object.assign({}, btnStyle({ padding: "3px 8px", fontSize: 10 }), { flex: 1 })}
-                    >⊕ Dup</button>
-                    <button
-                      onClick={e => { e.stopPropagation(); onConfirmAction?.({ title: "Apagar ficha", message: `Deseja apagar \"${f.nome}\"?`, onConfirm: () => apagar(f.id) }); }}
-                      style={btnStyle({ padding: "3px 8px", fontSize: 10, borderColor: "#e74c3c44", color: "#e74c3c" })}
-                    >✕</button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <div style={{ padding: 8, borderTop: "1px solid " + G.border, fontSize: 10, color: G.muted, fontFamily: "monospace", textAlign: "center" }}>
-          {fichas.length} personagens
-        </div>
-      </div>}
-
-      {/* ÁREA PRINCIPAL */}
-      <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {focusFicha && <div style={{ padding: "10px 16px 0" }}><HoverButton style={btnStyle({ padding: "4px 10px" })} onClick={() => { setFocusFicha(false); setSel(null); }}
->← Voltar para fichas</HoverButton></div>}
-        {!ficha && (
-          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: G.muted, fontStyle: "italic", fontSize: 16 }}>
-            Selecione ou crie uma ficha
+                {t.label}
+              </button>
+            ))}
           </div>
-        )}
-        {ficha && (
-          <>
-            {/* HEADER DA FICHA */}
-            <div style={{ padding: "10px 20px", borderBottom: "1px solid " + G.border, background: G.bg2, display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-              <div style={{ flex: 1 }}>
-                <input
-                  value={ficha.nome}
-                  onChange={e => updateFicha({ nome: e.target.value })}
-                  style={{ background: "transparent", border: "none", outline: "none", fontFamily: "'Cinzel',serif", fontSize: 20, color: G.gold2, width: "100%" }}
-                />
-                <div style={{ fontSize: 11, color: G.muted, fontFamily: "monospace" }}>
-                  {resolverNomeRaca(ficha.raca, ficha.racasExtras || [])}
-                  {ficha.classes.length > 0 ? " · " + ficha.classes.join(" / ") : ""}
-                  {ficha.essencia ? " · " + ficha.essencia.nome : ""}
-                </div>
-              </div>
-              {ficha.essencia && (
-                <div style={{ padding: "5px 12px", borderRadius: 6, background: ficha.essencia.cor + "22", border: "1px solid " + ficha.essencia.cor + "55", color: ficha.essencia.cor, fontFamily: "'Cinzel',serif", fontSize: 10, letterSpacing: 1 }}>
-                  ⬡ {ficha.essencia.nome}
-                </div>
-              )}
-            </div>
 
-            {/* TABS */}
-            <div style={{ display: "flex", borderBottom: "1px solid " + G.border, background: G.bg2, flexShrink: 0, overflowX: "auto" }}>
-              {FICHA_TABS.map(t => (
-                <button
-                  key={t.id}
-                  onClick={() => setTab(t.id)}
-                  style={{
-                    padding: "10px 16px", background: "transparent", border: "none",
-                    borderBottom: tab === t.id ? "2px solid #c8a96e" : "2px solid transparent",
-                    color: tab === t.id ? G.gold : G.muted,
-                    fontFamily: "'Cinzel',serif", fontSize: 11, letterSpacing: 1,
-                    cursor: "pointer", whiteSpace: "nowrap",
-                  }}
-                >{t.label}</button>
-              ))}
-            </div>
+          <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
+            {tab === "status" && <TabStatus ficha={ficha} onUpdate={updateFicha} inventarioNomes={(ficha.inventario || []).map((e) => e.item?.nome).filter(Boolean)} />}
+            {tab === "atributos" && <TabAtributos ficha={ficha} onUpdate={updateFicha} inventarioNomes={(ficha.inventario || []).map((e) => e.item?.nome).filter(Boolean)} />}
+            {tab === "identidade" && <TabIdentidade ficha={ficha} onUpdate={updateFicha} />}
+            {tab === "essencia" && <TabEssencia ficha={ficha} onUpdate={updateFicha} />}
+            {tab === "inventario" && <TabInventario ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} onArsenal={onArsenal} onNotify={onNotify} onConfirmAction={onConfirmAction} />}
+          </div>
+        </>
+      )}
 
-            {/* CONTEÚDO DA ABA */}
-            <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
-              {tab === "status"     && <TabStatus     ficha={ficha} onUpdate={updateFicha} inventarioNomes={(ficha.inventario || []).map((e) => e.item?.nome).filter(Boolean)} />}
-              {tab === "atributos"  && <TabAtributos  ficha={ficha} onUpdate={updateFicha} inventarioNomes={(ficha.inventario || []).map((e) => e.item?.nome).filter(Boolean)} />}
-              {tab === "identidade" && <TabIdentidade ficha={ficha} onUpdate={updateFicha} />}
-              {tab === "essencia"   && <TabEssencia   ficha={ficha} onUpdate={updateFicha} />}
-              {tab === "inventario" && <TabInventario ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} onArsenal={onArsenal} onNotify={onNotify} onConfirmAction={onConfirmAction} />}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* MODAL CRIAR FICHA */}
       {createOpen && (
         <Modal title="◈ Nova Ficha de Personagem" onClose={() => setCreate(false)}>
           <label style={{ color: G.muted, fontFamily: "monospace", fontSize: 12, display: "block", marginBottom: 6 }}>Nome do personagem</label>
           <input
             value={newNome}
-            onChange={e => setNewNome(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && criar()}
+            onChange={(e) => setNewNome(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && criar()}
             placeholder="Ex: Alaric von Grave..."
             style={Object.assign({}, inpStyle(), { fontSize: 16, marginBottom: 16 })}
             autoFocus
@@ -1161,9 +1249,6 @@ function FichasSection({ fichas, onFichas, arsenal, onArsenal, onNotify, onConfi
   );
 }
 
-// ─────────────────────────────────────────────
-// APP ROOT
-// ─────────────────────────────────────────────
 export default function VasterraApp() {
   const [section, setSection] = useState("menu");
   const { toasts, confirm, pushToast, closeToast, confirmAction, cancelConfirm, runConfirm } = useFeedback();

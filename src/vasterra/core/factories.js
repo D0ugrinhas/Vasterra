@@ -9,6 +9,8 @@ export const novaFicha = (nome = "Novo Personagem") => ({
   racaSecundaria: "",
   racasExtras: [],
   classes: [],
+  titulos: ["Aventureiro"],
+  tituloSelecionado: "Aventureiro",
   essencia: null,
   exposicao: 0,
   aparencia: "",
