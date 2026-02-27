@@ -61,6 +61,13 @@ export function FichaCardInventory({
         }}
       />
 
+      <style>{`
+        .v-card-hover { transition: transform .18s ease, box-shadow .2s ease, border-color .2s ease; }
+        .v-card-hover:hover { transform: translateY(-3px) scale(1.015) rotate(-.25deg); box-shadow: 0 8px 20px rgba(200,169,110,.18); }
+        .v-soft-btn { transition: transform .15s ease, box-shadow .2s ease, filter .2s ease; }
+        .v-soft-btn:hover { transform: translateY(-1px) scale(1.02); box-shadow: 0 0 12px rgba(200,169,110,.25); filter: brightness(1.08); }
+      `}</style>
+
       <div style={{ position: "relative", padding: 14, display: "flex", flexDirection: "column", height: "100%" }}>
         <div style={{ display: "grid", gridTemplateColumns: "2fr repeat(4, minmax(140px, 1fr)) auto auto auto", gap: 8, marginBottom: 12 }}>
           <input
@@ -86,10 +93,11 @@ export function FichaCardInventory({
             <option value="all">Raça: todas</option>
             {filters.racasDisponiveis.map((raca) => <option key={raca} value={raca}>{raca}</option>)}
           </select>
-          <button onClick={onCreate} style={btnStyle({ whiteSpace: "nowrap" })}>+ Nova Carta</button>
-          <button onClick={onDuplicate} style={btnStyle({ whiteSpace: "nowrap", borderColor: "#3498db55", color: "#61b8ff" })}>Duplicar</button>
+          <button className="v-soft-btn" onClick={onCreate} style={btnStyle({ whiteSpace: "nowrap" })}>+ Nova Ficha</button>
+          <button className="v-soft-btn" onClick={onDuplicate} style={btnStyle({ whiteSpace: "nowrap", borderColor: "#3498db55", color: "#61b8ff" })}>Duplicar</button>
           <button
             onClick={deleteMode ? onToggleDeleteMode : onDeleteSelected}
+            className="v-soft-btn"
             style={btnStyle({ whiteSpace: "nowrap", borderColor: "#e74c3c55", color: "#ff6b5f" })}
           >
             {deleteMode ? "Modo normal" : "Apagar"}
@@ -99,7 +107,7 @@ export function FichaCardInventory({
         {deleteMode && (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>{selectedForDelete.length} selecionada(s)</span>
-            <button onClick={onDeleteSelected} style={btnStyle({ borderColor: "#e74c3c55", color: "#ff6b5f" })}>Confirmar exclusão</button>
+            <button className="v-soft-btn" onClick={onDeleteSelected} style={btnStyle({ borderColor: "#e74c3c55", color: "#ff6b5f" })}>Confirmar exclusão</button>
           </div>
         )}
 
@@ -114,6 +122,7 @@ export function FichaCardInventory({
               return (
                 <div
                   key={ficha.id}
+                  className="v-card-hover"
                   onClick={() => deleteMode ? onToggleDeleteSelection(ficha.id) : onSelect(ficha.id)}
                   style={{
                     border: `1px solid ${markedForDelete ? "#e74c3c" : selected ? "#c8a96e" : "#2a2a2a"}`,

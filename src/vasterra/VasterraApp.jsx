@@ -1110,49 +1110,68 @@ function FichasSection({ fichas, onFichas, arsenal, onArsenal, onNotify, onConfi
 
   if (!focusFicha) {
     return (
-      <FichaCardInventory
-        fichas={filtered}
-        selectedId={sel}
-        search={search}
-        onSearch={setSearch}
-        filters={{ ...filters, classesDisponiveis, essenciasDisponiveis, racasDisponiveis }}
-        onFilter={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
-        deleteMode={deleteMode}
-        selectedForDelete={selectedForDelete}
-        onToggleDeleteMode={() => {
-          setDeleteMode((d) => !d);
-          setSelectedForDelete([]);
-        }}
-        onToggleDeleteSelection={(id) => setSelectedForDelete((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))}
-        onCreate={() => setCreate(true)}
-        onDuplicate={() => {
-          if (!sel) {
-            onNotify?.("Selecione uma carta para duplicar.", "info");
-            return;
-          }
-          const alvo = fichas.find((f) => f.id === sel);
-          if (alvo) duplicarFicha(alvo);
-        }}
-        onDeleteSelected={() => {
-          if (!deleteMode) {
-            setDeleteMode(true);
-            return;
-          }
-          if (selectedForDelete.length === 0) {
-            onNotify?.("Selecione ao menos uma carta para apagar.", "info");
-            return;
-          }
-          onConfirmAction?.({
-            title: "Apagar cartas",
-            message: `Deseja apagar ${selectedForDelete.length} ficha(s)?`,
-            onConfirm: () => apagar(selectedForDelete),
-          });
-        }}
-        onSelect={(id) => {
-          setSel(id);
-          setFocusFicha(true);
-        }}
-      />
+      <>
+        <FichaCardInventory
+          fichas={filtered}
+          selectedId={sel}
+          search={search}
+          onSearch={setSearch}
+          filters={{ ...filters, classesDisponiveis, essenciasDisponiveis, racasDisponiveis }}
+          onFilter={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
+          deleteMode={deleteMode}
+          selectedForDelete={selectedForDelete}
+          onToggleDeleteMode={() => {
+            setDeleteMode((d) => !d);
+            setSelectedForDelete([]);
+          }}
+          onToggleDeleteSelection={(id) => setSelectedForDelete((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))}
+          onCreate={() => setCreate(true)}
+          onDuplicate={() => {
+            if (!sel) {
+              onNotify?.("Selecione uma carta para duplicar.", "info");
+              return;
+            }
+            const alvo = fichas.find((f) => f.id === sel);
+            if (alvo) duplicarFicha(alvo);
+          }}
+          onDeleteSelected={() => {
+            if (!deleteMode) {
+              setDeleteMode(true);
+              return;
+            }
+            if (selectedForDelete.length === 0) {
+              onNotify?.("Selecione ao menos uma carta para apagar.", "info");
+              return;
+            }
+            onConfirmAction?.({
+              title: "Apagar cartas",
+              message: `Deseja apagar ${selectedForDelete.length} ficha(s)?`,
+              onConfirm: () => apagar(selectedForDelete),
+            });
+          }}
+          onSelect={(id) => {
+            setSel(id);
+            setFocusFicha(true);
+          }}
+        />
+        {createOpen && (
+          <Modal title="◈ Nova Ficha de Personagem" onClose={() => setCreate(false)}>
+            <label style={{ color: G.muted, fontFamily: "monospace", fontSize: 12, display: "block", marginBottom: 6 }}>Nome do personagem</label>
+            <input
+              value={newNome}
+              onChange={(e) => setNewNome(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && criar()}
+              placeholder="Ex: Alaric von Grave..."
+              style={Object.assign({}, inpStyle(), { fontSize: 16, marginBottom: 16 })}
+              autoFocus
+            />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button style={btnStyle({ background: "transparent", border: "1px solid #333", color: G.muted })} onClick={() => setCreate(false)}>Cancelar</button>
+              <button style={btnStyle()} onClick={criar}>Criar Personagem</button>
+            </div>
+          </Modal>
+        )}
+      </>
     );
   }
 
@@ -1198,6 +1217,7 @@ function FichasSection({ fichas, onFichas, arsenal, onArsenal, onNotify, onConfi
           <div style={{ display: "flex", borderBottom: "1px solid " + G.border, background: G.bg2, flexShrink: 0, overflowX: "auto" }}>
             {FICHA_TABS.map((t) => (
               <button
+                className="v-tab-btn"
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 style={{
@@ -1218,7 +1238,7 @@ function FichasSection({ fichas, onFichas, arsenal, onArsenal, onNotify, onConfi
             ))}
           </div>
 
-          <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
+          <div className="v-fade" style={{ flex: 1, overflow: "auto", padding: 16 }}>
             {tab === "status" && <TabStatus ficha={ficha} onUpdate={updateFicha} inventarioNomes={(ficha.inventario || []).map((e) => e.item?.nome).filter(Boolean)} />}
             {tab === "atributos" && <TabAtributos ficha={ficha} onUpdate={updateFicha} inventarioNomes={(ficha.inventario || []).map((e) => e.item?.nome).filter(Boolean)} />}
             {tab === "identidade" && <TabIdentidade ficha={ficha} onUpdate={updateFicha} />}
@@ -1226,24 +1246,6 @@ function FichasSection({ fichas, onFichas, arsenal, onArsenal, onNotify, onConfi
             {tab === "inventario" && <TabInventario ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} onArsenal={onArsenal} onNotify={onNotify} onConfirmAction={onConfirmAction} />}
           </div>
         </>
-      )}
-
-      {createOpen && (
-        <Modal title="◈ Nova Ficha de Personagem" onClose={() => setCreate(false)}>
-          <label style={{ color: G.muted, fontFamily: "monospace", fontSize: 12, display: "block", marginBottom: 6 }}>Nome do personagem</label>
-          <input
-            value={newNome}
-            onChange={(e) => setNewNome(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && criar()}
-            placeholder="Ex: Alaric von Grave..."
-            style={Object.assign({}, inpStyle(), { fontSize: 16, marginBottom: 16 })}
-            autoFocus
-          />
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <button style={btnStyle({ background: "transparent", border: "1px solid #333", color: G.muted })} onClick={() => setCreate(false)}>Cancelar</button>
-            <button style={btnStyle()} onClick={criar}>Criar Personagem</button>
-          </div>
-        </Modal>
       )}
     </div>
   );
@@ -1283,6 +1285,12 @@ export default function VasterraApp() {
         @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=Cinzel+Decorative:wght@400;700&display=swap');
         * { box-sizing: border-box; }
         body { margin: 0; background: #050505; }
+        @keyframes vFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+        .v-fade { animation: vFadeIn .22s ease; }
+        .v-tab-btn { transition: transform .16s ease, color .2s ease, text-shadow .2s ease; }
+        .v-tab-btn:hover { transform: translateY(-1px) scale(1.02); text-shadow: 0 0 10px rgba(200,169,110,.2); }
+        .v-nav-btn { transition: transform .16s ease, color .2s ease; }
+        .v-nav-btn:hover { transform: translateY(-1px); }
         input[type=number]::-webkit-inner-spin-button { opacity: 0.3; }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: #0a0a0a; }
@@ -1295,6 +1303,7 @@ export default function VasterraApp() {
         <div style={{ marginRight: 8, display: "flex", flexDirection: "column", lineHeight: 1 }}><div style={{ fontFamily: "'Cinzel Decorative',serif", fontSize: 16, color: G.gold, letterSpacing: 4 }}>VASTERRA</div><div style={{ fontFamily: "'Cinzel',serif", fontSize: 9, color: "#7aa9d8", letterSpacing: 2, marginTop: 3 }}>Vasterra é Vasto</div></div>
         {[{ id: "menu", label: "MENU" }, { id: "fichas", label: "FICHAS" }, { id: "arsenal", label: "ARSENAL" }].map(s => (
           <HoverButton
+            className="v-nav-btn"
             key={s.id}
             onClick={() => setSection(s.id)}
             style={{
@@ -1319,8 +1328,8 @@ export default function VasterraApp() {
           <div style={{ marginTop: 16, fontFamily: "monospace", color: "#777", zIndex: 1 }}>Clique em qualquer lugar para entrar</div>
         </div>
       )}
-      {section === "fichas"  && <FichasSection  fichas={fichas}  onFichas={setFichas}  arsenal={arsenal} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} />}
-      {section === "arsenal" && <ArsenalSection arsenal={arsenal} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} />}
+      {section === "fichas"  && <div className="v-fade"><FichasSection  fichas={fichas}  onFichas={setFichas}  arsenal={arsenal} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} /></div>}
+      {section === "arsenal" && <div className="v-fade"><ArsenalSection arsenal={arsenal} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} /></div>}
 
       <ToastViewport items={toasts} onClose={closeToast} />
       <ConfirmWindow data={confirm} onCancel={cancelConfirm} onConfirm={runConfirm} />
