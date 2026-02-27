@@ -79,35 +79,37 @@ export function StatusBar({ sigla, nome, cor, val, max, onVal, onMax }) {
   );
 }
 
-export function ModificadoresEditor({ title, list, onChange, inventarioItens }) {
+export function ModificadoresEditor({ title, list, onChange, inventarioItens, onClose }) {
   const add = () => onChange([...(list || []), { id: uid(), tipo: "Buff", nome: "", efeito: "", origem: "Efeito", origemDetalhe: "" }]);
   const up = (id, patch) => onChange((list || []).map((m) => (m.id === id ? { ...m, ...patch } : m)));
   const del = (id) => onChange((list || []).filter((m) => m.id !== id));
 
   return (
-    <Modal title={title} onClose={() => onChange(list || [])} wide>
+    <Modal title={title} onClose={onClose} wide>
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
         <HoverButton onClick={add}>+ Modificador</HoverButton>
       </div>
-      {(list || []).map((m) => (
-        <div key={m.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr 1fr 130px 1fr 36px", gap: 6, marginBottom: 6 }}>
-          <select value={m.tipo} onChange={(e) => up(m.id, { tipo: e.target.value })} style={inpStyle()}><option>Buff</option><option>Debuff</option></select>
-          <input value={m.nome} onChange={(e) => up(m.id, { nome: e.target.value })} placeholder="Nome" style={inpStyle()} />
-          <input value={m.efeito} onChange={(e) => up(m.id, { efeito: e.target.value })} placeholder="Efeito mecânico" style={inpStyle()} />
-          <select value={m.origem || "Efeito"} onChange={(e) => up(m.id, { origem: e.target.value, origemDetalhe: "" })} style={inpStyle()}>
-            {MOD_ORIGENS.map((o) => <option key={o}>{o}</option>)}
-          </select>
-          {(m.origem === "Item") ? (
-            <select value={m.origemDetalhe || ""} onChange={(e) => up(m.id, { origemDetalhe: e.target.value })} style={inpStyle()}>
-              <option value="">Selecione item</option>
-              {inventarioItens.map((it) => <option key={it}>{it}</option>)}
+      <div style={{ maxHeight: "58vh", overflowY: "auto", paddingRight: 4 }}>
+        {(list || []).map((m) => (
+          <div key={m.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr 1fr 130px 1fr 36px", gap: 6, marginBottom: 8, border: "1px solid #222", borderRadius: 8, padding: 8, background: "#0b0b0b" }}>
+            <select value={m.tipo} onChange={(e) => up(m.id, { tipo: e.target.value })} style={inpStyle()}><option>Buff</option><option>Debuff</option></select>
+            <input value={m.nome} onChange={(e) => up(m.id, { nome: e.target.value })} placeholder="Nome" style={inpStyle()} />
+            <input value={m.efeito} onChange={(e) => up(m.id, { efeito: e.target.value })} placeholder="Efeito mecânico ex: +4FOR" style={inpStyle()} />
+            <select value={m.origem || "Efeito"} onChange={(e) => up(m.id, { origem: e.target.value, origemDetalhe: "" })} style={inpStyle()}>
+              {MOD_ORIGENS.map((o) => <option key={o}>{o}</option>)}
             </select>
-          ) : (
-            <input value={m.origemDetalhe || ""} onChange={(e) => up(m.id, { origemDetalhe: e.target.value })} placeholder={m.origem === "Outro" ? "Descreva origem" : "Detalhe"} style={inpStyle()} />
-          )}
-          <HoverButton onClick={() => del(m.id)} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c", padding: "4px" })}>✕</HoverButton>
-        </div>
-      ))}
+            {(m.origem === "Item") ? (
+              <select value={m.origemDetalhe || ""} onChange={(e) => up(m.id, { origemDetalhe: e.target.value })} style={inpStyle()}>
+                <option value="">Selecione item</option>
+                {inventarioItens.map((it) => <option key={it}>{it}</option>)}
+              </select>
+            ) : (
+              <input value={m.origemDetalhe || ""} onChange={(e) => up(m.id, { origemDetalhe: e.target.value })} placeholder={m.origem === "Outro" ? "Descreva origem" : "Detalhe"} style={inpStyle()} />
+            )}
+            <HoverButton onClick={() => del(m.id)} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c", padding: "4px" })}>✕</HoverButton>
+          </div>
+        ))}
+      </div>
     </Modal>
   );
 }

@@ -232,8 +232,8 @@ export function FichasSection({ fichas, onFichas, arsenal, onArsenal, onNotify, 
           </div>
 
           <div className="v-fade" style={{ flex: 1, overflow: "auto", padding: 16 }}>
-            {tab === "status" && <TabStatus ficha={ficha} onUpdate={updateFicha} inventarioNomes={(ficha.inventario || []).map((e) => e.item?.nome).filter(Boolean)} />}
-            {tab === "atributos" && <TabAtributos ficha={ficha} onUpdate={updateFicha} inventarioNomes={(ficha.inventario || []).map((e) => e.item?.nome).filter(Boolean)} />}
+            {tab === "status" && <TabStatus ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} inventarioNomes={(ficha.inventario || []).map((e) => e.item?.nome).filter(Boolean)} />}
+            {tab === "atributos" && <TabAtributos ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} inventarioNomes={(ficha.inventario || []).map((e) => e.item?.nome).filter(Boolean)} />}
             {tab === "identidade" && <TabIdentidade ficha={ficha} onUpdate={updateFicha} />}
             {tab === "essencia" && <TabEssencia ficha={ficha} onUpdate={updateFicha} />}
             {tab === "inventario" && <TabInventario ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} onArsenal={onArsenal} onNotify={onNotify} onConfirmAction={onConfirmAction} />}

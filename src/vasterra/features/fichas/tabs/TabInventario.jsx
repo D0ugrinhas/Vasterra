@@ -1,21 +1,60 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { uid } from "../../../core/factories";
+import { calcVastosTotal, getEntryItem } from "../../../core/inventory";
 import { G, inpStyle, btnStyle } from "../../../ui/theme";
 import { RANK_COR } from "../../../data/gameData";
 import { Modal, ItemIcon } from "../../shared/components";
 import { ItemEditor } from "../../arsenal/ItemEditor";
+
+const blankAdj = () => ({ id: uid(), nome: "", tipo: "peso", valor: 0 });
+
+const sumByType = (list, type) => (list || []).filter((x) => x.tipo === type).reduce((s, x) => s + (Number(x.valor) || 0), 0);
+
+function VastosCalc({ vastos, onUpdate }) {
+  const [preco, setPreco] = useState({ cobre: 0, prata: 0, ouro: 0, platina: 0 });
+  const [pago, setPago] = useState({ cobre: 0, prata: 0, ouro: 0, platina: 0 });
+  const troco = calcVastosTotal(pago) - calcVastosTotal(preco);
+
+  const upCoin = (side, key, val) => {
+    const next = { ...(side === "preco" ? preco : pago), [key]: Number(val) || 0 };
+    side === "preco" ? setPreco(next) : setPago(next);
+  };
+
+  return (
+    <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 10 }}>
+      <div style={{ fontFamily: "'Cinzel',serif", color: G.gold, marginBottom: 8 }}>Vastos & Calculadora de Troco</div>
+      <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted, marginBottom: 8 }}>Carteira: C:{vastos.cobre || 0} · P:{vastos.prata || 0} · O:{vastos.ouro || 0} · Pl:{vastos.platina || 0}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        {[{ key: "preco", label: "Preço" }, { key: "pago", label: "Pago" }].map((side) => (
+          <div key={side.key} style={{ border: "1px solid #222", borderRadius: 8, padding: 8 }}>
+            <div style={{ fontFamily: "monospace", color: G.muted, fontSize: 11, marginBottom: 6 }}>{side.label}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 4 }}>
+              {["cobre", "prata", "ouro", "platina"].map((coin) => (
+                <input key={coin} type="number" min={0} value={(side.key === "preco" ? preco : pago)[coin]} onChange={(e) => upCoin(side.key, coin, e.target.value)} placeholder={coin[0].toUpperCase()} style={inpStyle({ fontSize: 11, padding: "5px" })} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 8, fontFamily: "'Cinzel',serif", color: troco >= 0 ? "#5ee39a" : "#ff7a6e" }}>Troco: {troco}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 4, marginTop: 8 }}>
+        {["cobre", "prata", "ouro", "platina"].map((coin) => <input key={coin} type="number" min={0} value={vastos?.[coin] || 0} onChange={(e) => onUpdate({ ...vastos, [coin]: Number(e.target.value) || 0 })} style={inpStyle({ fontSize: 11, padding: "5px" })} />)}
+      </div>
+    </div>
+  );
+}
 
 export function TabInventario({ ficha, onUpdate, arsenal, onArsenal, onNotify, onConfirmAction }) {
   const [search, setSearch] = useState("");
   const [arsenalOpen, setArsenalOpen] = useState(false);
   const [localEdit, setLocalEdit] = useState(null);
   const [localOpen, setLocalOpen] = useState(false);
-  const [replaceTarget, setReplaceTarget] = useState("");
+  const cfg = ficha.inventarioCfg || { slotsBase: 10, capacidadePorForca: 5, ajustes: [], vastos: { cobre: 0, prata: 0, ouro: 0, platina: 0 } };
 
   const addFromArsenal = (it) => {
-    const idx = ficha.inventario.findIndex(x => x.tipo === "arsenal" && x.itemId === it.id);
+    const idx = ficha.inventario.findIndex((x) => x.tipo === "arsenal" && x.itemId === it.id);
     if (idx >= 0) {
-      const inv = ficha.inventario.map((x, i) => i === idx ? Object.assign({}, x, { qtd: (x.qtd || 1) + 1 }) : x);
+      const inv = ficha.inventario.map((x, i) => (i === idx ? { ...x, qtd: (x.qtd || 1) + 1 } : x));
       onUpdate({ inventario: inv });
     } else {
       onUpdate({ inventario: [...ficha.inventario, { id: uid(), tipo: "arsenal", itemId: it.id, qtd: 1 }] });
@@ -24,87 +63,111 @@ export function TabInventario({ ficha, onUpdate, arsenal, onArsenal, onNotify, o
   };
 
   const saveLocal = (d) => {
-    const idx = ficha.inventario.findIndex(x => x.id === d.id);
-    if (idx >= 0) {
-      const inv = ficha.inventario.map((x, i) => i === idx ? Object.assign({}, x, { item: d }) : x);
-      onUpdate({ inventario: inv });
-    } else {
-      onUpdate({ inventario: [...ficha.inventario, { id: d.id, tipo: "local", item: d, qtd: 1 }] });
-    }
+    const idx = ficha.inventario.findIndex((x) => x.id === d.id);
+    if (idx >= 0) onUpdate({ inventario: ficha.inventario.map((x, i) => (i === idx ? { ...x, item: d } : x)) });
+    else onUpdate({ inventario: [...ficha.inventario, { id: d.id, tipo: "local", item: d, qtd: 1 }] });
     setLocalOpen(false);
   };
 
+  const entries = ficha.inventario
+    .map((entry) => ({ entry, item: getEntryItem(entry, arsenal) }))
+    .filter(({ item }) => item && (!search || item.nome.toLowerCase().includes(search.toLowerCase())));
 
-  const exportToArsenal = (entry) => {
-    onConfirmAction?.({
-      title: "Exportar para Arsenal",
-      message: `Exportar "${entry.item.nome}" para o Arsenal global?`,
-      onConfirm: () => {
-        const item = Object.assign({}, entry.item, { id: uid(), criado: Date.now() });
-        onArsenal([item, ...arsenal]);
-        onNotify?.("Item exportado para o Arsenal.", "success");
-      },
-    });
-  };
+  const totals = useMemo(() => {
+    const forca = Number(ficha.atributos?.FOR?.val || 0);
+    const usedWeight = entries.reduce((sum, { entry, item }) => sum + (Number(item.peso || 0) * (entry.qtd || 1)), 0);
+    const usedSlots = entries.reduce((sum, { entry, item }) => sum + (Number(item.slots || 1) * (entry.qtd || 1)), 0);
+    const buffPeso = sumByType(cfg.ajustes, "peso");
+    const buffSlots = sumByType(cfg.ajustes, "slot");
+    const buffCapFor = sumByType(cfg.ajustes, "capacidadePorForca");
+    const buffCap = sumByType(cfg.ajustes, "capacidade");
+    const capForca = Number(cfg.capacidadePorForca || 5) + buffCapFor;
+    const maxWeight = Math.max(0, forca * capForca + buffCap);
+    const maxSlots = Math.max(0, Number(cfg.slotsBase || 10) + buffSlots);
+    return { usedWeight, usedSlots, maxWeight, maxSlots, buffPeso };
+  }, [cfg, entries, ficha.atributos?.FOR?.val]);
 
-  const removeInv = (id) => onUpdate({ inventario: ficha.inventario.filter(x => x.id !== id) });
-  const upQtd = (id, v) => onUpdate({ inventario: ficha.inventario.map(x => x.id === id ? Object.assign({}, x, { qtd: Math.max(0, v) }) : x) });
+  const removeInv = (id) => onUpdate({ inventario: ficha.inventario.filter((x) => x.id !== id) });
+  const upQtd = (id, v) => onUpdate({ inventario: ficha.inventario.map((x) => (x.id === id ? { ...x, qtd: Math.max(0, v) } : x)).filter((x) => (x.qtd || 0) > 0) });
 
-  const entries = ficha.inventario.filter(x => {
-    const n = x.tipo === "arsenal" ? arsenal.find(a => a.id === x.itemId)?.nome : x.item?.nome;
-    return !search || (n || "").toLowerCase().includes(search.toLowerCase());
-  });
+  const addAjuste = () => onUpdate({ inventarioCfg: { ...cfg, ajustes: [...(cfg.ajustes || []), blankAdj()] } });
+  const upAjuste = (id, patch) => onUpdate({ inventarioCfg: { ...cfg, ajustes: (cfg.ajustes || []).map((a) => (a.id === id ? { ...a, ...patch } : a)) } });
+  const delAjuste = (id) => onUpdate({ inventarioCfg: { ...cfg, ajustes: (cfg.ajustes || []).filter((a) => a.id !== id) } });
 
   return (
-    <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar no inventário..." style={Object.assign({}, inpStyle(), { flex: 1 })} />
-        <button style={btnStyle()} onClick={() => setArsenalOpen(true)}>+ Do Arsenal</button>
-        <button style={btnStyle({ borderColor: "#2ecc7144", color: "#2ecc71" })} onClick={() => { setLocalEdit(null); setLocalOpen(true); }}>+ Item Local</button>
+    <div style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gap: 10 }}>
+        <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 10 }}>
+          <div style={{ fontFamily: "'Cinzel',serif", color: G.gold, marginBottom: 8 }}>Capacidade do Inventário</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
+            <input type="number" value={cfg.slotsBase || 10} onChange={(e) => onUpdate({ inventarioCfg: { ...cfg, slotsBase: Number(e.target.value) || 0 } })} placeholder="Slots base" style={inpStyle()} />
+            <input type="number" value={cfg.capacidadePorForca || 5} onChange={(e) => onUpdate({ inventarioCfg: { ...cfg, capacidadePorForca: Number(e.target.value) || 0 } })} placeholder="Cap./FOR" style={inpStyle()} />
+          </div>
+          <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>Capacidade = FOR({ficha.atributos?.FOR?.val || 0}) × {cfg.capacidadePorForca || 5} + buffs/debuffs</div>
+          <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontFamily: "monospace", fontSize: 11 }}>
+            <div style={{ color: totals.usedWeight > totals.maxWeight ? "#ff7a6e" : "#7ee2a4" }}>Peso: {totals.usedWeight.toFixed(1)} / {totals.maxWeight.toFixed(1)}</div>
+            <div style={{ color: totals.usedSlots > totals.maxSlots ? "#ff7a6e" : "#7ee2a4" }}>Slots: {totals.usedSlots} / {totals.maxSlots}</div>
+          </div>
+        </div>
+
+        <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontFamily: "'Cinzel',serif", color: G.gold }}>Buffs/Debuffs</span><button onClick={addAjuste} style={btnStyle({ padding: "3px 8px" })}>+ Ajuste</button></div>
+          <div style={{ maxHeight: 180, overflowY: "auto", display: "grid", gap: 6, paddingRight: 4 }}>
+            {(cfg.ajustes || []).map((a) => (
+              <div key={a.id} style={{ display: "grid", gridTemplateColumns: "1fr 130px 90px auto", gap: 5 }}>
+                <input value={a.nome} onChange={(e) => upAjuste(a.id, { nome: e.target.value })} placeholder="Nome" style={inpStyle()} />
+                <select value={a.tipo} onChange={(e) => upAjuste(a.id, { tipo: e.target.value })} style={inpStyle()}><option value="peso">peso</option><option value="slot">slot</option><option value="capacidadePorForca">capacidade por força</option><option value="capacidade">capacidade</option></select>
+                <input type="number" value={a.valor} onChange={(e) => upAjuste(a.id, { valor: Number(e.target.value) || 0 })} style={inpStyle()} />
+                <button onClick={() => delAjuste(a.id)} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c", padding: "4px" })}>✕</button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <VastosCalc vastos={cfg.vastos || {}} onUpdate={(vastos) => onUpdate({ inventarioCfg: { ...cfg, vastos } })} />
       </div>
 
-      {entries.length === 0 && <div style={{ textAlign: "center", color: G.muted, fontStyle: "italic", padding: 40, background: G.bg2, borderRadius: 10, border: "1px solid " + G.border }}>Inventário vazio — adicione itens do Arsenal ou crie itens locais.</div>}
+      <div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar item..." style={{ ...inpStyle(), flex: 1 }} />
+          <button style={btnStyle()} onClick={() => setArsenalOpen(true)}>+ Puxar Arsenal</button>
+          <button style={btnStyle({ borderColor: "#2ecc7144", color: "#2ecc71" })} onClick={() => { setLocalEdit(null); setLocalOpen(true); }}>+ Criar Local</button>
+        </div>
 
-      <div style={{ display: "grid", gap: 8 }}>
-        {entries.map(entry => {
-          const isA = entry.tipo === "arsenal";
-          const item = isA ? arsenal.find(a => a.id === entry.itemId) : entry.item;
-          if (!item) return <div key={entry.id} style={{ color: G.muted, fontFamily: "monospace", fontSize: 11, padding: "8px 12px", background: G.bg2, borderRadius: 8 }}>Item não encontrado <button onClick={() => removeInv(entry.id)} style={{ marginLeft: 8, background: "transparent", border: "none", color: "#e74c3c", cursor: "pointer" }}>✕</button></div>;
-
-          const cor = RANK_COR[item.rank] || "#7f8c8d";
-          return (
-            <div key={entry.id} style={{ background: G.bg2, border: "1px solid " + (isA ? cor + "33" : G.border), borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ fontSize: 22, flexShrink: 0 }}><ItemIcon item={item} size={22} /></span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold2 }}>{item.nome}</span>
-                  {isA && <span style={{ fontSize: 9, color: cor, fontFamily: "monospace", padding: "1px 5px", background: cor + "22", borderRadius: 8 }}>Arsenal</span>}
-                  {!isA && <span style={{ fontSize: 9, color: "#2ecc71", fontFamily: "monospace", padding: "1px 5px", background: "#2ecc7122", borderRadius: 8 }}>Local</span>}
+        <div style={{ display: "grid", gap: 8, maxHeight: "70vh", overflowY: "auto", paddingRight: 4 }}>
+          {entries.map(({ entry, item }) => {
+            const isA = entry.tipo === "arsenal";
+            const cor = RANK_COR[item.rank] || "#7f8c8d";
+            return (
+              <div key={entry.id} style={{ background: G.bg2, border: "1px solid " + cor + "33", borderRadius: 10, padding: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <ItemIcon item={item} size={24} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontFamily: "'Cinzel',serif", color: G.gold }}>{item.nome}</div>
+                    <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>{item.tipo} · {item.rank} · Peso {item.peso || 0} · Slots {item.slots || 1}</div>
+                  </div>
+                  <button onClick={() => upQtd(entry.id, (entry.qtd || 1) - 1)} style={btnStyle({ padding: "2px 8px" })}>−</button>
+                  <span style={{ fontFamily: "monospace", width: 24, textAlign: "center" }}>{entry.qtd || 1}</span>
+                  <button onClick={() => upQtd(entry.id, (entry.qtd || 1) + 1)} style={btnStyle({ padding: "2px 8px" })}>+</button>
                 </div>
-                <div style={{ fontSize: 10, color: G.muted, fontFamily: "monospace" }}>{item.tipo}{item.dano ? " · Dano: " + item.dano : ""}{item.rank ? " · " + item.rank : ""}</div>
+                <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+                  {!isA && <button onClick={() => { setLocalEdit(item); setLocalOpen(true); }} style={btnStyle({ padding: "3px 8px", borderColor: "#3498db44", color: "#3498db" })}>Editar</button>}
+                  {!isA && <button onClick={() => onArsenal([{ ...item, id: uid(), nome: item.nome + " (cópia arsenal)" }, ...arsenal])} style={btnStyle({ padding: "3px 8px", borderColor: "#9b59b644", color: "#bf8fe8" })}>Copiar p/ Arsenal</button>}
+                  {!isA && <button onClick={() => onArsenal(arsenal.some((a) => a.nome === item.nome) ? arsenal.map((a) => (a.nome === item.nome ? { ...item, id: a.id } : a)) : arsenal)} style={btnStyle({ padding: "3px 8px", borderColor: "#f39c1244", color: "#f39c12" })}>Substituir mesmo nome</button>}
+                  <button onClick={() => onConfirmAction?.({ title: "Remover item", message: `Remover ${item.nome}?`, onConfirm: () => removeInv(entry.id) })} style={btnStyle({ marginLeft: "auto", padding: "3px 8px", borderColor: "#e74c3c44", color: "#e74c3c" })}>Apagar</button>
+                </div>
+                <div style={{ marginTop: 6, fontFamily: "monospace", fontSize: 11, color: "#8ea0b8" }}>{item.descricao || "Sem descrição"}</div>
               </div>
-              <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-                <button onClick={() => upQtd(entry.id, (entry.qtd || 1) - 1)} style={btnStyle({ padding: "3px 8px", fontSize: 12 })}>−</button>
-                <span style={{ fontFamily: "monospace", fontSize: 13, color: G.gold, width: 28, textAlign: "center" }}>{entry.qtd || 1}</span>
-                <button onClick={() => upQtd(entry.id, (entry.qtd || 1) + 1)} style={btnStyle({ padding: "3px 8px", fontSize: 12 })}>+</button>
-                {!isA && <button onClick={() => { setLocalEdit(entry.item); setReplaceTarget(arsenal.find(a => a.nome === entry.item.nome)?.id || ""); setLocalOpen(true); }} style={btnStyle({ padding: "3px 8px", fontSize: 11, borderColor: "#3498db44", color: "#3498db" })}>✎</button>}
-                {!isA && <button onClick={() => { const alvo = arsenal.find(a => a.nome === entry.item.nome)?.id || replaceTarget; if (!alvo) { onNotify?.("Nenhum item do Arsenal com nome correspondente.", "info"); return; } onArsenal(arsenal.map((a) => a.id === alvo ? { ...entry.item, id: alvo } : a)); onNotify?.("Substituição no Arsenal aplicada.", "success"); }} style={btnStyle({ padding: "3px 8px", fontSize: 11, borderColor: "#9b59b644", color: "#bf8fe8" })}>⇄</button>}
-                {!isA && <button onClick={() => exportToArsenal(entry)} style={btnStyle({ padding: "3px 8px", fontSize: 11, borderColor: "#f39c1244", color: "#f39c12" })}>↑</button>}
-                <button onClick={() => removeInv(entry.id)} style={btnStyle({ padding: "3px 8px", fontSize: 11, borderColor: "#e74c3c44", color: "#e74c3c" })}>✕</button>
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
+          {entries.length === 0 && <div style={{ textAlign: "center", color: G.muted, padding: 40, background: G.bg2, border: "1px solid " + G.border, borderRadius: 10 }}>Inventário vazio.</div>}
+        </div>
       </div>
 
       {arsenalOpen && (
-        <Modal title="Adicionar do Arsenal" onClose={() => setArsenalOpen(false)} wide={true}>
-          {arsenal.length === 0 && <div style={{ textAlign: "center", color: G.muted, fontFamily: "monospace", padding: 20 }}>Arsenal vazio. Crie itens na aba Arsenal.</div>}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, maxHeight: "60vh", overflow: "auto" }}>
-            {arsenal.map(it => {
-              const cor = RANK_COR[it.rank] || "#7f8c8d";
-              return <div key={it.id} onClick={() => addFromArsenal(it)} style={{ background: G.bg2, border: "1px solid " + cor + "33", borderRadius: 8, padding: 10, cursor: "pointer" }}><div style={{ fontSize: 20, marginBottom: 4 }}><ItemIcon item={it} size={20} /></div><div style={{ fontFamily: "'Cinzel',serif", fontSize: 11, color: G.gold2, marginBottom: 2 }}>{it.nome}</div><div style={{ fontSize: 9, color: cor, fontFamily: "monospace" }}>{it.tipo} · {it.rank}</div></div>;
-            })}
+        <Modal title="Puxar item do Arsenal" onClose={() => setArsenalOpen(false)} wide>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, maxHeight: "70vh", overflowY: "auto" }}>
+            {arsenal.map((it) => <button key={it.id} onClick={() => addFromArsenal(it)} style={{ textAlign: "left", background: G.bg2, border: "1px solid " + (RANK_COR[it.rank] || "#888") + "44", borderRadius: 8, padding: 10 }}><div style={{ fontFamily: "'Cinzel',serif", color: G.gold }}>{it.nome}</div><div style={{ fontFamily: "monospace", color: G.muted, fontSize: 11 }}>{it.tipo} · {it.rank}</div></button>)}
           </div>
         </Modal>
       )}
