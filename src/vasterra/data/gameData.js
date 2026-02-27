@@ -30,37 +30,37 @@ export const PERICIAS_GRUPOS = [
 
 export const ESSENCIAS_VIRTUDES = [
   { nome:"O Cinza",  tag:"Humildade",  cor:"#888888", coringa:false, forma:"Poeira cinzenta levitando, opaca e estável" },
-  { nome:"Luz",      tag:"Caridade",   cor:"#e0d8c8", coringa:true,  forma:"Vórtice circular preto que clareia ao puro branco" },
-  { nome:"Mecânico", tag:"Diligência", cor:"#6a9fd8", coringa:false, forma:"Engrenagens flutuantes em padrões complexos" },
-  { nome:"Raiz",     tag:"Paciência",  cor:"#5c8a3a", coringa:true,  forma:"Emaranhado de raízes flutuantes levemente brilhantes" },
-  { nome:"Cristal",  tag:"Pureza",     cor:"#a0d8ef", coringa:false, forma:"Diamante negro reluzente refratando prismas harmônicos" },
-  { nome:"Éter",     tag:"Sabedoria",  cor:"#2d9e5a", coringa:false, forma:"Rachadura verde-escura estilhaçada — portal para a galáxia" },
-  { nome:"Água",     tag:"Temperança", cor:"#3a7abf", coringa:false, forma:"Esfera líquida com reflexo da lua em órbita suave" },
+  { nome:"Luz",      tag:"Caridade",   cor:"#fbe6bb", coringa:true,  forma:"Vórtice circular preto que clareia ao puro branco" },
+  { nome:"Mecânico", tag:"Diligência", cor:"#ffea00", coringa:false, forma:"Engrenagens flutuantes em padrões complexos" },
+  { nome:"Raiz",     tag:"Paciência",  cor:"#b1ff79", coringa:true,  forma:"Emaranhado de raízes flutuantes levemente brilhantes" },
+  { nome:"Cristal",  tag:"Pureza",     cor:"#ffffff", coringa:false, forma:"Diamante negro reluzente refratando prismas harmônicos" },
+  { nome:"Éter",     tag:"Sabedoria",  cor:"#075140", coringa:false, forma:"Rachadura verde-escura estilhaçada — portal para a galáxia" },
+  { nome:"Água",     tag:"Temperança", cor:"#19baf0", coringa:false, forma:"Esfera líquida com reflexo da lua em órbita suave" },
 ];
 
 export const ESSENCIAS_PECADOS = [
   { nome:"Sangue",     tag:"Fúria",    cor:"#c0392b", coringa:false, forma:"Coração líquido vermelho que explode em jatos pulsantes" },
-  { nome:"Víscera",    tag:"Gula",     cor:"#7b1a1a", coringa:false, forma:"Massa de carne negra com brilho vermelho pulsante e mandíbulas" },
-  { nome:"Sombra",     tag:"Inveja",   cor:"#7b2fbe", coringa:false, forma:"Véu escuro de fumaça com olhar rosa claro espiando" },
-  { nome:"Ouro Negro", tag:"Ganância", cor:"#5a4a0a", coringa:true,  forma:"Metal de ouro negro cintilante com veios de substância escuríssima" },
-  { nome:"Ouro",       tag:"Soberba",  cor:"#d4a017", coringa:false, forma:"Lâminas douradas levitantes girando como coroas partidas" },
-  { nome:"Néctar",     tag:"Luxúria",  cor:"#e8507a", coringa:false, forma:"Véu de néctar rosa com fios viscosos exalando fragrâncias" },
+  { nome:"Víscera",    tag:"Gula",     cor:"#3b0921", coringa:false, forma:"Massa de carne negra com brilho vermelho pulsante e mandíbulas" },
+  { nome:"Sombra",     tag:"Inveja",   cor:"#8800ff", coringa:false, forma:"Véu escuro de fumaça com olhar rosa claro espiando" },
+  { nome:"Ouro Negro", tag:"Ganância", cor:"#1f1d16", coringa:true,  forma:"Metal de ouro negro cintilante com veios de substância escuríssima" },
+  { nome:"Ouro",       tag:"Soberba",  cor:"#fff30b", coringa:false, forma:"Lâminas douradas levitantes girando como coroas partidas" },
+  { nome:"Néctar",     tag:"Luxúria",  cor:"#ff0cf3", coringa:false, forma:"Véu de néctar rosa com fios viscosos exalando fragrâncias" },
   { nome:"Corrosão",   tag:"Preguiça", cor:"#8b6914", coringa:true,  forma:"Placas enferrujadas ou casulo elétrico com magnetismo sobrenatural" },
 ];
 
 export const STATUS_CFG = [
-  { sigla:"VIT",  nome:"Vitalidade",  cor:"#e74c3c", msg:"MORRENDO — incapacitado!" },
-  { sigla:"EST",  nome:"Estamina",    cor:"#e67e22", msg:"Pode desmaiar / cair / dormir" },
-  { sigla:"MAN",  nome:"Mana",        cor:"#9b59b6", msg:"Sem magia — suscetível a ataques arcanos" },
-  { sigla:"SAN",  nome:"Sanidade",    cor:"#1abc9c", msg:"BREAKMENTAL D100 + Trauma permanente!" },
-  { sigla:"CONS", nome:"Consciência", cor:"#3498db", msg:"DESMAIA imediatamente!" },
+  { sigla:"VIT",  nome:"Vitalidade",  cor:"#f1250e", msg:"MORRENDO — incapacitado!" },
+  { sigla:"EST",  nome:"Estamina",    cor:"#f9f100", msg:"Pode desmaiar / cair / dormir" },
+  { sigla:"MAN",  nome:"Mana",        cor:"#0077ff", msg:"Sem magia — suscetível a ataques arcanos" },
+  { sigla:"SAN",  nome:"Sanidade",    cor:"#811abc", msg:"BREAKMENTAL + Trauma permanente!" },
+  { sigla:"CONS", nome:"Consciência", cor:"#1abc9c", msg:"DESMAIA imediatamente!" },
 ];
 
 export const RECURSOS_CFG = [
-  { sigla:"ACO", nome:"Ação",      cor:"#e74c3c" },
-  { sigla:"MOV", nome:"Movimento", cor:"#e67e22" },
-  { sigla:"REA", nome:"Reação",    cor:"#3498db" },
-  { sigla:"ESF", nome:"Esforço",   cor:"#9b59b6" },
+  { sigla:"ACO", nome:"Ação",      cor:"#22ee5f" },
+  { sigla:"MOV", nome:"Movimento", cor:"#227de6" },
+  { sigla:"REA", nome:"Reação",    cor:"#d31515" },
+  { sigla:"ESF", nome:"Esforço",   cor:"#290404" },
 ];
 
 export const ARSENAL_TIPOS = ["Arma","Ferramenta","Armadura","Vestimenta","Acessório","Marcas","Consumível","Outros"];
