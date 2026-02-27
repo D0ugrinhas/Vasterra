@@ -1,4 +1,4 @@
-import { ATRIBUTOS } from "../data/gameData";
+import { ATRIBUTOS, PERICIAS_GRUPOS } from "../data/gameData";
 
 export const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -20,7 +20,7 @@ export const novaFicha = (nome = "Novo Personagem") => ({
     CONS: { val: 15, max: 15 },
   },
   atributos: Object.fromEntries(ATRIBUTOS.map((a) => [a.sigla, { val: 5, ae: false, ne: false }])),
-  pericias: {},
+  pericias: Object.fromEntries(PERICIAS_GRUPOS.flatMap((g) => g.list.map((p) => [p, 0]))),
   recursos: {
     ACO: { total: 2, usado: 0 },
     MOV: { total: 1, usado: 0 },
