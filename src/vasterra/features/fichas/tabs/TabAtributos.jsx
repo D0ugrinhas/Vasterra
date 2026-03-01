@@ -1,12 +1,12 @@
 import React, { useMemo, useState } from "react";
 import { ATRIBUTOS, PERICIAS_GRUPOS } from "../../../data/gameData";
-import { aggregateModifiers, normalizePericiaKey } from "../../../core/effects";
+import { aggregateModifiers, normalizePericiaKey, parseMechanicalEffect } from "../../../core/effects";
 import { inventoryItemModifiers } from "../../../core/inventory";
 import { G, inpStyle, btnStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
 import { ModificadoresEditor } from "../../shared/components";
 
-export function TabAtributos({ ficha, onUpdate, inventarioNomes = [], arsenal = [] }) {
+export function TabAtributos({ ficha, onUpdate, inventarioNomes = [], arsenal = [], efeitosCaldeirao = [], onOpenCaldeirao }) {
   const [grupoAtivo, setGrupoAtivo] = useState(PERICIAS_GRUPOS[0].g);
   const [modsOpen, setModsOpen] = useState(null);
   const grp = PERICIAS_GRUPOS.find((g) => g.g === grupoAtivo);
@@ -21,12 +21,9 @@ export function TabAtributos({ ficha, onUpdate, inventarioNomes = [], arsenal = 
   const periciaDelta = (nome) => {
     const key = normalizePericiaKey(nome);
     return periciaModsParsed.reduce((sum, m) => {
-      const raw = String(m.efeito || m.valor || "").replace(/\s+/g, "").toUpperCase();
-      const mm = raw.match(/^([+-]?\d+(?:[\.,]\d+)?)([A-Z0-9_-]+)$/);
-      if (!mm) return sum;
-      const target = mm[2];
-      if (target !== key) return sum;
-      return sum + Number(String(mm[1]).replace(",", "."));
+      const parsed = parseMechanicalEffect(m.efeito || m.valor || "");
+      if (!parsed || parsed.scope !== "pericias" || parsed.isPct) return sum;
+      return parsed.key === key ? sum + parsed.value : sum;
     }, 0);
   };
 
@@ -54,8 +51,8 @@ export function TabAtributos({ ficha, onUpdate, inventarioNomes = [], arsenal = 
         })}</div>}
       </div>
 
-      {modsOpen === "atributos" && <ModificadoresEditor title="Modificadores de Atributos" list={ficha.modificadores?.atributos || []} inventarioItens={inventarioNomes} onClose={() => setModsOpen(null)} onChange={(next) => onUpdate({ modificadores: { ...(ficha.modificadores || {}), atributos: next } })} />}
-      {modsOpen === "pericias" && <ModificadoresEditor title="Modificadores de Perícias" list={ficha.modificadores?.pericias || []} inventarioItens={inventarioNomes} onClose={() => setModsOpen(null)} onChange={(next) => onUpdate({ modificadores: { ...(ficha.modificadores || {}), pericias: next } })} />}
+      {modsOpen === "atributos" && <ModificadoresEditor title="Modificadores de Atributos" list={ficha.modificadores?.atributos || []} inventarioItens={inventarioNomes} effectsLibrary={efeitosCaldeirao} onCreateEffect={onOpenCaldeirao} onClose={() => setModsOpen(null)} onChange={(next) => onUpdate({ modificadores: { ...(ficha.modificadores || {}), atributos: next } })} />}
+      {modsOpen === "pericias" && <ModificadoresEditor title="Modificadores de Perícias" list={ficha.modificadores?.pericias || []} inventarioItens={inventarioNomes} effectsLibrary={efeitosCaldeirao} onCreateEffect={onOpenCaldeirao} onClose={() => setModsOpen(null)} onChange={(next) => onUpdate({ modificadores: { ...(ficha.modificadores || {}), pericias: next } })} />}
     </div>
   );
 }

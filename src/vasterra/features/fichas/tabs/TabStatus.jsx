@@ -1,12 +1,12 @@
 import React, { useMemo, useState } from "react";
 import { STATUS_CFG, RECURSOS_CFG, ATRIBUTOS } from "../../../data/gameData";
-import { aggregateModifiers } from "../../../core/effects";
+import { aggregateModifiers, aggregateStatusModifiers } from "../../../core/effects";
 import { inventoryItemModifiers } from "../../../core/inventory";
 import { G, inpStyle, btnStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
 import { StatusBar, ModificadoresEditor } from "../../shared/components";
 
-export function TabStatus({ ficha, onUpdate, inventarioNomes = [], arsenal = [] }) {
+export function TabStatus({ ficha, onUpdate, inventarioNomes = [], arsenal = [], efeitosCaldeirao = [], onOpenCaldeirao }) {
   const [c1, setC1] = useState("FOR");
   const [c2, setC2] = useState("FOR");
   const [cRes, setCRes] = useState(null);
@@ -17,7 +17,7 @@ export function TabStatus({ ficha, onUpdate, inventarioNomes = [], arsenal = [] 
   const mergedStatusMods = [...(ficha.modificadores?.status || []), ...itemMods];
   const mergedAttrMods = [...(ficha.modificadores?.atributos || []), ...itemMods];
 
-  const statusBonus = aggregateModifiers(mergedStatusMods, "status");
+  const statusBonus = aggregateStatusModifiers(mergedStatusMods);
   const attrBonus = aggregateModifiers(mergedAttrMods, "atributos");
 
   const upStatus = (sigla, field, val) => onUpdate({ status: { ...ficha.status, [sigla]: { ...ficha.status[sigla], [field]: val } } });
@@ -44,10 +44,19 @@ export function TabStatus({ ficha, onUpdate, inventarioNomes = [], arsenal = [] 
           <HoverButton onClick={() => setModsOpen(true)} style={btnStyle({ padding: "2px 8px" })}>⚙</HoverButton>
         </div>
         {STATUS_CFG.map((s) => {
-          const bonus = statusBonus[s.sigla] || 0;
-          const val = (ficha.status[s.sigla].val || 0) + bonus;
-          const max = (ficha.status[s.sigla].max || 1) + bonus;
-          return <StatusBar key={s.sigla} {...s} val={Math.max(0, val)} max={Math.max(1, max)} onVal={(v) => upStatus(s.sigla, "val", v - bonus)} onMax={(v) => upStatus(s.sigla, "max", v - bonus)} />;
+          const delta = statusBonus[s.sigla] || { base: 0, current: 0, max: 0 };
+          const val = (ficha.status[s.sigla].val || 0) + delta.base + delta.current;
+          const max = (ficha.status[s.sigla].max || 1) + delta.base + delta.max;
+          return (
+            <StatusBar
+              key={s.sigla}
+              {...s}
+              val={Math.max(0, Math.min(Math.max(1, max), val))}
+              max={Math.max(1, max)}
+              onVal={(v) => upStatus(s.sigla, "val", v - delta.base - delta.current)}
+              onMax={(v) => upStatus(s.sigla, "max", v - delta.base - delta.max)}
+            />
+          );
         })}
       </div>
 
@@ -84,7 +93,7 @@ export function TabStatus({ ficha, onUpdate, inventarioNomes = [], arsenal = [] 
         </div>
       </div>
 
-      {modsOpen && <ModificadoresEditor title="Modificadores de Status" list={ficha.modificadores?.status || []} inventarioItens={inventarioNomes} onClose={() => setModsOpen(false)} onChange={(next) => onUpdate({ modificadores: { ...(ficha.modificadores || {}), status: next } })} />}
+      {modsOpen && <ModificadoresEditor title="Modificadores de Status" list={ficha.modificadores?.status || []} inventarioItens={inventarioNomes} effectsLibrary={efeitosCaldeirao} onCreateEffect={onOpenCaldeirao} onClose={() => setModsOpen(false)} onChange={(next) => onUpdate({ modificadores: { ...(ficha.modificadores || {}), status: next } })} />}
     </div>
   );
 }

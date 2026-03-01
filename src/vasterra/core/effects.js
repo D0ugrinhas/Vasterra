@@ -22,22 +22,47 @@ const ESSENCIA_ALIAS = {
 };
 
 const sanitize = (s = "") => s.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const normalizeToken = (s = "") => sanitize(s).replace(/[^A-Z0-9]/g, "");
+
+function detectStatusTarget(code, canonical) {
+  const suffix = code.slice(canonical.length);
+  if (!suffix) return "base";
+  if (suffix === "ATUAL" || suffix === "CURRENT") return "current";
+  if (suffix === "MAX" || suffix === "MAXIMO" || suffix === "MAXIMO") return "max";
+  return null;
+}
 
 export function parseMechanicalEffect(raw = "") {
   const cleaned = sanitize(raw).replace(/\s+/g, "").replace(/^DE/, "");
   const m = cleaned.match(/^([+-]?\d+(?:[\.,]\d+)?)(%?)([A-Z0-9_-]+)$/);
   if (!m) return null;
+
   const value = Number(String(m[1]).replace(",", "."));
   const isPct = m[2] === "%";
-  const code = m[3];
+  const code = normalizeToken(m[3]);
 
   const attr = ATTR_ALIAS[code];
-  if (attr) return { scope: "atributos", key: attr, value, isPct, raw: `${value >= 0 ? "+" : ""}${value}${isPct ? "%" : ""}${attr}` };
-  const status = STATUS_ALIAS[code];
-  if (status) return { scope: "status", key: status, value, isPct, raw: `${value >= 0 ? "+" : ""}${value}${isPct ? "%" : ""}${status}` };
+  if (attr) return { scope: "atributos", key: attr, value, isPct, target: "base", raw: `${value >= 0 ? "+" : ""}${value}${isPct ? "%" : ""}${attr}` };
+
+  for (const alias of Object.keys(STATUS_ALIAS)) {
+    const canonical = STATUS_ALIAS[alias];
+    if (!code.startsWith(alias)) continue;
+    const target = detectStatusTarget(code, alias);
+    if (!target) continue;
+    return {
+      scope: "status",
+      key: canonical,
+      value,
+      isPct,
+      target,
+      raw: `${value >= 0 ? "+" : ""}${value}${isPct ? "%" : ""}${canonical}${target === "current" ? "ATUAL" : target === "max" ? "MAX" : ""}`,
+    };
+  }
+
   const ess = ESSENCIA_ALIAS[code];
-  if (ess) return { scope: "essencia", key: ess, value, isPct, raw: `${value >= 0 ? "+" : ""}${value}%${ess}` };
-  return { scope: "pericias", key: code, value, isPct, raw: `${value >= 0 ? "+" : ""}${value}${isPct ? "%" : ""}${code}` };
+  if (ess) return { scope: "essencia", key: ess, value, isPct, target: "base", raw: `${value >= 0 ? "+" : ""}${value}${isPct ? "%" : ""}${ess}` };
+
+  return { scope: "pericias", key: code, value, isPct, target: "base", raw: `${value >= 0 ? "+" : ""}${value}${isPct ? "%" : ""}${code}` };
 }
 
 export function normalizeEffectList(list = [], source = "Outro") {
@@ -56,6 +81,7 @@ export function normalizeEffectList(list = [], source = "Outro") {
       scope: parsed.scope,
       key: parsed.key,
       isPct: parsed.isPct,
+      target: parsed.target,
     }];
   });
 }
@@ -70,6 +96,17 @@ export function aggregateModifiers(mods = [], scope) {
   return map;
 }
 
+export function aggregateStatusModifiers(mods = []) {
+  const status = {};
+  (mods || []).forEach((m) => {
+    const parsed = parseMechanicalEffect(m.efeito || m.valor || "");
+    if (!parsed || parsed.scope !== "status" || parsed.isPct) return;
+    if (!status[parsed.key]) status[parsed.key] = { base: 0, current: 0, max: 0 };
+    status[parsed.key][parsed.target || "base"] += parsed.value;
+  });
+  return status;
+}
+
 export function normalizePericiaKey(label = "") {
-  return sanitize(label).replace(/[^A-Z0-9]/g, "");
+  return normalizeToken(label);
 }

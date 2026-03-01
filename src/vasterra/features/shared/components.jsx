@@ -79,19 +79,34 @@ export function StatusBar({ sigla, nome, cor, val, max, onVal, onMax }) {
   );
 }
 
-export function ModificadoresEditor({ title, list, onChange, inventarioItens, onClose }) {
+export function ModificadoresEditor({ title, list, onChange, inventarioItens, onClose, effectsLibrary = [], onCreateEffect }) {
   const add = () => onChange([...(list || []), { id: uid(), tipo: "Buff", nome: "", efeito: "", origem: "Efeito", origemDetalhe: "" }]);
   const up = (id, patch) => onChange((list || []).map((m) => (m.id === id ? { ...m, ...patch } : m)));
   const del = (id) => onChange((list || []).filter((m) => m.id !== id));
+  const clone = (id) => {
+    const m = (list || []).find((x) => x.id === id);
+    if (!m) return;
+    onChange([...(list || []), { ...m, id: uid(), nome: `${m.nome || "Mod"} (cópia)` }]);
+  };
+  const addFromTemplate = (tplId) => {
+    const tpl = (effectsLibrary || []).find((x) => x.id === tplId);
+    if (!tpl) return;
+    onChange([...(list || []), { id: uid(), tipo: tpl.tipo || "Buff", nome: tpl.nome || "Efeito", efeito: tpl.efeitoMecanico || "", origem: "Efeito", origemDetalhe: tpl.nome || "Caldeirão" }]);
+  };
 
   return (
     <Modal title={title} onClose={onClose} wide>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8, alignItems: "center", marginBottom: 8 }}>
         <HoverButton onClick={add}>+ Modificador</HoverButton>
+        <select onChange={(e) => { if (e.target.value) { addFromTemplate(e.target.value); e.target.value = ""; } }} style={inpStyle()}>
+          <option value="">Puxar efeito do Caldeirão...</option>
+          {(effectsLibrary || []).map((x) => <option key={x.id} value={x.id}>{x.nome} · {x.efeitoMecanico || "—"}</option>)}
+        </select>
+        <HoverButton onClick={() => onCreateEffect?.()} style={btnStyle({ borderColor: "#9b59b644", color: "#d7a9ff" })}>Criar efeito</HoverButton>
       </div>
       <div style={{ maxHeight: "58vh", overflowY: "auto", paddingRight: 4 }}>
         {(list || []).map((m) => (
-          <div key={m.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr 1fr 130px 1fr 36px", gap: 6, marginBottom: 8, border: "1px solid #222", borderRadius: 8, padding: 8, background: "#0b0b0b" }}>
+          <div key={m.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr 1fr 130px 1fr 36px 36px", gap: 6, marginBottom: 8, border: "1px solid #222", borderRadius: 8, padding: 8, background: "#0b0b0b" }}>
             <select value={m.tipo} onChange={(e) => up(m.id, { tipo: e.target.value })} style={inpStyle()}><option>Buff</option><option>Debuff</option></select>
             <input value={m.nome} onChange={(e) => up(m.id, { nome: e.target.value })} placeholder="Nome" style={inpStyle()} />
             <input value={m.efeito} onChange={(e) => up(m.id, { efeito: e.target.value })} placeholder="Efeito mecânico ex: +4FOR" style={inpStyle()} />
