@@ -1,10 +1,13 @@
 import React, { useState } from "react";
 import { uid } from "../../core/factories";
-import { ARSENAL_RANKS, ESSENCIAS_VIRTUDES, ESSENCIAS_PECADOS } from "../../data/gameData";
+import { ARSENAL_RANKS, ESSENCIAS_VIRTUDES, ESSENCIAS_PECADOS, PERICIAS_GRUPOS } from "../../data/gameData";
 import { G, inpStyle, btnStyle } from "../../ui/theme";
 import { Modal } from "../shared/components";
 
 const allEssencias = [...ESSENCIAS_VIRTUDES, ...ESSENCIAS_PECADOS];
+const RESIST_RESULTADOS = ["Evitar", "Reduzir pela metade", "Efeito Contrário", "Outro"];
+const ALVOS_OPCOES = ["Portador", "Alvo", "Área", "Condição", "Todos"];
+const allPericias = PERICIAS_GRUPOS.flatMap((g) => g.list);
 
 const newConditional = () => ({ id: uid(), ativo: true, condicao: "", efeito: "" });
 
@@ -44,6 +47,11 @@ const newEffect = () => ({
   iconeData: "",
   cor: "#7f8c8d",
   frase: "",
+  alvo: "Portador",
+  alvoCondicao: "",
+  testeResistenciaPericia: "",
+  testeResistenciaSucesso: "Evitar",
+  testeResistenciaSucessoOutro: "",
   condicionais: [newConditional()],
   criado: Date.now(),
 });
@@ -88,6 +96,28 @@ export function EffectForgeEditor({ effect, onSave, onClose }) {
             <select value={d.rank} onChange={(e) => up("rank", e.target.value)} style={inpStyle()}>{ARSENAL_RANKS.map((r) => <option key={r}>{r}</option>)}</select>
             <input value={d.efeitoMecanico} onChange={(e) => up("efeitoMecanico", e.target.value)} placeholder="Efeito mecânico" style={inpStyle()} />
           </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <select value={d.alvo || "Portador"} onChange={(e) => up("alvo", e.target.value)} style={inpStyle()}>
+              {ALVOS_OPCOES.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+            {(d.alvo === "Condição") ? (
+              <input value={d.alvoCondicao || ""} onChange={(e) => up("alvoCondicao", e.target.value)} placeholder="Condição para ser alvo" style={inpStyle()} />
+            ) : <span />}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <select value={d.testeResistenciaPericia || ""} onChange={(e) => up("testeResistenciaPericia", e.target.value)} style={inpStyle()}>
+              <option value="">Sem Teste de Resistência</option>
+              {allPericias.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <select value={d.testeResistenciaSucesso || "Evitar"} onChange={(e) => up("testeResistenciaSucesso", e.target.value)} style={inpStyle()} disabled={!d.testeResistenciaPericia}>
+              {RESIST_RESULTADOS.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          {(d.testeResistenciaPericia && d.testeResistenciaSucesso === "Outro") && (
+            <input value={d.testeResistenciaSucessoOutro || ""} onChange={(e) => up("testeResistenciaSucessoOutro", e.target.value)} placeholder="Explique o resultado de sucesso" style={inpStyle()} />
+          )}
         </div>
 
         <div style={{ display: "grid", gap: 8 }}>

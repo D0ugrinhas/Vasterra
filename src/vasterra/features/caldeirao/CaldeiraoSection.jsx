@@ -97,6 +97,13 @@ export function CaldeiraoSection({ efeitos, onEfeitos, onNotify, onConfirmAction
             <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 12, marginBottom: 10 }}>
               <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted, marginBottom: 6 }}>Duração: {selEffect.eterno ? "Eterno" : (selEffect.duracao || "Não definido")} · Removível: {selEffect.removivel ? "Sim" : "Não"}</div>
               {selEffect.removivel && <div style={{ fontFamily: "monospace", fontSize: 11, color: "#d0b4e0", marginBottom: 6 }}>Condição de remoção: {selEffect.condicaoRemocao || "—"}</div>}
+              <div style={{ fontFamily: "monospace", fontSize: 11, color: "#8fd2ff", marginBottom: 6 }}>Alvo: {selEffect.alvo || "Portador"}{selEffect.alvo === "Condição" ? ` (${selEffect.alvoCondicao || "—"})` : ""}</div>
+              {selEffect.testeResistenciaPericia && (
+                <div style={{ fontFamily: "monospace", fontSize: 11, color: "#9ee0ff", marginBottom: 6 }}>
+                  Teste de Resistência: {selEffect.testeResistenciaPericia} → {selEffect.testeResistenciaSucesso || "Evitar"}
+                  {(selEffect.testeResistenciaSucesso === "Outro") ? ` (${selEffect.testeResistenciaSucessoOutro || "—"})` : ""}
+                </div>
+              )}
               {selEffect.essenciaAtribuida && <div style={{ fontFamily: "monospace", fontSize: 11, color: "#8fd2ff", marginBottom: 6 }}>Essência atribuída: {selEffect.essenciaAtribuida}</div>}
               <div style={{ color: G.text }}>{selEffect.descricao || "Sem descrição."}</div>
               {selEffect.frase && <div style={{ marginTop: 6, color: "#ba9cc8", fontStyle: "italic" }}>“{selEffect.frase}”</div>}

@@ -3,7 +3,7 @@ import { ARSENAL_TIPOS, ARSENAL_RANKS, RANK_COR, ESSENCIAS_VIRTUDES, ESSENCIAS_P
 import { novoItem, uid } from "../../core/factories";
 import { parseMechanicalEffect } from "../../core/effects";
 import { G, inpStyle, btnStyle } from "../../ui/theme";
-import { Modal } from "../shared/components";
+import { Modal, EffectDetailsModal } from "../shared/components";
 
 const blankEffect = () => ({ id: uid(), nome: "", descricao: "", valor: "", ativo: true });
 
@@ -85,6 +85,10 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
       essenciaAtribuida: base.essenciaAtribuida || "",
     };
   });
+
+  const [selectedEffectId, setSelectedEffectId] = useState("");
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const selectedEffect = (effectsLibrary || []).find((x) => x.id === selectedEffectId) || null;
 
   const up = (k, v) => setD((p) => ({ ...p, [k]: v }));
   const isArma = d.tipo === "Arma";
@@ -205,10 +209,14 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
               <span style={{ fontFamily: "'Cinzel',serif", color: G.gold }}>Anexar efeito do Caldeirão</span>
               <button onClick={() => onCreateEffect?.()} style={btnStyle({ padding: "3px 8px", fontSize: 11, borderColor: "#9b59b644", color: "#d8a6ff" })}>Criar efeito</button>
             </div>
-            <select onChange={(e) => { const ref = effectsLibrary.find((x) => x.id === e.target.value); if (ref) up("efeitos", applyTemplateToList(d.efeitos, ref)); }} value="" style={inpStyle()}>
-              <option value="">Selecionar efeito do Caldeirão...</option>
-              {effectsLibrary.map((x) => <option key={x.id} value={x.id}>{x.nome} · {x.efeitoMecanico || "—"}</option>)}
-            </select>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 6 }}>
+              <select value={selectedEffectId} onChange={(e) => setSelectedEffectId(e.target.value)} style={inpStyle()}>
+                <option value="">Selecionar efeito do Caldeirão...</option>
+                {effectsLibrary.map((x) => <option key={x.id} value={x.id}>{x.nome} · {x.efeitoMecanico || "—"}</option>)}
+              </select>
+              <button onClick={() => selectedEffectId && up("efeitos", applyTemplateToList(d.efeitos, selectedEffect))} disabled={!selectedEffectId} style={btnStyle({ padding: "3px 8px", fontSize: 11 })}>Anexar</button>
+              <button onClick={() => setPreviewOpen(true)} disabled={!selectedEffectId} style={btnStyle({ padding: "3px 8px", fontSize: 11, borderColor: "#3498db44", color: "#73bfff" })}>🔍</button>
+            </div>
           </div>
 
           <EffectListEditor title="Bônus" list={d.bonus} onChange={(next) => up("bonus", next)} />
@@ -221,6 +229,7 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
         <button style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })} onClick={onClose}>Cancelar</button>
         <button style={btnStyle()} onClick={() => onSave(d)}>Salvar Item</button>
       </div>
+      {previewOpen && <EffectDetailsModal effect={selectedEffect} onClose={() => setPreviewOpen(false)} />}
     </Modal>
   );
 }

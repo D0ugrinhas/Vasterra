@@ -79,7 +79,35 @@ export function StatusBar({ sigla, nome, cor, val, max, onVal, onMax }) {
   );
 }
 
+export function EffectDetailsModal({ effect, onClose }) {
+  if (!effect) return null;
+  return (
+    <Modal title={`Efeito: ${effect.nome || "Sem nome"}`} onClose={onClose} wide>
+      <div style={{ display: "grid", gap: 10 }}>
+        <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>
+          {effect.tipo || "—"} · {effect.rank || "Sem rank"} · {effect.efeitoMecanico || "Sem efeito mecânico"}
+        </div>
+        <div style={{ color: G.text }}>{effect.descricao || "Sem descrição."}</div>
+        {effect.frase && <div style={{ color: "#ba9cc8", fontStyle: "italic" }}>“{effect.frase}”</div>}
+        <div style={{ fontFamily: "monospace", fontSize: 11, color: "#8fd2ff" }}>Alvo: {effect.alvo || "Portador"}{effect.alvo === "Condição" ? ` (${effect.alvoCondicao || "—"})` : ""}</div>
+        {effect.testeResistenciaPericia && (
+          <div style={{ fontFamily: "monospace", fontSize: 11, color: "#9ee0ff" }}>
+            Teste de Resistência: {effect.testeResistenciaPericia} → {effect.testeResistenciaSucesso || "Evitar"}
+            {effect.testeResistenciaSucesso === "Outro" ? ` (${effect.testeResistenciaSucessoOutro || "—"})` : ""}
+          </div>
+        )}
+        <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>Duração: {effect.eterno ? "Eterno" : (effect.duracao || "Não definido")}</div>
+      </div>
+      {previewOpen && <EffectDetailsModal effect={selectedEffect} onClose={() => setPreviewOpen(false)} />}
+    </Modal>
+  );
+}
+
 export function ModificadoresEditor({ title, list, onChange, inventarioItens, onClose, effectsLibrary = [], onCreateEffect }) {
+  const [selectedEffectId, setSelectedEffectId] = useState("");
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const selectedEffect = (effectsLibrary || []).find((x) => x.id === selectedEffectId) || null;
+
   const add = () => onChange([...(list || []), { id: uid(), tipo: "Buff", nome: "", efeito: "", origem: "Efeito", origemDetalhe: "" }]);
   const up = (id, patch) => onChange((list || []).map((m) => (m.id === id ? { ...m, ...patch } : m)));
   const del = (id) => onChange((list || []).filter((m) => m.id !== id));
@@ -96,12 +124,14 @@ export function ModificadoresEditor({ title, list, onChange, inventarioItens, on
 
   return (
     <Modal title={title} onClose={onClose} wide>
-      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8, alignItems: "center", marginBottom: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto auto", gap: 8, alignItems: "center", marginBottom: 8 }}>
         <HoverButton onClick={add}>+ Modificador</HoverButton>
-        <select onChange={(e) => { if (e.target.value) { addFromTemplate(e.target.value); e.target.value = ""; } }} style={inpStyle()}>
-          <option value="">Puxar efeito do Caldeirão...</option>
+        <select value={selectedEffectId} onChange={(e) => setSelectedEffectId(e.target.value)} style={inpStyle()}>
+          <option value="">Selecionar efeito do Caldeirão...</option>
           {(effectsLibrary || []).map((x) => <option key={x.id} value={x.id}>{x.nome} · {x.efeitoMecanico || "—"}</option>)}
         </select>
+        <HoverButton onClick={() => selectedEffectId && addFromTemplate(selectedEffectId)} disabled={!selectedEffectId}>Anexar</HoverButton>
+        <HoverButton onClick={() => setPreviewOpen(true)} disabled={!selectedEffectId} title="Ver detalhes" style={btnStyle({ borderColor: "#3498db44", color: "#73bfff" })}>🔍</HoverButton>
         <HoverButton onClick={() => onCreateEffect?.()} style={btnStyle({ borderColor: "#9b59b644", color: "#d7a9ff" })}>Criar efeito</HoverButton>
       </div>
       <div style={{ maxHeight: "58vh", overflowY: "auto", paddingRight: 4 }}>
@@ -126,6 +156,7 @@ export function ModificadoresEditor({ title, list, onChange, inventarioItens, on
           </div>
         ))}
       </div>
+      {previewOpen && <EffectDetailsModal effect={selectedEffect} onClose={() => setPreviewOpen(false)} />}
     </Modal>
   );
 }
