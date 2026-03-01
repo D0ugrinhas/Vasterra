@@ -120,11 +120,20 @@ export function ItemEditor({ item, onSave, onClose }) {
           )}
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <input type="number" min={0} step={0.1} value={Number(d.peso || 0)} onChange={(e) => up("peso", Number(e.target.value) || 0)} placeholder="Peso" style={inpStyle()} />
-            <input type="number" min={1} value={Number(d.slots || 1)} onChange={(e) => up("slots", Math.max(1, Number(e.target.value) || 1))} placeholder="Slots" style={inpStyle()} />
+            <div>
+              <label style={{ display: "block", color: G.muted, fontSize: 10, marginBottom: 3 }}>Peso (kg) — usado no limite de carga do Inventário</label>
+              <input type="number" min={0} step={0.1} value={Number(d.peso || 0)} onChange={(e) => up("peso", Number(e.target.value) || 0)} placeholder="Peso em kg" style={inpStyle()} />
+            </div>
+            <div>
+              <label style={{ display: "block", color: G.muted, fontSize: 10, marginBottom: 3 }}>Slots — quantos espaços ocupa no Inventário</label>
+              <input type="number" min={1} value={Number(d.slots || 1)} onChange={(e) => up("slots", Math.max(1, Number(e.target.value) || 1))} placeholder="Slots" style={inpStyle()} />
+            </div>
           </div>
 
-          {isArma && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><input value={d.dano || ""} onChange={(e) => up("dano", e.target.value)} placeholder="Dano" style={inpStyle()} /><input value={d.critico || ""} onChange={(e) => up("critico", e.target.value)} placeholder="Crítico" style={inpStyle()} /></div>}
+          {isArma && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><div><label style={{ display: "block", color: G.muted, fontSize: 10, marginBottom: 3 }}>Dano base da arma</label><input value={d.dano || ""} onChange={(e) => up("dano", e.target.value)} placeholder="Ex: 1d8+2" style={inpStyle()} /></div><div><label style={{ display: "block", color: G.muted, fontSize: 10, marginBottom: 3 }}>Crítico</label><input value={d.critico || ""} onChange={(e) => up("critico", e.target.value)} placeholder="Ex: 19-20/x2" style={inpStyle()} /></div></div>}
+          
+          {isArma && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><div><label style={{ display: "block", color: G.muted, fontSize: 10, marginBottom: 3 }}>Alcance — distância efetiva</label><input value={d.alcance || ""} onChange={(e) => up("alcance", e.target.value)} placeholder="Ex: corpo a corpo / 12m" style={inpStyle()} /></div><div><label style={{ display: "block", color: G.muted, fontSize: 10, marginBottom: 3 }}>Tamanho — dimensão física da arma</label><input value={d.tamanho || ""} onChange={(e) => up("tamanho", e.target.value)} placeholder="Ex: 1.2m" style={inpStyle()} /></div></div>}
+
           {isArmaduraLike && (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <select value={d.regiaoEfeito || ""} onChange={(e) => up("regiaoEfeito", e.target.value)} style={inpStyle()}>
@@ -146,7 +155,7 @@ export function ItemEditor({ item, onSave, onClose }) {
 
           <div>
             <label style={{ display: "block", color: G.muted, fontSize: 11, marginBottom: 4 }}>Descrição</label>
-            <textarea value={d.descricao || ""} onChange={(e) => up("descricao", e.target.value)} rows={4} placeholder="Descrição do item..." style={inpStyle({ resize: "vertical" })} />
+            <textarea value={d.descricao || ""} onChange={(e) => up("descricao", e.target.value)} rows={4} placeholder="Descrição narrativa e técnica do item..." style={inpStyle({ resize: "vertical" })} />
           </div>
         </div>
 
