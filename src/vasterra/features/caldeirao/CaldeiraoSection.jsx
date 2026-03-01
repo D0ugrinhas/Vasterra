@@ -105,7 +105,17 @@ export function CaldeiraoSection({ efeitos, onEfeitos, onNotify, onConfirmAction
             <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 12 }}>
               <div style={{ fontFamily: "'Cinzel',serif", color: G.gold, marginBottom: 8 }}>Condicionais</div>
               <div style={{ display: "grid", gap: 6 }}>
-                {(selEffect.condicionais || []).map((c) => <div key={c.id} style={{ border: "1px solid #222", borderRadius: 8, padding: 8, fontFamily: "monospace", fontSize: 11, color: c.ativo ? G.text : "#666" }}>{c.ativo ? "☑" : "☐"} {c.texto || "(sem texto)"}</div>)}
+                {(selEffect.condicionais || []).map((c) => {
+                  const condicao = c.condicao || "—";
+                  const efeito = c.efeito || c.texto || "—";
+                  return (
+                    <div key={c.id} style={{ border: "1px solid #222", borderRadius: 8, padding: 8, fontFamily: "monospace", fontSize: 11, color: c.ativo ? G.text : "#666", display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 8, alignItems: "center" }}>
+                      <span>Condição: {condicao}</span>
+                      <span>{c.ativo ? "☑" : "☐"}</span>
+                      <span>Efeito: {efeito}</span>
+                    </div>
+                  );
+                })}
                 {(selEffect.condicionais || []).length === 0 && <div style={{ fontFamily: "monospace", color: "#666", fontSize: 11 }}>Sem condicionais.</div>}
               </div>
             </div>

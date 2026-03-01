@@ -8,6 +8,7 @@ import { BackgroundParticles } from "./features/shared/components";
 import { FichasSection } from "./features/fichas/FichasSection";
 import { ArsenalSection } from "./features/arsenal/ArsenalSection";
 import { CaldeiraoSection } from "./features/caldeirao/CaldeiraoSection";
+import { EffectForgeEditor, makeDefaultEffect } from "./features/caldeirao/EffectForgeEditor";
 
 export default function VasterraApp() {
   const [section, setSection] = useState("menu");
@@ -16,6 +17,8 @@ export default function VasterraApp() {
   const [arsenal, setArsenal] = useState([]);
   const [efeitosCaldeirao, setEfeitosCaldeirao] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  const [effectEditorOpen, setEffectEditorOpen] = useState(false);
+  const [effectEditorData, setEffectEditorData] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -32,6 +35,19 @@ export default function VasterraApp() {
   useEffect(() => { if (loaded) stSet("vasterra:fichas", fichas); }, [fichas, loaded]);
   useEffect(() => { if (loaded) stSet("vasterra:arsenal", arsenal); }, [arsenal, loaded]);
   useEffect(() => { if (loaded) stSet("vasterra:caldeirao", efeitosCaldeirao); }, [efeitosCaldeirao, loaded]);
+
+  const openEffectForge = () => {
+    setEffectEditorData(makeDefaultEffect());
+    setEffectEditorOpen(true);
+  };
+
+  const saveEffectFromModal = (effect) => {
+    const next = { ...effect, id: effect.id || Math.random().toString(36).slice(2, 9), criado: effect.criado || Date.now(), atualizado: Date.now() };
+    const exists = (efeitosCaldeirao || []).some((x) => x.id === next.id);
+    setEfeitosCaldeirao(exists ? efeitosCaldeirao.map((x) => (x.id === next.id ? next : x)) : [next, ...efeitosCaldeirao]);
+    setEffectEditorOpen(false);
+    pushToast("Efeito salvo no Caldeirão.", "success");
+  };
 
   if (!loaded) {
     return (
@@ -89,12 +105,13 @@ export default function VasterraApp() {
           <div style={{ marginTop: 16, fontFamily: "monospace", color: "#777", zIndex: 1 }}>Clique em qualquer lugar para entrar</div>
         </div>
       )}
-      {section === "fichas" && <div className="v-fade"><FichasSection fichas={fichas} onFichas={setFichas} arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} onOpenCaldeirao={() => setSection("caldeirao")} /></div>}
-      {section === "arsenal" && <div className="v-fade"><ArsenalSection arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onEfeitosCaldeirao={setEfeitosCaldeirao} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} onOpenCaldeirao={() => setSection("caldeirao")} /></div>}
+      {section === "fichas" && <div className="v-fade"><FichasSection fichas={fichas} onFichas={setFichas} arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} onOpenCaldeirao={openEffectForge} /></div>}
+      {section === "arsenal" && <div className="v-fade"><ArsenalSection arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onEfeitosCaldeirao={setEfeitosCaldeirao} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} onOpenCaldeirao={openEffectForge} /></div>}
       {section === "caldeirao" && <div className="v-fade"><CaldeiraoSection efeitos={efeitosCaldeirao} onEfeitos={setEfeitosCaldeirao} onNotify={pushToast} onConfirmAction={confirmAction} /></div>}
 
       <ToastViewport items={toasts} onClose={closeToast} />
       <ConfirmWindow data={confirm} onCancel={cancelConfirm} onConfirm={runConfirm} />
+      {effectEditorOpen && <EffectForgeEditor effect={effectEditorData} onSave={saveEffectFromModal} onClose={() => setEffectEditorOpen(false)} />}
     </div>
   );
 }

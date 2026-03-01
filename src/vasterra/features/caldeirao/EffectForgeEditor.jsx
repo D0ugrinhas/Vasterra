@@ -6,7 +6,25 @@ import { Modal } from "../shared/components";
 
 const allEssencias = [...ESSENCIAS_VIRTUDES, ...ESSENCIAS_PECADOS];
 
-const newConditional = () => ({ id: uid(), ativo: true, texto: "" });
+const newConditional = () => ({ id: uid(), ativo: true, condicao: "", efeito: "" });
+
+const normalizeConditional = (c) => {
+  if (!c) return newConditional();
+  if (typeof c.condicao === "string" || typeof c.efeito === "string") {
+    return {
+      id: c.id || uid(),
+      ativo: c.ativo !== false,
+      condicao: c.condicao || "",
+      efeito: c.efeito || "",
+    };
+  }
+  return {
+    id: c.id || uid(),
+    ativo: c.ativo !== false,
+    condicao: "",
+    efeito: c.texto || "",
+  };
+};
 
 const newEffect = () => ({
   id: uid(),
@@ -31,7 +49,7 @@ const newEffect = () => ({
 });
 
 export function EffectForgeEditor({ effect, onSave, onClose }) {
-  const [d, setD] = useState(() => effect ? { ...effect, condicionais: (effect.condicionais || []).map((x) => ({ ...x, id: x.id || uid() })) } : newEffect());
+  const [d, setD] = useState(() => effect ? { ...effect, condicionais: (effect.condicionais || []).map(normalizeConditional) } : newEffect());
   const up = (k, v) => setD((p) => ({ ...p, [k]: v }));
 
   const onUploadIcon = (file) => {
@@ -92,11 +110,15 @@ export function EffectForgeEditor({ effect, onSave, onClose }) {
               <span style={{ fontFamily: "'Cinzel',serif", color: G.gold }}>Efeitos condicionais</span>
               <button onClick={() => up("condicionais", [...(d.condicionais || []), newConditional()])} style={btnStyle({ padding: "3px 8px", fontSize: 11 })}>+ condição</button>
             </div>
-            <div style={{ maxHeight: 180, overflowY: "auto", display: "grid", gap: 6 }}>
+            <div style={{ maxHeight: 220, overflowY: "auto", display: "grid", gap: 6 }}>
               {(d.condicionais || []).map((c) => (
-                <div key={c.id} style={{ display: "grid", gridTemplateColumns: "26px 1fr auto", gap: 6 }}>
-                  <input type="checkbox" checked={!!c.ativo} onChange={(e) => up("condicionais", d.condicionais.map((x) => x.id === c.id ? { ...x, ativo: e.target.checked } : x))} />
-                  <input value={c.texto} onChange={(e) => up("condicionais", d.condicionais.map((x) => x.id === c.id ? { ...x, texto: e.target.value } : x))} placeholder="Se X ocorrer, Y acontece..." style={inpStyle()} />
+                <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1fr 84px 1fr auto", gap: 6, alignItems: "center" }}>
+                  <input value={c.condicao || ""} onChange={(e) => up("condicionais", d.condicionais.map((x) => x.id === c.id ? { ...x, condicao: e.target.value } : x))} placeholder="Condição" style={inpStyle()} />
+                  <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, fontFamily: "monospace", fontSize: 10, color: G.muted }}>
+                    <input type="checkbox" checked={!!c.ativo} onChange={(e) => up("condicionais", d.condicionais.map((x) => x.id === c.id ? { ...x, ativo: e.target.checked } : x))} />
+                    Ativo
+                  </label>
+                  <input value={c.efeito || ""} onChange={(e) => up("condicionais", d.condicionais.map((x) => x.id === c.id ? { ...x, efeito: e.target.value } : x))} placeholder="Efeito" style={inpStyle()} />
                   <button onClick={() => up("condicionais", d.condicionais.filter((x) => x.id !== c.id))} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c", padding: "3px 8px" })}>✕</button>
                 </div>
               ))}

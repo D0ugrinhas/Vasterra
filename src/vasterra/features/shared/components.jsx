@@ -106,7 +106,7 @@ export function ModificadoresEditor({ title, list, onChange, inventarioItens, on
       </div>
       <div style={{ maxHeight: "58vh", overflowY: "auto", paddingRight: 4 }}>
         {(list || []).map((m) => (
-          <div key={m.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr 1fr 130px 1fr 36px 36px", gap: 6, marginBottom: 8, border: "1px solid #222", borderRadius: 8, padding: 8, background: "#0b0b0b" }}>
+          <div key={m.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr 1fr 130px 1fr 36px 36px 36px", gap: 6, marginBottom: 8, border: "1px solid #222", borderRadius: 8, padding: 8, background: "#0b0b0b" }}>
             <select value={m.tipo} onChange={(e) => up(m.id, { tipo: e.target.value })} style={inpStyle()}><option>Buff</option><option>Debuff</option></select>
             <input value={m.nome} onChange={(e) => up(m.id, { nome: e.target.value })} placeholder="Nome" style={inpStyle()} />
             <input value={m.efeito} onChange={(e) => up(m.id, { efeito: e.target.value })} placeholder="Efeito mecânico ex: +4FOR" style={inpStyle()} />
@@ -121,7 +121,8 @@ export function ModificadoresEditor({ title, list, onChange, inventarioItens, on
             ) : (
               <input value={m.origemDetalhe || ""} onChange={(e) => up(m.id, { origemDetalhe: e.target.value })} placeholder={m.origem === "Outro" ? "Descreva origem" : "Detalhe"} style={inpStyle()} />
             )}
-            <HoverButton onClick={() => del(m.id)} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c", padding: "4px" })}>✕</HoverButton>
+            <HoverButton onClick={() => clone(m.id)} title="Duplicar" style={btnStyle({ borderColor: "#3498db44", color: "#73bfff", padding: "4px" })}>⎘</HoverButton>
+            <HoverButton onClick={() => del(m.id)} title="Apagar" style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c", padding: "4px" })}>✕</HoverButton>
           </div>
         ))}
       </div>
