@@ -180,7 +180,7 @@ export function TabInventario({ ficha, onUpdate, arsenal, efeitosCaldeirao = [],
         </Modal>
       )}
 
-      {localOpen && <ItemEditor item={localEdit} effectsLibrary={efeitosCaldeirao} onCreateEffect={onOpenCaldeirao} onSave={saveLocal} onClose={() => setLocalOpen(false)} />}
+      {localOpen && <ItemEditor item={localEdit} effectsLibrary={efeitosCaldeirao} onCreateEffect={onOpenCaldeirao} onEditEffect={onOpenCaldeirao} onSave={saveLocal} onClose={() => setLocalOpen(false)} />}
       {detail && <Modal title={`Detalhes: ${detail.nome}`} onClose={() => setDetail(null)} wide><ArsenalDetalhe item={detail} onEdit={() => { setLocalEdit(detail); setLocalOpen(true); setDetail(null); }} onDup={() => {}} onDel={() => {}} /></Modal>}
     </div>
   );

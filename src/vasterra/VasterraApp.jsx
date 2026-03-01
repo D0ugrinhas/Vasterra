@@ -11,7 +11,7 @@ import { CaldeiraoSection } from "./features/caldeirao/CaldeiraoSection";
 import { EffectForgeEditor, makeDefaultEffect } from "./features/caldeirao/EffectForgeEditor";
 
 export default function VasterraApp() {
-  const [section, setSection] = useState("menu");
+  const [section, setSection] = useState("fichas");
   const { toasts, confirm, pushToast, closeToast, confirmAction, cancelConfirm, runConfirm } = useFeedback();
   const [fichas, setFichas] = useState([]);
   const [arsenal, setArsenal] = useState([]);
@@ -36,8 +36,8 @@ export default function VasterraApp() {
   useEffect(() => { if (loaded) stSet("vasterra:arsenal", arsenal); }, [arsenal, loaded]);
   useEffect(() => { if (loaded) stSet("vasterra:caldeirao", efeitosCaldeirao); }, [efeitosCaldeirao, loaded]);
 
-  const openEffectForge = () => {
-    setEffectEditorData(makeDefaultEffect());
+  const openEffectForge = (effect = null) => {
+    setEffectEditorData(effect ? { ...effect } : makeDefaultEffect());
     setEffectEditorOpen(true);
   };
 
@@ -77,8 +77,8 @@ export default function VasterraApp() {
       `}</style>
 
       <div style={{ height: 54, borderBottom: "1px solid " + G.border, background: "#060606", display: "flex", alignItems: "center", padding: "0 20px", gap: 24, position: "sticky", top: 0, zIndex: 50 }}>
-        <div style={{ marginRight: 8, display: "flex", flexDirection: "column", lineHeight: 1 }}><div style={{ fontFamily: "'Cinzel Decorative',serif", fontSize: 16, color: G.gold, letterSpacing: 4 }}>VASTERRA</div><div style={{ fontFamily: "'Cinzel',serif", fontSize: 9, color: "#7aa9d8", letterSpacing: 2, marginTop: 3 }}>Vasterra é Vasto</div></div>
-        {[{ id: "menu", label: "MENU" }, { id: "fichas", label: "FICHAS" }, { id: "arsenal", label: "ARSENAL" }, { id: "caldeirao", label: "CALDEIRÃO" }].map((s) => (
+        <button onClick={() => setSection("fichas")} style={{ marginRight: 8, display: "flex", flexDirection: "column", lineHeight: 1, background: "transparent", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}><div style={{ fontFamily: "'Cinzel Decorative',serif", fontSize: 16, color: G.gold, letterSpacing: 4 }}>VASTERRA</div><div style={{ fontFamily: "'Cinzel',serif", fontSize: 9, color: "#7aa9d8", letterSpacing: 2, marginTop: 3 }}>Vasterra é Vasto</div></button>
+        {[{ id: "fichas", label: "FICHAS" }, { id: "arsenal", label: "ARSENAL" }, { id: "caldeirao", label: "CALDEIRÃO" }].map((s) => (
           <HoverButton
             className="v-nav-btn"
             key={s.id}
@@ -97,16 +97,8 @@ export default function VasterraApp() {
         </div>
       </div>
 
-      {section === "menu" && (
-        <div onClick={() => setSection("fichas")} style={{ position: "relative", minHeight: "calc(100vh - 54px)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" }}>
-          <BackgroundParticles />
-          <div style={{ fontFamily: "'Cinzel Decorative',serif", fontSize: 56, color: G.gold, letterSpacing: 8, textShadow: "0 0 20px #c8a96e66", zIndex: 1 }}>VASTERRA</div>
-          <div style={{ fontFamily: "'Cinzel',serif", fontSize: 18, color: "#7aa9d8", letterSpacing: 4, zIndex: 1 }}>Vasterra é Vasto</div>
-          <div style={{ marginTop: 16, fontFamily: "monospace", color: "#777", zIndex: 1 }}>Clique em qualquer lugar para entrar</div>
-        </div>
-      )}
       {section === "fichas" && <div className="v-fade"><FichasSection fichas={fichas} onFichas={setFichas} arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} onOpenCaldeirao={openEffectForge} /></div>}
-      {section === "arsenal" && <div className="v-fade"><ArsenalSection arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onEfeitosCaldeirao={setEfeitosCaldeirao} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} onOpenCaldeirao={openEffectForge} /></div>}
+      {section === "arsenal" && <div className="v-fade"><ArsenalSection arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onEfeitosCaldeirao={setEfeitosCaldeirao} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} onOpenCaldeirao={openEffectForge} onEditCaldeirao={openEffectForge} /></div>}
       {section === "caldeirao" && <div className="v-fade"><CaldeiraoSection efeitos={efeitosCaldeirao} onEfeitos={setEfeitosCaldeirao} onNotify={pushToast} onConfirmAction={confirmAction} /></div>}
 
       <ToastViewport items={toasts} onClose={closeToast} />

@@ -24,7 +24,7 @@ function VastosInput({ value = {}, onChange }) {
   );
 }
 
-function EffectListEditor({ title, list, onChange }) {
+function EffectListEditor({ title, list, onChange, onEditAttached }) {
   const up = (id, patch) => onChange((list || []).map((x) => (x.id === id ? { ...x, ...patch } : x)));
   const del = (id) => onChange((list || []).filter((x) => x.id !== id));
 
@@ -39,10 +39,13 @@ function EffectListEditor({ title, list, onChange }) {
           const parsed = parseMechanicalEffect(ef.valor || "");
           return (
             <div key={ef.id} style={{ border: "1px solid #2a2a2a", borderRadius: 8, padding: 8, display: "grid", gap: 6 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 140px auto", gap: 6 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 140px auto auto", gap: 6 }}>
                 <input value={ef.nome} onChange={(e) => up(ef.id, { nome: e.target.value })} placeholder="Nome" style={inpStyle()} />
                 <input value={ef.descricao} onChange={(e) => up(ef.id, { descricao: e.target.value })} placeholder="Descrição" style={inpStyle()} />
                 <input value={ef.valor} onChange={(e) => up(ef.id, { valor: e.target.value })} placeholder="+4FOR / +5%ÉTER" style={inpStyle()} />
+                {ef.origemEffectId ? (
+                  <button onClick={() => onEditAttached?.(ef)} style={btnStyle({ borderColor: "#9b59b644", color: "#d7a9ff", padding: "4px 8px" })}>✎</button>
+                ) : <span />}
                 <button onClick={() => del(ef.id)} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c", padding: "4px 8px" })}>✕</button>
               </div>
               <div style={{ fontFamily: "monospace", fontSize: 10, color: parsed ? "#6fe39b" : "#777" }}>{parsed ? `Aplica ${parsed.raw || `${parsed.value >= 0 ? "+" : ""}${parsed.value}${parsed.key}`}` : "Aceita: +4FOR, -2VIT, +5%SABEDORIA, +5%ÉTER"}</div>
@@ -58,16 +61,16 @@ const allEssencias = [...ESSENCIAS_VIRTUDES, ...ESSENCIAS_PECADOS];
 
 function applyTemplateToList(list, tpl) {
   if (!tpl) return list;
-  return [...(list || []), { id: uid(), nome: tpl.nome || "Efeito", descricao: tpl.descricao || tpl.frase || "", valor: tpl.efeitoMecanico || "", ativo: true }];
+  return [...(list || []), { id: uid(), nome: tpl.nome || "Efeito", descricao: tpl.descricao || tpl.frase || "", valor: tpl.efeitoMecanico || "", ativo: true, origemEffectId: tpl.id || "" }];
 }
 
-export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreateEffect }) {
+export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreateEffect, onEditEffect }) {
   const [d, setD] = useState(() => {
     const base = item ? { ...item } : novoItem();
     return {
       ...base,
       bonus: (base.bonus || []).length ? base.bonus.map((b) => ({ id: b.id || uid(), nome: b.nome || b.texto || "", descricao: b.descricao || "", valor: b.valor || b.efeito || "", ativo: b.ativo !== false })) : [blankEffect()],
-      efeitos: (base.efeitos || []).map((e) => ({ id: e.id || uid(), nome: e.nome || e.titulo || "", descricao: e.descricao || e.desc || "", valor: e.valor || "", ativo: e.ativo !== false })),
+      efeitos: (base.efeitos || []).map((e) => ({ id: e.id || uid(), nome: e.nome || e.titulo || "", descricao: e.descricao || e.desc || "", valor: e.valor || "", ativo: e.ativo !== false, origemEffectId: e.origemEffectId || "" })),
       slots: Number(base.slots || 1),
       vastos: base.vastos || { cobre: 0, prata: 0, ouro: 0, platina: 0 },
       iconeModo: base.iconeModo || "emoji",
@@ -90,6 +93,12 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
 
   const parsedCount = useMemo(() => [...d.bonus, ...d.efeitos].filter((e) => parseMechanicalEffect(e.valor || "")).length, [d]);
 
+
+  const editAttachedEffect = (ef) => {
+    const ref = (effectsLibrary || []).find((x) => x.id === ef.origemEffectId);
+    if (!ref) return;
+    onEditEffect?.(ref);
+  };
 
   const onUploadIcon = (file) => {
     if (!file) return;
@@ -203,7 +212,7 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
           </div>
 
           <EffectListEditor title="Bônus" list={d.bonus} onChange={(next) => up("bonus", next)} />
-          <EffectListEditor title="Efeitos" list={d.efeitos} onChange={(next) => up("efeitos", next)} />
+          <EffectListEditor title="Efeitos" list={d.efeitos} onChange={(next) => up("efeitos", next)} onEditAttached={editAttachedEffect} />
           <div style={{ fontFamily: "monospace", fontSize: 11, color: "#7fb3ff" }}>Efeitos válidos para cálculo: {parsedCount}</div>
         </div>
       </div>
