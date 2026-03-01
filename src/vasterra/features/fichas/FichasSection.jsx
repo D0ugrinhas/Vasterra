@@ -19,7 +19,7 @@ export const FICHA_TABS = [
   { id: "inventario", label: "Inventário" },
 ];
 
-export function FichasSection({ fichas, onFichas, arsenal, onArsenal, onNotify, onConfirmAction }) {
+export function FichasSection({ fichas, onFichas, arsenal, efeitosCaldeirao = [], onArsenal, onNotify, onConfirmAction, onOpenCaldeirao }) {
   const [sel, setSel] = useState(null);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState("status");
@@ -236,7 +236,7 @@ export function FichasSection({ fichas, onFichas, arsenal, onArsenal, onNotify, 
             {tab === "atributos" && <TabAtributos ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} inventarioNomes={(ficha.inventario || []).map((e) => e.item?.nome).filter(Boolean)} />}
             {tab === "identidade" && <TabIdentidade ficha={ficha} onUpdate={updateFicha} />}
             {tab === "essencia" && <TabEssencia ficha={ficha} onUpdate={updateFicha} />}
-            {tab === "inventario" && <TabInventario ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} onArsenal={onArsenal} onNotify={onNotify} onConfirmAction={onConfirmAction} />}
+            {tab === "inventario" && <TabInventario ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onArsenal={onArsenal} onNotify={onNotify} onConfirmAction={onConfirmAction} onOpenCaldeirao={onOpenCaldeirao} />}
           </div>
         </>
       )}

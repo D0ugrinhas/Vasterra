@@ -56,7 +56,12 @@ function EffectListEditor({ title, list, onChange }) {
 
 const allEssencias = [...ESSENCIAS_VIRTUDES, ...ESSENCIAS_PECADOS];
 
-export function ItemEditor({ item, onSave, onClose }) {
+function applyTemplateToList(list, tpl) {
+  if (!tpl) return list;
+  return [...(list || []), { id: uid(), nome: tpl.nome || "Efeito", descricao: tpl.descricao || tpl.frase || "", valor: tpl.efeitoMecanico || "", ativo: true }];
+}
+
+export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreateEffect }) {
   const [d, setD] = useState(() => {
     const base = item ? { ...item } : novoItem();
     return {
@@ -84,6 +89,7 @@ export function ItemEditor({ item, onSave, onClose }) {
   const isConsumivel = d.tipo === "Consumível";
 
   const parsedCount = useMemo(() => [...d.bonus, ...d.efeitos].filter((e) => parseMechanicalEffect(e.valor || "")).length, [d]);
+
 
   const onUploadIcon = (file) => {
     if (!file) return;
@@ -182,6 +188,17 @@ export function ItemEditor({ item, onSave, onClose }) {
             <select value={d.essenciaAtribuida || ""} onChange={(e) => up("essenciaAtribuida", e.target.value)} style={inpStyle()}>
               <option value="">Sem essência</option>
               {allEssencias.map((es) => <option key={es.nome} value={es.nome}>{es.nome}</option>)}
+            </select>
+          </div>
+
+          <div style={{ background: G.bg3, border: "1px solid " + G.border, borderRadius: 10, padding: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <span style={{ fontFamily: "'Cinzel',serif", color: G.gold }}>Anexar efeito do Caldeirão</span>
+              <button onClick={() => onCreateEffect?.()} style={btnStyle({ padding: "3px 8px", fontSize: 11, borderColor: "#9b59b644", color: "#d8a6ff" })}>Criar efeito</button>
+            </div>
+            <select onChange={(e) => { const ref = effectsLibrary.find((x) => x.id === e.target.value); if (ref) up("efeitos", applyTemplateToList(d.efeitos, ref)); }} value="" style={inpStyle()}>
+              <option value="">Selecionar efeito do Caldeirão...</option>
+              {effectsLibrary.map((x) => <option key={x.id} value={x.id}>{x.nome} · {x.efeitoMecanico || "—"}</option>)}
             </select>
           </div>
 

@@ -7,26 +7,31 @@ import { HoverButton } from "./components/primitives/Interactive";
 import { BackgroundParticles } from "./features/shared/components";
 import { FichasSection } from "./features/fichas/FichasSection";
 import { ArsenalSection } from "./features/arsenal/ArsenalSection";
+import { CaldeiraoSection } from "./features/caldeirao/CaldeiraoSection";
 
 export default function VasterraApp() {
   const [section, setSection] = useState("menu");
   const { toasts, confirm, pushToast, closeToast, confirmAction, cancelConfirm, runConfirm } = useFeedback();
   const [fichas, setFichas] = useState([]);
   const [arsenal, setArsenal] = useState([]);
+  const [efeitosCaldeirao, setEfeitosCaldeirao] = useState([]);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     (async () => {
       const f = await stGet("vasterra:fichas");
       const a = await stGet("vasterra:arsenal");
+      const c = await stGet("vasterra:caldeirao");
       if (f) setFichas(f);
       if (a) setArsenal(a);
+      if (c) setEfeitosCaldeirao(c);
       setLoaded(true);
     })();
   }, []);
 
   useEffect(() => { if (loaded) stSet("vasterra:fichas", fichas); }, [fichas, loaded]);
   useEffect(() => { if (loaded) stSet("vasterra:arsenal", arsenal); }, [arsenal, loaded]);
+  useEffect(() => { if (loaded) stSet("vasterra:caldeirao", efeitosCaldeirao); }, [efeitosCaldeirao, loaded]);
 
   if (!loaded) {
     return (
@@ -57,7 +62,7 @@ export default function VasterraApp() {
 
       <div style={{ height: 54, borderBottom: "1px solid " + G.border, background: "#060606", display: "flex", alignItems: "center", padding: "0 20px", gap: 24, position: "sticky", top: 0, zIndex: 50 }}>
         <div style={{ marginRight: 8, display: "flex", flexDirection: "column", lineHeight: 1 }}><div style={{ fontFamily: "'Cinzel Decorative',serif", fontSize: 16, color: G.gold, letterSpacing: 4 }}>VASTERRA</div><div style={{ fontFamily: "'Cinzel',serif", fontSize: 9, color: "#7aa9d8", letterSpacing: 2, marginTop: 3 }}>Vasterra é Vasto</div></div>
-        {[{ id: "menu", label: "MENU" }, { id: "fichas", label: "FICHAS" }, { id: "arsenal", label: "ARSENAL" }].map((s) => (
+        {[{ id: "menu", label: "MENU" }, { id: "fichas", label: "FICHAS" }, { id: "arsenal", label: "ARSENAL" }, { id: "caldeirao", label: "CALDEIRÃO" }].map((s) => (
           <HoverButton
             className="v-nav-btn"
             key={s.id}
@@ -72,7 +77,7 @@ export default function VasterraApp() {
           >{s.label}</HoverButton>
         ))}
         <div style={{ marginLeft: "auto", fontSize: 10, color: G.muted, fontFamily: "monospace" }}>
-          {fichas.length} fichas · {arsenal.length} itens
+          {fichas.length} fichas · {arsenal.length} itens · {efeitosCaldeirao.length} efeitos
         </div>
       </div>
 
@@ -84,8 +89,9 @@ export default function VasterraApp() {
           <div style={{ marginTop: 16, fontFamily: "monospace", color: "#777", zIndex: 1 }}>Clique em qualquer lugar para entrar</div>
         </div>
       )}
-      {section === "fichas" && <div className="v-fade"><FichasSection fichas={fichas} onFichas={setFichas} arsenal={arsenal} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} /></div>}
-      {section === "arsenal" && <div className="v-fade"><ArsenalSection arsenal={arsenal} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} /></div>}
+      {section === "fichas" && <div className="v-fade"><FichasSection fichas={fichas} onFichas={setFichas} arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} onOpenCaldeirao={() => setSection("caldeirao")} /></div>}
+      {section === "arsenal" && <div className="v-fade"><ArsenalSection arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onEfeitosCaldeirao={setEfeitosCaldeirao} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} onOpenCaldeirao={() => setSection("caldeirao")} /></div>}
+      {section === "caldeirao" && <div className="v-fade"><CaldeiraoSection efeitos={efeitosCaldeirao} onEfeitos={setEfeitosCaldeirao} onNotify={pushToast} onConfirmAction={confirmAction} /></div>}
 
       <ToastViewport items={toasts} onClose={closeToast} />
       <ConfirmWindow data={confirm} onCancel={cancelConfirm} onConfirm={runConfirm} />

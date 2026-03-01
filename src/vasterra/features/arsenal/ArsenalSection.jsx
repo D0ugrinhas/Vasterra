@@ -6,7 +6,7 @@ import { ItemIcon } from "../shared/components";
 import { ItemEditor } from "./ItemEditor";
 import { ArsenalDetalhe } from "./ArsenalDetalhe";
 
-export function ArsenalSection({ arsenal, onArsenal, onNotify, onConfirmAction }) {
+export function ArsenalSection({ arsenal, efeitosCaldeirao = [], onArsenal, onNotify, onConfirmAction, onOpenCaldeirao }) {
   const [sel, setSel] = useState(null);
   const [search, setSearch] = useState("");
   const [fTipo, setFTipo] = useState("");
@@ -115,7 +115,7 @@ export function ArsenalSection({ arsenal, onArsenal, onNotify, onConfirmAction }
         </div>
       </div>
 
-      {editOpen && <ItemEditor item={editItem} onSave={saveItem} onClose={() => setEditOpen(false)} />}
+      {editOpen && <ItemEditor item={editItem} effectsLibrary={efeitosCaldeirao} onCreateEffect={onOpenCaldeirao} onSave={saveItem} onClose={() => setEditOpen(false)} />}
     </div>
   );
 }
