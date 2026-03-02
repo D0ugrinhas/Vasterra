@@ -28,7 +28,7 @@ function detectStatusTarget(code, canonical) {
   const suffix = code.slice(canonical.length);
   if (!suffix) return "base";
   if (suffix === "ATUAL" || suffix === "CURRENT") return "current";
-  if (suffix === "MAX" || suffix === "MAXIMO" || suffix === "MAXIMO") return "max";
+  if (suffix === "MAX" || suffix === "MAXIMO") return "max";
   return null;
 }
 
@@ -65,12 +65,17 @@ export function parseMechanicalEffect(raw = "") {
   return { scope: "pericias", key: code, value, isPct, target: "base", raw: `${value >= 0 ? "+" : ""}${value}${isPct ? "%" : ""}${code}` };
 }
 
+export function parseMechanicalEffects(raw = "") {
+  return String(raw || "")
+    .split(",")
+    .map((part) => parseMechanicalEffect(part.trim()))
+    .filter(Boolean);
+}
+
 export function normalizeEffectList(list = [], source = "Outro") {
   return (list || []).flatMap((it) => {
     if (!it?.ativo) return [];
-    const parsed = parseMechanicalEffect(it.valor || it.efeito || "");
-    if (!parsed) return [];
-    return [{
+    return parseMechanicalEffects(it.valor || it.efeito || "").map((parsed) => ({
       id: it.id || Math.random().toString(36).slice(2, 9),
       tipo: parsed.value >= 0 ? "Buff" : "Debuff",
       nome: it.nome || it.titulo || "Efeito",
@@ -82,16 +87,17 @@ export function normalizeEffectList(list = [], source = "Outro") {
       key: parsed.key,
       isPct: parsed.isPct,
       target: parsed.target,
-    }];
+    }));
   });
 }
 
 export function aggregateModifiers(mods = [], scope) {
   const map = {};
   (mods || []).forEach((m) => {
-    const parsed = parseMechanicalEffect(m.efeito || m.valor || "");
-    if (!parsed || parsed.scope !== scope || parsed.isPct) return;
-    map[parsed.key] = (map[parsed.key] || 0) + parsed.value;
+    parseMechanicalEffects(m.efeito || m.valor || "").forEach((parsed) => {
+      if (!parsed || parsed.scope !== scope || parsed.isPct) return;
+      map[parsed.key] = (map[parsed.key] || 0) + parsed.value;
+    });
   });
   return map;
 }
@@ -99,10 +105,11 @@ export function aggregateModifiers(mods = [], scope) {
 export function aggregateStatusModifiers(mods = []) {
   const status = {};
   (mods || []).forEach((m) => {
-    const parsed = parseMechanicalEffect(m.efeito || m.valor || "");
-    if (!parsed || parsed.scope !== "status" || parsed.isPct) return;
-    if (!status[parsed.key]) status[parsed.key] = { base: 0, current: 0, max: 0 };
-    status[parsed.key][parsed.target || "base"] += parsed.value;
+    parseMechanicalEffects(m.efeito || m.valor || "").forEach((parsed) => {
+      if (!parsed || parsed.scope !== "status" || parsed.isPct) return;
+      if (!status[parsed.key]) status[parsed.key] = { base: 0, current: 0, max: 0 };
+      status[parsed.key][parsed.target || "base"] += parsed.value;
+    });
   });
   return status;
 }

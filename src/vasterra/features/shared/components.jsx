@@ -99,6 +99,15 @@ export function EffectDetailsModal({ effect, onClose }) {
         <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>Duração: {effect.eterno ? "Eterno" : (effect.duracao || "Não definido")}</div>
       </div>
       {previewOpen && <EffectDetailsModal effect={selectedEffect} onClose={() => setPreviewOpen(false)} />}
+      {inspectMod && (
+        <Modal title={`Efeito Local: ${inspectMod.nome || "Sem nome"}`} onClose={() => setInspectMod(null)} wide>
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ fontFamily: "monospace", color: G.muted, fontSize: 11 }}>{inspectMod.tipo} · Origem: {inspectMod.origem || "Efeito"}</div>
+            <div style={{ color: G.text }}>{inspectMod.efeito || "Sem efeito mecânico"}</div>
+            <div style={{ fontFamily: "monospace", color: "#8ea0b8", fontSize: 11 }}>Detalhe: {inspectMod.origemDetalhe || "—"}</div>
+          </div>
+        </Modal>
+      )}
     </Modal>
   );
 }
@@ -106,6 +115,7 @@ export function EffectDetailsModal({ effect, onClose }) {
 export function ModificadoresEditor({ title, list, onChange, inventarioItens, onClose, effectsLibrary = [], onCreateEffect }) {
   const [selectedEffectId, setSelectedEffectId] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [inspectMod, setInspectMod] = useState(null);
   const selectedEffect = (effectsLibrary || []).find((x) => x.id === selectedEffectId) || null;
 
   const add = () => onChange([...(list || []), { id: uid(), tipo: "Buff", nome: "", efeito: "", origem: "Efeito", origemDetalhe: "" }]);
@@ -136,7 +146,7 @@ export function ModificadoresEditor({ title, list, onChange, inventarioItens, on
       </div>
       <div style={{ maxHeight: "58vh", overflowY: "auto", paddingRight: 4 }}>
         {(list || []).map((m) => (
-          <div key={m.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr 1fr 130px 1fr 36px 36px 36px", gap: 6, marginBottom: 8, border: "1px solid #222", borderRadius: 8, padding: 8, background: "#0b0b0b" }}>
+          <div key={m.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr 1fr 130px 1fr 36px 36px 36px 36px", gap: 6, marginBottom: 8, border: "1px solid #222", borderRadius: 8, padding: 8, background: "#0b0b0b", transition: "transform .16s ease, border-color .2s" }}>
             <select value={m.tipo} onChange={(e) => up(m.id, { tipo: e.target.value })} style={inpStyle()}><option>Buff</option><option>Debuff</option></select>
             <input value={m.nome} onChange={(e) => up(m.id, { nome: e.target.value })} placeholder="Nome" style={inpStyle()} />
             <input value={m.efeito} onChange={(e) => up(m.id, { efeito: e.target.value })} placeholder="Efeito mecânico ex: +4FOR" style={inpStyle()} />
@@ -151,12 +161,22 @@ export function ModificadoresEditor({ title, list, onChange, inventarioItens, on
             ) : (
               <input value={m.origemDetalhe || ""} onChange={(e) => up(m.id, { origemDetalhe: e.target.value })} placeholder={m.origem === "Outro" ? "Descreva origem" : "Detalhe"} style={inpStyle()} />
             )}
+            <HoverButton onClick={() => setInspectMod(m)} title="Inspecionar" style={btnStyle({ borderColor: "#f39c1244", color: "#f7c96b", padding: "4px" })}>🔍</HoverButton>
             <HoverButton onClick={() => clone(m.id)} title="Duplicar" style={btnStyle({ borderColor: "#3498db44", color: "#73bfff", padding: "4px" })}>⎘</HoverButton>
             <HoverButton onClick={() => del(m.id)} title="Apagar" style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c", padding: "4px" })}>✕</HoverButton>
           </div>
         ))}
       </div>
       {previewOpen && <EffectDetailsModal effect={selectedEffect} onClose={() => setPreviewOpen(false)} />}
+      {inspectMod && (
+        <Modal title={`Efeito Local: ${inspectMod.nome || "Sem nome"}`} onClose={() => setInspectMod(null)} wide>
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ fontFamily: "monospace", color: G.muted, fontSize: 11 }}>{inspectMod.tipo} · Origem: {inspectMod.origem || "Efeito"}</div>
+            <div style={{ color: G.text }}>{inspectMod.efeito || "Sem efeito mecânico"}</div>
+            <div style={{ fontFamily: "monospace", color: "#8ea0b8", fontSize: 11 }}>Detalhe: {inspectMod.origemDetalhe || "—"}</div>
+          </div>
+        </Modal>
+      )}
     </Modal>
   );
 }

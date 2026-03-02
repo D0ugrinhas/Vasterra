@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { ARSENAL_TIPOS, ARSENAL_RANKS, RANK_COR, ESSENCIAS_VIRTUDES, ESSENCIAS_PECADOS } from "../../data/gameData";
 import { novoItem, uid } from "../../core/factories";
-import { parseMechanicalEffect } from "../../core/effects";
+import { parseMechanicalEffect, parseMechanicalEffects } from "../../core/effects";
 import { G, inpStyle, btnStyle } from "../../ui/theme";
 import { Modal, EffectDetailsModal } from "../shared/components";
 
@@ -36,7 +36,8 @@ function EffectListEditor({ title, list, onChange, onEditAttached }) {
       </div>
       <div style={{ display: "grid", gap: 8, maxHeight: 220, overflowY: "auto", paddingRight: 4 }}>
         {(list || []).map((ef) => {
-          const parsed = parseMechanicalEffect(ef.valor || "");
+          const parsedList = parseMechanicalEffects(ef.valor || "");
+          const parsed = parsedList[0] || null;
           return (
             <div key={ef.id} style={{ border: "1px solid #2a2a2a", borderRadius: 8, padding: 8, display: "grid", gap: 6 }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 140px auto auto", gap: 6 }}>
@@ -95,7 +96,7 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
   const isArmaduraLike = ["Armadura", "Vestimenta", "Acessório", "Marcas"].includes(d.tipo);
   const isConsumivel = d.tipo === "Consumível";
 
-  const parsedCount = useMemo(() => [...d.bonus, ...d.efeitos].filter((e) => parseMechanicalEffect(e.valor || "")).length, [d]);
+  const parsedCount = useMemo(() => [...d.bonus, ...d.efeitos].reduce((sum, e) => sum + parseMechanicalEffects(e.valor || "").length, 0), [d]);
 
 
   const editAttachedEffect = (ef) => {

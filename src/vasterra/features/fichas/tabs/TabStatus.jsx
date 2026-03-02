@@ -11,14 +11,14 @@ export function TabStatus({ ficha, onUpdate, inventarioNomes = [], arsenal = [],
   const [c2, setC2] = useState("FOR");
   const [cRes, setCRes] = useState(null);
   const [burstRes, setBurstRes] = useState(null);
-  const [modsOpen, setModsOpen] = useState(false);
+  const [effectsOpen, setEffectsOpen] = useState(false);
 
   const itemMods = useMemo(() => inventoryItemModifiers(ficha.inventario || [], arsenal), [ficha.inventario, arsenal]);
-  const mergedStatusMods = [...(ficha.modificadores?.status || []), ...itemMods];
-  const mergedAttrMods = [...(ficha.modificadores?.atributos || []), ...itemMods];
+  const globalEffects = ficha.modificadores?.efeitos || [];
+  const mergedMods = [...globalEffects, ...itemMods];
 
-  const statusBonus = aggregateStatusModifiers(mergedStatusMods);
-  const attrBonus = aggregateModifiers(mergedAttrMods, "atributos");
+  const statusBonus = aggregateStatusModifiers(mergedMods);
+  const attrBonus = aggregateModifiers(mergedMods, "atributos");
 
   const upStatus = (sigla, field, val) => onUpdate({ status: { ...ficha.status, [sigla]: { ...ficha.status[sigla], [field]: val } } });
   const upRecurso = (sigla, field, val) => onUpdate({ recursos: { ...ficha.recursos, [sigla]: { ...ficha.recursos[sigla], [field]: val } } });
@@ -39,9 +39,8 @@ export function TabStatus({ ficha, onUpdate, inventarioNomes = [], arsenal = [],
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
       <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 16 }}>
-        <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 14, paddingBottom: 8, borderBottom: "1px solid " + G.border, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 14, paddingBottom: 8, borderBottom: "1px solid " + G.border }}>
           <span>◈ STATUS</span>
-          <HoverButton onClick={() => setModsOpen(true)} style={btnStyle({ padding: "2px 8px" })}>⚙</HoverButton>
         </div>
         {STATUS_CFG.map((s) => {
           const delta = statusBonus[s.sigla] || { base: 0, current: 0, max: 0 };
@@ -64,7 +63,10 @@ export function TabStatus({ ficha, onUpdate, inventarioNomes = [], arsenal = [],
         <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <span style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3 }}>◈ RECURSOS/RODADA</span>
-            <HoverButton style={btnStyle({ padding: "3px 10px", fontSize: 10 })} onClick={novaRodada}>Nova Rodada</HoverButton>
+            <div style={{ display: "flex", gap: 6 }}>
+              <HoverButton style={btnStyle({ padding: "3px 10px", fontSize: 10 })} onClick={() => setEffectsOpen(true)}>Efeitos</HoverButton>
+              <HoverButton style={btnStyle({ padding: "3px 10px", fontSize: 10 })} onClick={novaRodada}>Nova Rodada</HoverButton>
+            </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             {RECURSOS_CFG.map((rc) => {
@@ -93,7 +95,7 @@ export function TabStatus({ ficha, onUpdate, inventarioNomes = [], arsenal = [],
         </div>
       </div>
 
-      {modsOpen && <ModificadoresEditor title="Modificadores de Status" list={ficha.modificadores?.status || []} inventarioItens={inventarioNomes} effectsLibrary={efeitosCaldeirao} onCreateEffect={onOpenCaldeirao} onClose={() => setModsOpen(false)} onChange={(next) => onUpdate({ modificadores: { ...(ficha.modificadores || {}), status: next } })} />}
+      {effectsOpen && <ModificadoresEditor title="Efeitos do Personagem" list={ficha.modificadores?.efeitos || []} inventarioItens={inventarioNomes} effectsLibrary={efeitosCaldeirao} onCreateEffect={onOpenCaldeirao} onClose={() => setEffectsOpen(false)} onChange={(next) => onUpdate({ modificadores: { ...(ficha.modificadores || {}), efeitos: next } })} />}
     </div>
   );
 }

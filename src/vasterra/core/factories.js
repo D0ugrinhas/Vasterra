@@ -47,6 +47,7 @@ export const novaFicha = (nome = "Novo Personagem") => ({
     vastos: { cobre: 0, prata: 0, ouro: 0, platina: 0 },
   },
   modificadores: {
+    efeitos: [],
     status: [],
     atributos: [],
     pericias: [],
