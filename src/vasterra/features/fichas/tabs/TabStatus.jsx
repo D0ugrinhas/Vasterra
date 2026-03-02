@@ -4,14 +4,13 @@ import { aggregateModifiers, aggregateStatusModifiers } from "../../../core/effe
 import { inventoryItemModifiers } from "../../../core/inventory";
 import { G, btnStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
-import { StatusBar, ModificadoresEditor } from "../../shared/components";
+import { StatusBar } from "../../shared/components";
 
-export function TabStatus({ ficha, onUpdate, inventarioNomes = [], arsenal = [], efeitosCaldeirao = [], onOpenCaldeirao }) {
+export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
   const [c1, setC1] = useState("FOR");
   const [c2, setC2] = useState("FOR");
   const [cRes, setCRes] = useState(null);
   const [burstRes, setBurstRes] = useState(null);
-  const [effectsOpen, setEffectsOpen] = useState(false);
 
   const itemMods = useMemo(() => inventoryItemModifiers(ficha.inventario || [], arsenal), [ficha.inventario, arsenal]);
   const globalEffects = ficha.modificadores?.efeitos || [];
@@ -32,9 +31,8 @@ export function TabStatus({ ficha, onUpdate, inventarioNomes = [], arsenal = [],
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
       <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 16 }}>
-        <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 14, paddingBottom: 8, borderBottom: "1px solid " + G.border, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 14, paddingBottom: 8, borderBottom: "1px solid " + G.border }}>
           <span>◈ STATUS</span>
-          <HoverButton onClick={() => setEffectsOpen(true)} style={btnStyle({ padding: "2px 8px" })}>Efeitos</HoverButton>
         </div>
         {STATUS_CFG.map((s) => {
           const delta = statusBonus[s.sigla] || { base: 0, current: 0, max: 0 };
@@ -72,7 +70,6 @@ export function TabStatus({ ficha, onUpdate, inventarioNomes = [], arsenal = [],
         </div>
       </div>
 
-      {effectsOpen && <ModificadoresEditor title="Efeitos do Personagem" list={ficha.modificadores?.efeitos || []} inventarioItens={inventarioNomes} effectsLibrary={efeitosCaldeirao} onCreateEffect={onOpenCaldeirao} onClose={() => setEffectsOpen(false)} onChange={(next) => onUpdate({ modificadores: { ...(ficha.modificadores || {}), efeitos: next } })} />}
     </div>
   );
 }

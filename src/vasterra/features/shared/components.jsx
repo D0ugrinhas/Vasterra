@@ -85,7 +85,7 @@ export function EffectDetailsModal({ effect, onClose }) {
     <Modal title={`Efeito: ${effect.nome || "Sem nome"}`} onClose={onClose} wide>
       <div style={{ display: "grid", gap: 10 }}>
         <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>
-          {effect.tipo || "—"} · {effect.rank || "Sem rank"} · {effect.efeitoMecanico || "Sem efeito mecânico"}
+          {effect.tipo || "—"} · {effect.rank || "Sem rank"} · {effect.efeitoMecanico || effect.efeito || effect.valor || "Sem efeito mecânico"}
         </div>
         <div style={{ color: G.text }}>{effect.descricao || "Sem descrição."}</div>
         {effect.frase && <div style={{ color: "#ba9cc8", fontStyle: "italic" }}>“{effect.frase}”</div>}
@@ -98,16 +98,6 @@ export function EffectDetailsModal({ effect, onClose }) {
         )}
         <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>Duração: {effect.eterno ? "Eterno" : (effect.duracao || "Não definido")}</div>
       </div>
-      {previewOpen && <EffectDetailsModal effect={selectedEffect} onClose={() => setPreviewOpen(false)} />}
-      {inspectMod && (
-        <Modal title={`Efeito Local: ${inspectMod.nome || "Sem nome"}`} onClose={() => setInspectMod(null)} wide>
-          <div style={{ display: "grid", gap: 8 }}>
-            <div style={{ fontFamily: "monospace", color: G.muted, fontSize: 11 }}>{inspectMod.tipo} · Origem: {inspectMod.origem || "Efeito"}</div>
-            <div style={{ color: G.text }}>{inspectMod.efeito || "Sem efeito mecânico"}</div>
-            <div style={{ fontFamily: "monospace", color: "#8ea0b8", fontSize: 11 }}>Detalhe: {inspectMod.origemDetalhe || "—"}</div>
-          </div>
-        </Modal>
-      )}
     </Modal>
   );
 }
@@ -134,7 +124,7 @@ export function ModificadoresEditor({ title, list, onChange, inventarioItens, on
 
   return (
     <Modal title={title} onClose={onClose} wide>
-      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto auto", gap: 8, alignItems: "center", marginBottom: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto auto auto", gap: 8, alignItems: "center", marginBottom: 8 }}>
         <HoverButton onClick={add}>+ Modificador</HoverButton>
         <select value={selectedEffectId} onChange={(e) => setSelectedEffectId(e.target.value)} style={inpStyle()}>
           <option value="">Selecionar efeito do Caldeirão...</option>
@@ -146,7 +136,7 @@ export function ModificadoresEditor({ title, list, onChange, inventarioItens, on
       </div>
       <div style={{ maxHeight: "58vh", overflowY: "auto", paddingRight: 4 }}>
         {(list || []).map((m) => (
-          <div key={m.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr 1fr 130px 1fr 36px 36px 36px 36px", gap: 6, marginBottom: 8, border: "1px solid #222", borderRadius: 8, padding: 8, background: "#0b0b0b", transition: "transform .16s ease, border-color .2s" }}>
+          <div key={m.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr 1fr 130px 1fr 36px 36px 36px", gap: 6, marginBottom: 8, border: "1px solid #222", borderRadius: 8, padding: 8, background: "#0b0b0b", transition: "transform .16s ease, border-color .2s" }}>
             <select value={m.tipo} onChange={(e) => up(m.id, { tipo: e.target.value })} style={inpStyle()}><option>Buff</option><option>Debuff</option></select>
             <input value={m.nome} onChange={(e) => up(m.id, { nome: e.target.value })} placeholder="Nome" style={inpStyle()} />
             <input value={m.efeito} onChange={(e) => up(m.id, { efeito: e.target.value })} placeholder="Efeito mecânico ex: +4FOR" style={inpStyle()} />

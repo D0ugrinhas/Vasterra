@@ -1,5 +1,7 @@
 import React, { useMemo } from "react";
 import { uid } from "../../../core/factories";
+import { instantiateEffectFromTemplate } from "../../../core/effects";
+import { makeDefaultEffect } from "../../caldeirao/EffectForgeEditor";
 import { G, inpStyle, btnStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
 
@@ -29,37 +31,6 @@ function rollDice(expr = "") {
   let total = 0;
   for (let i = 0; i < parsed.n; i += 1) total += 1 + Math.floor(Math.random() * parsed.d);
   return total;
-}
-
-function mapLibraryEffect(ef, rodadaAtual) {
-  return {
-    id: uid(),
-    origemEffectId: ef.id,
-    ativo: false,
-    tipo: ef.tipo || "Buff",
-    nome: ef.nome || "Efeito",
-    descricao: ef.descricao || "",
-    iconeModo: ef.iconeModo || "emoji",
-    icone: ef.icone || "⚗️",
-    iconeUrl: ef.iconeUrl || "",
-    iconeData: ef.iconeData || "",
-    cor: ef.cor || "#7f8c8d",
-    duracao: ef.duracao || "",
-    eterno: !!ef.eterno,
-    removivel: !!ef.removivel,
-    condicaoRemocao: ef.condicaoRemocao || "",
-    essenciaAtribuida: ef.essenciaAtribuida || "",
-    rank: ef.rank || "Comum",
-    efeito: ef.efeitoMecanico || "",
-    alvo: ef.alvo || "Portador",
-    alvoCondicao: ef.alvoCondicao || "",
-    testeResistenciaPericia: ef.testeResistenciaPericia || "",
-    testeResistenciaSucesso: ef.testeResistenciaSucesso || "",
-    testeResistenciaSucessoOutro: ef.testeResistenciaSucessoOutro || "",
-    rodadaInicio: rodadaAtual,
-    duracaoRolada: null,
-    origemItem: "",
-  };
 }
 
 export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCaldeirao }) {
@@ -106,7 +77,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
       if (!isPortador) return;
       const key = `${tpl.id}::${item.nome || ""}`;
       if (existingKeys.has(key)) return;
-      additions.push({ ...mapLibraryEffect(tpl, state.rodadaAtual), origemItem: item.nome || "Item" });
+      additions.push(instantiateEffectFromTemplate(tpl, { rodadaInicio: state.rodadaAtual, origemItem: item.nome || "Item", ativo: false }));
     });
 
     if (additions.length) saveEffects([...(charEffects || []), ...additions]);
@@ -172,17 +143,18 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
 
       {state.abaAtiva === "efeitos" && (
         <div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: 6, marginBottom: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto auto", gap: 6, marginBottom: 8 }}>
             <select defaultValue="" onChange={(ev) => {
               const ref = (efeitosCaldeirao || []).find((x) => x.id === ev.target.value);
               if (!ref) return;
-              saveEffects([...(charEffects || []), mapLibraryEffect(ref, state.rodadaAtual)]);
+              saveEffects([...(charEffects || []), instantiateEffectFromTemplate(ref, { rodadaInicio: state.rodadaAtual, ativo: false })]);
               ev.target.value = "";
             }} style={inpStyle()}>
               <option value="">Adicionar efeito do Caldeirão...</option>
               {(efeitosCaldeirao || []).map((ef) => <option key={ef.id} value={ef.id}>{ef.nome} · {ef.efeitoMecanico || "—"}</option>)}
             </select>
-            <HoverButton onClick={() => onOpenCaldeirao?.()}>Criar</HoverButton>
+            <HoverButton onClick={() => onOpenCaldeirao?.()}>Criar no Caldeirão</HoverButton>
+            <HoverButton onClick={() => saveEffects([...(charEffects || []), instantiateEffectFromTemplate(makeDefaultEffect(), { nome: "Novo efeito local", origem: "Local", origemDetalhe: "Combate", ativo: false, rodadaInicio: state.rodadaAtual })])} style={btnStyle({ borderColor: "#8e44ad55", color: "#dcb3ff" })}>Criar local</HoverButton>
             <HoverButton onClick={ensureItemEffects} style={btnStyle({ borderColor: "#2ecc7144", color: "#7cf0b3" })}>Sincronizar itens</HoverButton>
             <HoverButton onClick={() => saveEffects([...(charEffects || [])])}>Atualizar</HoverButton>
           </div>
@@ -199,9 +171,11 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
 
               <textarea value={e.descricao || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, descricao: ev.target.value } : x))} rows={2} style={inpStyle({ resize: "vertical" })} />
 
+              <input value={e.frase || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, frase: ev.target.value } : x))} placeholder="Frase de efeito" style={inpStyle()} />
+
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
                 <input value={e.duracao || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, duracao: ev.target.value } : x))} placeholder="Duração (ex: 2d4)" style={inpStyle()} disabled={!!e.eterno} />
-                <select value={String(!!e.eterno)} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, eterno: ev.target.value === "true" } : x))} style={inpStyle()}><option value="false">Não eterno</option><option value="true">Eterno</option></select>
+                <select value={String(!!e.eterno)} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, eterno: ev.target.value === "true", duracao: ev.target.value === "true" ? "" : (x.duracao || "") } : x))} style={inpStyle()}><option value="false">Não eterno</option><option value="true">Eterno</option></select>
                 <HoverButton onClick={() => {
                   const roll = rollDice(e.duracao || "");
                   if (roll == null) return;
@@ -217,7 +191,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
 
               <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 1fr", gap: 6 }}>
                 <input value={e.rank || "Comum"} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, rank: ev.target.value } : x))} style={inpStyle()} />
-                <input value={e.efeito || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, efeito: ev.target.value } : x))} placeholder="-2FOR, -10Agilidade" style={inpStyle()} />
+                <input value={e.efeitoMecanico || e.efeito || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, efeitoMecanico: ev.target.value, efeito: ev.target.value } : x))} placeholder="-2FOR, -10Agilidade" style={inpStyle()} />
                 <select value={e.alvo || "Portador"} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, alvo: ev.target.value } : x))} style={inpStyle()}>{EFFECT_TARGETS.map((t) => <option key={t}>{t}</option>)}</select>
               </div>
 
@@ -229,7 +203,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
               </div>
 
               <div style={{ fontFamily: "monospace", fontSize: 11, color: e.ativo !== false ? "#62e39e" : "#777" }}>
-                {e.ativo !== false ? `Ativo${e.duracaoRolada ? ` · ${Math.max(0, e.duracaoRolada - (state.rodadaAtual - (e.rodadaInicio || state.rodadaAtual)))} rodadas restantes` : ""}` : "Pausado"}
+                {e.ativo !== false ? `Ativo${e.eterno ? " · Eterno" : (e.duracaoRolada ? ` · ${Math.max(0, e.duracaoRolada - (state.rodadaAtual - (e.rodadaInicio || state.rodadaAtual)))} rodadas restantes` : "")}` : "Pausado"}
                 {e.origemItem ? ` · Origem item: ${e.origemItem}` : ""}
               </div>
             </div>

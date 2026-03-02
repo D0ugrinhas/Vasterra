@@ -32,6 +32,11 @@ function detectStatusTarget(code, canonical) {
   return null;
 }
 
+
+function resolveMechanicalRaw(it = {}) {
+  return it.efeitoMecanico || it.efeito || it.valor || "";
+}
+
 export function parseMechanicalEffect(raw = "") {
   const cleaned = sanitize(raw).replace(/\s+/g, "").replace(/^DE/, "");
   const m = cleaned.match(/^([+-]?\d+(?:[\.,]\d+)?)(%?)([A-Z0-9_-]+)$/);
@@ -74,8 +79,8 @@ export function parseMechanicalEffects(raw = "") {
 
 export function normalizeEffectList(list = [], source = "Outro") {
   return (list || []).flatMap((it) => {
-    if (!it?.ativo) return [];
-    return parseMechanicalEffects(it.valor || it.efeito || "").map((parsed) => ({
+    if (it?.ativo === false) return [];
+    return parseMechanicalEffects(resolveMechanicalRaw(it)).map((parsed) => ({
       id: it.id || Math.random().toString(36).slice(2, 9),
       tipo: parsed.value >= 0 ? "Buff" : "Debuff",
       nome: it.nome || it.titulo || "Efeito",
@@ -94,7 +99,7 @@ export function normalizeEffectList(list = [], source = "Outro") {
 export function aggregateModifiers(mods = [], scope) {
   const map = {};
   (mods || []).forEach((m) => {
-    parseMechanicalEffects(m.efeito || m.valor || "").forEach((parsed) => {
+    parseMechanicalEffects(resolveMechanicalRaw(m)).forEach((parsed) => {
       if (!parsed || parsed.scope !== scope || parsed.isPct) return;
       map[parsed.key] = (map[parsed.key] || 0) + parsed.value;
     });
@@ -105,7 +110,7 @@ export function aggregateModifiers(mods = [], scope) {
 export function aggregateStatusModifiers(mods = []) {
   const status = {};
   (mods || []).forEach((m) => {
-    parseMechanicalEffects(m.efeito || m.valor || "").forEach((parsed) => {
+    parseMechanicalEffects(resolveMechanicalRaw(m)).forEach((parsed) => {
       if (!parsed || parsed.scope !== "status" || parsed.isPct) return;
       if (!status[parsed.key]) status[parsed.key] = { base: 0, current: 0, max: 0 };
       status[parsed.key][parsed.target || "base"] += parsed.value;
@@ -116,4 +121,21 @@ export function aggregateStatusModifiers(mods = []) {
 
 export function normalizePericiaKey(label = "") {
   return normalizeToken(label);
+}
+
+
+export function instantiateEffectFromTemplate(template = {}, overrides = {}) {
+  return {
+    ...template,
+    id: overrides.id || Math.random().toString(36).slice(2, 10),
+    origemEffectId: template.id || overrides.origemEffectId || "",
+    efeitoMecanico: template.efeitoMecanico || template.efeito || template.valor || "",
+    ativo: overrides.ativo ?? true,
+    rodadaInicio: overrides.rodadaInicio ?? 0,
+    duracaoRolada: overrides.duracaoRolada ?? null,
+    origemItem: overrides.origemItem || "",
+    origem: overrides.origem || template.origem || "Efeito",
+    origemDetalhe: overrides.origemDetalhe || template.nome || "Caldeirão",
+    ...overrides,
+  };
 }
