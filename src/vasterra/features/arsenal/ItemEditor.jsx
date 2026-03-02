@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from "react";
 import { ARSENAL_TIPOS, ARSENAL_RANKS, RANK_COR, ESSENCIAS_VIRTUDES, ESSENCIAS_PECADOS } from "../../data/gameData";
 import { novoItem, uid } from "../../core/factories";
-import { parseMechanicalEffect, parseMechanicalEffects } from "../../core/effects";
+import { parseMechanicalEffects, instantiateEffectFromTemplate } from "../../core/effects";
 import { G, inpStyle, btnStyle } from "../../ui/theme";
 import { Modal, EffectDetailsModal } from "../shared/components";
+import { EffectForgeEditor, makeDefaultEffect } from "../caldeirao/EffectForgeEditor";
 
 const blankEffect = () => ({ id: uid(), nome: "", descricao: "", valor: "", ativo: true });
 
@@ -58,12 +59,38 @@ function EffectListEditor({ title, list, onChange, onEditAttached }) {
   );
 }
 
-const allEssencias = [...ESSENCIAS_VIRTUDES, ...ESSENCIAS_PECADOS];
 
-function applyTemplateToList(list, tpl) {
-  if (!tpl) return list;
-  return [...(list || []), { id: uid(), nome: tpl.nome || "Efeito", descricao: tpl.descricao || tpl.frase || "", valor: tpl.efeitoMecanico || "", ativo: true, origemEffectId: tpl.id || "" }];
+function ItemEffectsEditor({ list = [], onChange, onEditSource, onEditLocal }) {
+  const del = (id) => onChange((list || []).filter((x) => x.id !== id));
+  return (
+    <div style={{ background: G.bg3, border: "1px solid " + G.border, borderRadius: 10, padding: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+        <span style={{ fontFamily: "'Cinzel',serif", color: G.gold }}>Efeitos (modelo Caldeirão)</span>
+      </div>
+      <div style={{ display: "grid", gap: 8, maxHeight: 220, overflowY: "auto", paddingRight: 4 }}>
+        {(list || []).map((ef) => {
+          const parsed = parseMechanicalEffects(ef.efeitoMecanico || ef.valor || "")[0] || null;
+          return (
+            <div key={ef.id} style={{ border: "1px solid #2a2a2a", borderRadius: 8, padding: 8, display: "grid", gap: 6 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "24px 1fr 1fr auto auto auto auto", gap: 6, alignItems: "center" }}>
+                <input type="checkbox" checked={ef.ativo !== false} onChange={(e) => onChange((list || []).map((x) => x.id === ef.id ? { ...x, ativo: e.target.checked } : x))} />
+                <input value={ef.nome || ""} onChange={(e) => onChange((list || []).map((x) => x.id === ef.id ? { ...x, nome: e.target.value } : x))} placeholder="Nome" style={inpStyle()} />
+                <input value={ef.efeitoMecanico || ""} onChange={(e) => onChange((list || []).map((x) => x.id === ef.id ? { ...x, efeitoMecanico: e.target.value } : x))} placeholder="+4FOR" style={inpStyle()} />
+                <button onClick={() => onEditLocal?.(ef)} style={btnStyle({ borderColor: "#9b59b644", color: "#d7a9ff", padding: "4px 8px" })}>✎</button>
+                <button onClick={() => onChange([...(list || []), instantiateEffectFromTemplate(ef, { id: uid(), nome: `${ef.nome || "Efeito"} (cópia)` })])} style={btnStyle({ borderColor: "#3498db44", color: "#73bfff", padding: "4px 8px" })}>⎘</button>
+                {ef.origemEffectId ? <button onClick={() => onEditSource?.(ef)} style={btnStyle({ borderColor: "#f39c1244", color: "#f7c96b", padding: "4px 8px" })}>🧪</button> : <span />}
+                <button onClick={() => del(ef.id)} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c", padding: "4px 8px" })}>✕</button>
+              </div>
+              <div style={{ fontFamily: "monospace", fontSize: 10, color: parsed ? "#6fe39b" : "#777" }}>{parsed ? `Aplica ${parsed.raw}` : "Aceita: +4FOR, -2VIT, +5%ÉTER"}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
+
+const allEssencias = [...ESSENCIAS_VIRTUDES, ...ESSENCIAS_PECADOS];
 
 export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreateEffect, onEditEffect }) {
   const [d, setD] = useState(() => {
@@ -71,7 +98,7 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
     return {
       ...base,
       bonus: (base.bonus || []).length ? base.bonus.map((b) => ({ id: b.id || uid(), nome: b.nome || b.texto || "", descricao: b.descricao || "", valor: b.valor || b.efeito || "", ativo: b.ativo !== false })) : [blankEffect()],
-      efeitos: (base.efeitos || []).map((e) => ({ id: e.id || uid(), nome: e.nome || e.titulo || "", descricao: e.descricao || e.desc || "", valor: e.valor || "", ativo: e.ativo !== false, origemEffectId: e.origemEffectId || "" })),
+      efeitos: (base.efeitos || []).map((e) => instantiateEffectFromTemplate(e, { id: e.id || uid(), ativo: e.ativo !== false, origem: "Item", origemDetalhe: base.nome || "Item" })),
       slots: Number(base.slots || 1),
       vastos: base.vastos || { cobre: 0, prata: 0, ouro: 0, platina: 0 },
       iconeModo: base.iconeModo || "emoji",
@@ -89,6 +116,8 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
 
   const [selectedEffectId, setSelectedEffectId] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [effectEditorOpen, setEffectEditorOpen] = useState(false);
+  const [effectEditorData, setEffectEditorData] = useState(null);
   const selectedEffect = (effectsLibrary || []).find((x) => x.id === selectedEffectId) || null;
 
   const up = (k, v) => setD((p) => ({ ...p, [k]: v }));
@@ -96,7 +125,7 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
   const isArmaduraLike = ["Armadura", "Vestimenta", "Acessório", "Marcas"].includes(d.tipo);
   const isConsumivel = d.tipo === "Consumível";
 
-  const parsedCount = useMemo(() => [...d.bonus, ...d.efeitos].reduce((sum, e) => sum + parseMechanicalEffects(e.valor || "").length, 0), [d]);
+  const parsedCount = useMemo(() => [...d.bonus, ...d.efeitos].reduce((sum, e) => sum + parseMechanicalEffects(e.efeitoMecanico || e.valor || "").length, 0), [d]);
 
 
   const editAttachedEffect = (ef) => {
@@ -208,20 +237,23 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
           <div style={{ background: G.bg3, border: "1px solid " + G.border, borderRadius: 10, padding: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <span style={{ fontFamily: "'Cinzel',serif", color: G.gold }}>Anexar efeito do Caldeirão</span>
-              <button onClick={() => onCreateEffect?.()} style={btnStyle({ padding: "3px 8px", fontSize: 11, borderColor: "#9b59b644", color: "#d8a6ff" })}>Criar efeito</button>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => onCreateEffect?.()} style={btnStyle({ padding: "3px 8px", fontSize: 11, borderColor: "#9b59b644", color: "#d8a6ff" })}>Criar no Caldeirão</button>
+                <button onClick={() => { setEffectEditorData(makeDefaultEffect()); setEffectEditorOpen(true); }} style={btnStyle({ padding: "3px 8px", fontSize: 11, borderColor: "#8e44ad55", color: "#dcb3ff" })}>Criar local</button>
+              </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 6 }}>
               <select value={selectedEffectId} onChange={(e) => setSelectedEffectId(e.target.value)} style={inpStyle()}>
                 <option value="">Selecionar efeito do Caldeirão...</option>
                 {effectsLibrary.map((x) => <option key={x.id} value={x.id}>{x.nome} · {x.efeitoMecanico || "—"}</option>)}
               </select>
-              <button onClick={() => selectedEffectId && up("efeitos", applyTemplateToList(d.efeitos, selectedEffect))} disabled={!selectedEffectId} style={btnStyle({ padding: "3px 8px", fontSize: 11 })}>Anexar</button>
+              <button onClick={() => selectedEffectId && up("efeitos", [...(d.efeitos || []), instantiateEffectFromTemplate(selectedEffect, { origemEffectId: selectedEffect.id, ativo: true, origem: "Item", origemDetalhe: d.nome || "Item" })])} disabled={!selectedEffectId} style={btnStyle({ padding: "3px 8px", fontSize: 11 })}>Anexar</button>
               <button onClick={() => setPreviewOpen(true)} disabled={!selectedEffectId} style={btnStyle({ padding: "3px 8px", fontSize: 11, borderColor: "#3498db44", color: "#73bfff" })}>🔍</button>
             </div>
           </div>
 
           <EffectListEditor title="Bônus" list={d.bonus} onChange={(next) => up("bonus", next)} />
-          <EffectListEditor title="Efeitos" list={d.efeitos} onChange={(next) => up("efeitos", next)} onEditAttached={editAttachedEffect} />
+          <ItemEffectsEditor list={d.efeitos} onChange={(next) => up("efeitos", next)} onEditSource={editAttachedEffect} onEditLocal={(ef) => { setEffectEditorData(ef); setEffectEditorOpen(true); }} />
           <div style={{ fontFamily: "monospace", fontSize: 11, color: "#7fb3ff" }}>Efeitos válidos para cálculo: {parsedCount}</div>
         </div>
       </div>
@@ -231,6 +263,12 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
         <button style={btnStyle()} onClick={() => onSave(d)}>Salvar Item</button>
       </div>
       {previewOpen && <EffectDetailsModal effect={selectedEffect} onClose={() => setPreviewOpen(false)} />}
+      {effectEditorOpen && <EffectForgeEditor effect={effectEditorData} onSave={(ef) => {
+        const next = instantiateEffectFromTemplate(ef, { id: ef.id || uid(), origem: "Item", origemDetalhe: d.nome || "Item", ativo: ef.ativo ?? true });
+        const exists = (d.efeitos || []).some((x) => x.id === next.id);
+        up("efeitos", exists ? d.efeitos.map((x) => x.id === next.id ? next : x) : [next, ...(d.efeitos || [])]);
+        setEffectEditorOpen(false);
+      }} onClose={() => setEffectEditorOpen(false)} />}
     </Modal>
   );
 }

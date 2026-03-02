@@ -134,6 +134,7 @@ export function instantiateEffectFromTemplate(template = {}, overrides = {}) {
     rodadaInicio: overrides.rodadaInicio ?? 0,
     duracaoRolada: overrides.duracaoRolada ?? null,
     origemItem: overrides.origemItem || "",
+    sinalizar: overrides.sinalizar ?? template.sinalizar ?? true,
     origem: overrides.origem || template.origem || "Efeito",
     origemDetalhe: overrides.origemDetalhe || template.nome || "Caldeirão",
     ...overrides,
