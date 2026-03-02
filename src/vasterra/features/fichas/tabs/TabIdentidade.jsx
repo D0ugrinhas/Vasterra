@@ -12,7 +12,7 @@ export function TabIdentidade({ ficha, onUpdate }) {
 
   const toggleClasse = (c) => {
     if (ficha.classes.includes(c)) onUpdate({ classes: ficha.classes.filter(x => x !== c) });
-    else if (ficha.classes.length < 3) onUpdate({ classes: [...ficha.classes, c] });
+    else if (ficha.classes.length < 5) onUpdate({ classes: [...ficha.classes, c] });
   };
 
   const racasExtras = ficha.racasExtras || [];
@@ -93,7 +93,7 @@ export function TabIdentidade({ ficha, onUpdate }) {
       </div>
 
       <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}><span style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3 }}>◈ CLASSES</span><span style={{ fontSize: 10, color: G.muted, fontFamily: "monospace" }}>{ficha.classes.length}/3</span></div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}><span style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3 }}>◈ CLASSES</span><span style={{ fontSize: 10, color: G.muted, fontFamily: "monospace" }}>{ficha.classes.length}/5</span></div>
         {ficha.classes.length > 0 && <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid " + G.border }}>{ficha.classes.map(c => <span key={c} style={{ padding: "3px 10px", background: "#1a1208", border: "1px solid #c8a96e55", borderRadius: 20, fontSize: 11, color: G.gold, fontFamily: "'Cinzel',serif" }}>{c}</span>)}</div>}
         <div style={{ display: "flex", gap: 5, marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid " + G.border }}>{["", "Estrutural", "Funcional", "Dominante"].map(t => <button key={t || "all"} onClick={() => setFiltro(t)} style={{ flex: 1, padding: "5px", background: filtro === t ? "#1a1208" : "transparent", border: "1px solid " + (filtro === t ? "#c8a96e44" : G.border), borderRadius: 6, color: filtro === t ? G.gold : G.muted, fontFamily: "'Cinzel',serif", fontSize: 10, cursor: "pointer" }}>{t || "Todas"}</button>)}</div>
         {Object.entries(CLASSES).map(([tipo, lista]) => {

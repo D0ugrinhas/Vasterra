@@ -5,6 +5,7 @@ import { G, inpStyle, btnStyle } from "../../../ui/theme";
 const allEssencias = [...ESSENCIAS_VIRTUDES, ...ESSENCIAS_PECADOS];
 const ESSENCIA_NAMES = allEssencias.map((x) => x.nome);
 const essenciaByName = Object.fromEntries(allEssencias.map((x) => [x.nome, x]));
+const MAX_MARCOS = 5;
 
 const EXP_THRESHOLDS = [
   { id: "latente", pct: 10, label: "Latente", desc: "Pré-Sutil. Primeiros sinais narrativos da essência." },
@@ -157,11 +158,11 @@ function buildExposureState(state) {
 
   if (state.perkExposicao === "Caleidoscópio") {
     let marcos = ESSENCIA_NAMES.reduce((sum, name) => sum + getStageCount(exposicoes[name] || 0), 0);
-    if (marcos > 3) {
+    if (marcos > MAX_MARCOS) {
       const priority = [...ESSENCIA_NAMES].sort((a, b) => exposicoes[a] - exposicoes[b]);
       for (const name of priority) {
-        if (marcos <= 3) break;
-        while (marcos > 3 && exposicoes[name] >= 25) {
+        if (marcos <= MAX_MARCOS) break;
+        while (marcos > MAX_MARCOS && exposicoes[name] >= 25) {
           const floor = state.perkVariacao === "Permanência" ? (marcoFixo[name] || 0) : 0;
           const before = getStageCount(exposicoes[name]);
           const nextDown = before >= 3 ? 75 : before >= 2 ? 49 : before >= 1 ? 24 : 0;
@@ -234,6 +235,23 @@ export function TabEssencia({ ficha, onUpdate }) {
 
   const setDetailState = (next) => onUpdate({ exposicaoDetalhada: buildExposureState(next) });
   const selectEssencia = (es) => onUpdate({ essencia: e && e.nome === es.nome ? null : es });
+  const resetEssencia = () => onUpdate({
+    essencia: null,
+    exposicao: 0,
+    exposicaoDetalhada: {
+      tipoVisual: "pizza",
+      perkExposicao: "Ecdise",
+      perkVariacao: "Padrão",
+      tipoCorpo: "Corpo Comum",
+      corpoEssenciaVinculada: "",
+      exposicoes: {},
+      ajustes: {},
+      eventosHistorico: [],
+      marcoFixo: {},
+      corpoHistoricoEssencias: [],
+      cascaPico: 0,
+    },
+  });
 
   const addEvento = () => {
     const val = Number(String(eventoForm.valor).replace("+", ""));
@@ -337,7 +355,7 @@ export function TabEssencia({ ficha, onUpdate }) {
             </div>
 
             <div style={{ gridColumn: "1 / -1", background: G.bg2, border: "1px solid " + G.border, borderRadius: 12, padding: 12 }}>
-              <div style={{ fontFamily: "'Cinzel',serif", color: G.gold, marginBottom: 8 }}>Eventos de Exposição</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}><div style={{ fontFamily: "'Cinzel',serif", color: G.gold }}>Eventos de Exposição</div><button onClick={resetEssencia} style={btnStyle({ padding: "4px 10px", borderColor: "#e74c3c44", color: "#e74c3c" })}>Resetar Essências</button></div>
               <div style={{ display: "grid", gridTemplateColumns: "1.2fr 120px 180px 1.6fr auto", gap: 8, marginBottom: 10 }}>
                 <input value={eventoForm.nome} onChange={(ev) => setEventoForm((p) => ({ ...p, nome: ev.target.value }))} placeholder="Nome do evento" style={inpStyle()} />
                 <input value={eventoForm.valor} onChange={(ev) => setEventoForm((p) => ({ ...p, valor: ev.target.value }))} placeholder="+10 / -5" style={inpStyle()} />

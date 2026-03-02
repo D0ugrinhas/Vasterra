@@ -4,11 +4,63 @@ import { G } from "./ui/theme";
 import { useFeedback } from "./hooks/useFeedback";
 import { ToastViewport, ConfirmWindow } from "./components/feedback/FeedbackUI";
 import { HoverButton } from "./components/primitives/Interactive";
-import { BackgroundParticles } from "./features/shared/components";
+import { BackgroundParticles, Modal } from "./features/shared/components";
 import { FichasSection } from "./features/fichas/FichasSection";
 import { ArsenalSection } from "./features/arsenal/ArsenalSection";
 import { CaldeiraoSection } from "./features/caldeirao/CaldeiraoSection";
 import { EffectForgeEditor, makeDefaultEffect } from "./features/caldeirao/EffectForgeEditor";
+import { novaFicha, novoItem, uid } from "./core/factories";
+
+
+const SETTINGS_KEY = "vasterra:settings";
+const defaultSettings = { storageNamespace: "vasterra" };
+
+const scopedKey = (ns, key) => `${(ns || "vasterra").trim()}:${key}`;
+
+function normalizeItem(item = {}) {
+  const base = novoItem();
+  return {
+    ...base,
+    ...item,
+    id: item.id || base.id || uid(),
+    bonus: Array.isArray(item.bonus) ? item.bonus : base.bonus,
+    efeitos: Array.isArray(item.efeitos) ? item.efeitos : base.efeitos,
+    vastos: { ...(base.vastos || {}), ...(item.vastos || {}) },
+  };
+}
+
+function normalizeFicha(ficha = {}) {
+  const base = novaFicha(ficha.nome || "Novo Personagem");
+  return {
+    ...base,
+    ...ficha,
+    id: ficha.id || base.id || uid(),
+    classes: Array.isArray(ficha.classes) ? ficha.classes : base.classes,
+    titulos: Array.isArray(ficha.titulos) && ficha.titulos.length ? ficha.titulos : base.titulos,
+    racasExtras: Array.isArray(ficha.racasExtras) ? ficha.racasExtras : base.racasExtras,
+    status: { ...base.status, ...(ficha.status || {}) },
+    atributos: { ...base.atributos, ...(ficha.atributos || {}) },
+    pericias: { ...base.pericias, ...(ficha.pericias || {}) },
+    recursos: { ...base.recursos, ...(ficha.recursos || {}) },
+    inventarioCfg: { ...base.inventarioCfg, ...(ficha.inventarioCfg || {}), vastos: { ...base.inventarioCfg.vastos, ...(ficha.inventarioCfg?.vastos || {}) } },
+    modificadores: { ...base.modificadores, ...(ficha.modificadores || {}) },
+    inventario: Array.isArray(ficha.inventario) ? ficha.inventario.map((entry) => ({
+      ...entry,
+      id: entry?.id || uid(),
+      item: normalizeItem(entry?.item || {}),
+    })) : [],
+  };
+}
+
+function normalizeEffect(effect = {}) {
+  const base = makeDefaultEffect();
+  return {
+    ...base,
+    ...effect,
+    id: effect.id || base.id || uid(),
+    condicionais: Array.isArray(effect.condicionais) ? effect.condicionais : base.condicionais,
+  };
+}
 
 export default function VasterraApp() {
   const [section, setSection] = useState("menu");
@@ -19,22 +71,38 @@ export default function VasterraApp() {
   const [loaded, setLoaded] = useState(false);
   const [effectEditorOpen, setEffectEditorOpen] = useState(false);
   const [effectEditorData, setEffectEditorData] = useState(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState(defaultSettings);
 
   useEffect(() => {
     (async () => {
-      const f = await stGet("vasterra:fichas");
-      const a = await stGet("vasterra:arsenal");
-      const c = await stGet("vasterra:caldeirao");
-      if (f) setFichas(f);
-      if (a) setArsenal(a);
-      if (c) setEfeitosCaldeirao(c);
+      const cfg = (await stGet(SETTINGS_KEY)) || defaultSettings;
+      const ns = cfg.storageNamespace || "vasterra";
+      setSettings({ ...defaultSettings, ...cfg });
+
+      const f = await stGet(scopedKey(ns, "fichas"));
+      const a = await stGet(scopedKey(ns, "arsenal"));
+      const c = await stGet(scopedKey(ns, "caldeirao"));
+
+      const fLegacy = !f ? await stGet("vasterra:fichas") : null;
+      const aLegacy = !a ? await stGet("vasterra:arsenal") : null;
+      const cLegacy = !c ? await stGet("vasterra:caldeirao") : null;
+
+      const fichasLoaded = (f || fLegacy || []).map(normalizeFicha);
+      const arsenalLoaded = (a || aLegacy || []).map(normalizeItem);
+      const efeitosLoaded = (c || cLegacy || []).map(normalizeEffect);
+
+      setFichas(fichasLoaded);
+      setArsenal(arsenalLoaded);
+      setEfeitosCaldeirao(efeitosLoaded);
       setLoaded(true);
     })();
   }, []);
 
-  useEffect(() => { if (loaded) stSet("vasterra:fichas", fichas); }, [fichas, loaded]);
-  useEffect(() => { if (loaded) stSet("vasterra:arsenal", arsenal); }, [arsenal, loaded]);
-  useEffect(() => { if (loaded) stSet("vasterra:caldeirao", efeitosCaldeirao); }, [efeitosCaldeirao, loaded]);
+  useEffect(() => { if (loaded) stSet(scopedKey(settings.storageNamespace, "fichas"), fichas); }, [fichas, loaded, settings.storageNamespace]);
+  useEffect(() => { if (loaded) stSet(scopedKey(settings.storageNamespace, "arsenal"), arsenal); }, [arsenal, loaded, settings.storageNamespace]);
+  useEffect(() => { if (loaded) stSet(scopedKey(settings.storageNamespace, "caldeirao"), efeitosCaldeirao); }, [efeitosCaldeirao, loaded, settings.storageNamespace]);
+  useEffect(() => { if (loaded) stSet(SETTINGS_KEY, settings); }, [settings, loaded]);
 
   const openEffectForge = (effect = null) => {
     setEffectEditorData(effect ? { ...effect } : makeDefaultEffect());
@@ -47,6 +115,53 @@ export default function VasterraApp() {
     setEfeitosCaldeirao(exists ? efeitosCaldeirao.map((x) => (x.id === next.id ? next : x)) : [next, ...efeitosCaldeirao]);
     setEffectEditorOpen(false);
     pushToast("Efeito salvo no Caldeirão.", "success");
+  };
+
+  const exportBackup = () => {
+    const payload = {
+      version: 1,
+      exportedAt: Date.now(),
+      namespace: settings.storageNamespace,
+      fichas,
+      arsenal,
+      efeitosCaldeirao,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `vasterra-backup-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importBackup = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(String(reader.result || "{}"));
+        setFichas((data.fichas || []).map(normalizeFicha));
+        setArsenal((data.arsenal || []).map(normalizeItem));
+        setEfeitosCaldeirao((data.efeitosCaldeirao || []).map(normalizeEffect));
+        pushToast("Backup importado com sucesso.", "success");
+      } catch {
+        pushToast("Falha ao importar backup.", "error");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const applyNamespace = async (nsValue) => {
+    const ns = (nsValue || "vasterra").trim() || "vasterra";
+    const f = await stGet(scopedKey(ns, "fichas"));
+    const a = await stGet(scopedKey(ns, "arsenal"));
+    const c = await stGet(scopedKey(ns, "caldeirao"));
+    setSettings((p) => ({ ...p, storageNamespace: ns }));
+    setFichas((f || []).map(normalizeFicha));
+    setArsenal((a || []).map(normalizeItem));
+    setEfeitosCaldeirao((c || []).map(normalizeEffect));
+    pushToast(`Espaço de dados alterado para: ${ns}`, "success");
   };
 
   if (!loaded) {
@@ -103,6 +218,7 @@ export default function VasterraApp() {
           <div style={{ fontFamily: "'Cinzel Decorative',serif", fontSize: 56, color: G.gold, letterSpacing: 8, textShadow: "0 0 20px #c8a96e66", zIndex: 1 }}>VASTERRA</div>
           <div style={{ fontFamily: "'Cinzel',serif", fontSize: 18, color: "#7aa9d8", letterSpacing: 4, zIndex: 1 }}>Vasterra é Vasto</div>
           <div style={{ marginTop: 16, fontFamily: "monospace", color: "#777", zIndex: 1 }}>Clique em qualquer lugar para entrar</div>
+          <button onClick={(ev) => { ev.stopPropagation(); setSettingsOpen(true); }} style={{ position: "absolute", top: 14, right: 14, width: 30, height: 30, borderRadius: 8, border: "1px solid #c8a96e33", background: "#0b0b0baa", color: "#c8a96e", cursor: "pointer", transition: "all .2s" }} title="Opções">⚙</button>
         </div>
       )}
       {section === "fichas" && <div className="v-fade"><FichasSection fichas={fichas} onFichas={setFichas} arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} onOpenCaldeirao={openEffectForge} /></div>}
@@ -112,6 +228,27 @@ export default function VasterraApp() {
       <ToastViewport items={toasts} onClose={closeToast} />
       <ConfirmWindow data={confirm} onCancel={cancelConfirm} onConfirm={runConfirm} />
       {effectEditorOpen && <EffectForgeEditor effect={effectEditorData} onSave={saveEffectFromModal} onClose={() => setEffectEditorOpen(false)} />}
+      {settingsOpen && (
+        <Modal title="Opções" onClose={() => setSettingsOpen(false)} wide>
+          <div style={{ display: "grid", gap: 10 }}>
+            <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>
+              Dica: no navegador não há acesso direto a diretórios do sistema por segurança.
+              Em vez disso, use “espaço de dados” (namespace) + backup/importação JSON.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
+              <input value={settings.storageNamespace || "vasterra"} onChange={(e) => setSettings((p) => ({ ...p, storageNamespace: e.target.value }))} placeholder="Namespace de dados" style={{ background: "#0a0a0a", border: "1px solid #333", color: G.text, borderRadius: 8, padding: "8px 10px" }} />
+              <HoverButton onClick={() => applyNamespace(settings.storageNamespace)}>Aplicar</HoverButton>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <HoverButton onClick={exportBackup}>Exportar backup (.json)</HoverButton>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid #3498db44", borderRadius: 8, padding: "6px 10px", color: "#73bfff", cursor: "pointer" }}>
+                Importar backup
+                <input type="file" accept="application/json" onChange={(e) => importBackup(e.target.files?.[0])} style={{ display: "none" }} />
+              </label>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
