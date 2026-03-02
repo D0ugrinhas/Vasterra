@@ -40,6 +40,18 @@ export const novaFicha = (nome = "Novo Personagem") => ({
     ESF: { total: 1, usado: 0 },
   },
   inventario: [],
+  combate: {
+    rodadaAtual: 0,
+    abaAtiva: "recursos",
+    lembretes: [],
+    efeitos: [],
+    recursos: [
+      { id: uid(), nome: "MOV", cor: "#28a745", max: 0, atual: 0 },
+      { id: uid(), nome: "ACO", cor: "#007bff", max: 0, atual: 0 },
+      { id: uid(), nome: "REA", cor: "#dc3545", max: 0, atual: 0 },
+      { id: uid(), nome: "ESF", cor: "#8b0000", max: 0, atual: 0 },
+    ],
+  },
   inventarioCfg: {
     slotsBase: 10,
     capacidadePorForca: 5,
