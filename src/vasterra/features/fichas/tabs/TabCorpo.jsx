@@ -80,7 +80,7 @@ function portWorld(part, side) {
   return { x: (part.x || 0) + o.x, y: (part.y || 0) + o.y, vx: o.vx, vy: o.vy };
 }
 
-function MiniBodyCanvas({ title, state, onChange, selectedId, onSelect, canCreate = true, compact = false }) {
+function MiniBodyCanvas({ title, state, onChange, selectedId, onSelect, canCreate = true, compact = false, focusTargetId = null, onFocusConsumed }) {
   const wrapRef = useRef(null);
   const dragRef = useRef(null);
   const [viewport, setViewport] = useState({ x: compact ? 30 : 80, y: compact ? 20 : 80, zoom: compact ? 0.9 : 1 });
@@ -118,6 +118,24 @@ function MiniBodyCanvas({ title, state, onChange, selectedId, onSelect, canCreat
     const cy = (minY + maxY) / 2;
     setViewport({ x: vw / 2 - cx * zoom, y: vh / 2 - cy * zoom, zoom });
   };
+
+
+  useEffect(() => {
+    if (!focusTargetId) return;
+    const target = (parts || []).find((p) => p.id === focusTargetId);
+    if (!target || !wrapRef.current) {
+      onFocusConsumed?.();
+      return;
+    }
+    const vw = wrapRef.current.clientWidth;
+    const vh = wrapRef.current.clientHeight;
+    const zoom = viewport.zoom;
+    const cx = (target.x || 0) + CARD_W / 2;
+    const cy = (target.y || 0) + CARD_H / 2;
+    setViewport((v) => ({ ...v, x: vw / 2 - cx * zoom, y: vh / 2 - cy * zoom }));
+    onSelect?.(target.id);
+    onFocusConsumed?.();
+  }, [focusTargetId, parts, viewport.zoom]);
 
   const createPart = () => {
     if (!canCreate) return;
@@ -376,6 +394,7 @@ export function TabCorpo({ ficha, onUpdate, onNotify }) {
   const [selectedId, setSelectedId] = useState(null);
   const [selectedInnerId, setSelectedInnerId] = useState(null);
   const [inspectAnexo, setInspectAnexo] = useState(null);
+  const [focusPartId, setFocusPartId] = useState(null);
 
   const save = (next) => onUpdate({ corpo: normalizeCorpo(next) });
   const parts = state.partes || [];
@@ -388,6 +407,16 @@ export function TabCorpo({ ficha, onUpdate, onNotify }) {
 
   const inventoryItems = (ficha.inventario || []).map((x) => x.item).filter(Boolean);
   const characterEffects = ficha.modificadores?.efeitos || [];
+
+  const resumoPartes = useMemo(() => parts.map((p) => ({
+    id: p.id,
+    nome: p.nome,
+    saude: num(p.saude),
+    pele: num(p.pele),
+    musculos: num(p.musculos),
+    ossos: num(p.ossos),
+    bonus: Number(p.bonus) || 0,
+  })), [parts]);
 
   useEffect(() => {
     setSelectedInnerId(null);
@@ -457,10 +486,33 @@ export function TabCorpo({ ficha, onUpdate, onNotify }) {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 430px", gap: 10 }}>
-        <MiniBodyCanvas title="Canvas corporal principal" state={state} onChange={save} selectedId={selectedId} onSelect={setSelectedId} canCreate />
+        <MiniBodyCanvas title="Canvas corporal principal" state={state} onChange={save} selectedId={selectedId} onSelect={setSelectedId} canCreate focusTargetId={focusPartId} onFocusConsumed={() => setFocusPartId(null)} />
 
         <div style={{ display: "grid", gap: 10, alignContent: "start" }}>
-          {!selected && <div style={{ border: "1px solid #2a3444", borderRadius: 12, background: "#0a121d", padding: 10, color: G.muted, fontFamily: "monospace" }}>Selecione uma parte no canvas para editar HUD, anexos, ações e subpartes internas.</div>}
+          {!selected && (
+            <div style={{ border: "1px solid #2a3444", borderRadius: 12, background: "#0a121d", padding: 10, display: "grid", gap: 8 }}>
+              <div style={{ color: "#9fd1ff", fontFamily: "'Cinzel',serif" }}>Partes do corpo</div>
+              {resumoPartes.length === 0 && <div style={{ color: G.muted, fontFamily: "monospace" }}>Nenhuma parte criada ainda.</div>}
+              <div style={{ display: "grid", gap: 6, maxHeight: 520, overflowY: "auto", paddingRight: 4 }}>
+                {resumoPartes.map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => { setSelectedId(r.id); setFocusPartId(r.id); }}
+                    style={{
+                      ...btnStyle({ padding: "6px 8px" }),
+                      textAlign: "left",
+                      borderColor: "#2d3f56",
+                      display: "grid",
+                      gap: 4,
+                    }}
+                  >
+                    <strong style={{ color: "#b7dbff", fontFamily: "'Cinzel',serif", fontWeight: 500 }}>{r.nome}</strong>
+                    <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Saúde {r.saude} · Pele {r.pele} · Músculos {r.musculos} · Ossos {r.ossos} · Bônus {r.bonus}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {selected && (
             <>

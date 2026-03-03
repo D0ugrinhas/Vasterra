@@ -459,9 +459,6 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                       <button onClick={() => {
                         duplicateNode(n)
                       }} style={btnStyle({ padding: "2px 6px", borderRadius: 999, fontSize: 11 })}>⎘</button>
-                      <button onClick={() => {
-                        deleteNode(n)
-                      }} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c", padding: "2px 6px", borderRadius: 999, fontSize: 11 })}>✕</button>
                     </div>
 
                     {!minNodes[n.id] && <div style={{ display: "grid", gap: 4, marginBottom: 6 }}>
@@ -470,7 +467,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                       {n.kind === "generic" && <input value={n.label || ""} onChange={(e) => updateGenericById(n.id, { label: e.target.value })} style={inpStyle()} />}
                     </div>}
 
-                    {n.kind === "resource" && !minNodes[n.id] && (() => {
+                    {n.kind === "resource" && (() => {
                       const maxLinked = hasInputLink("max");
                       const atualLinked = hasInputLink("atual");
                       const max = Math.max(0, Number(out.max ?? n.max ?? 0));
@@ -565,7 +562,40 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
           </div>
           {(charEffects || []).map((e) => {
             const isCollapsed = collapsed[e.id] ?? true;
-            return <div key={e.id} style={{ border: "1px solid #2a2a2a", borderRadius: 10, padding: 8, marginBottom: 8, background: "#0a0a0a", display: "grid", gap: 6 }}><div style={{ display: "grid", gridTemplateColumns: "24px 80px 24px 24px 1fr auto auto", gap: 6, alignItems: "center" }}><input type="checkbox" checked={e.ativo !== false} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, ativo: ev.target.checked } : x))} /><select value={e.tipo || "Buff"} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, tipo: ev.target.value } : x))} style={inpStyle()}><option>Buff</option><option>Debuff</option></select><button onClick={() => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, sinalizar: !(x.sinalizar !== false) } : x))} style={btnStyle({ padding: "2px 6px", borderRadius: 999, fontSize: 11 })}>{e.sinalizar !== false ? "🔔" : "🔕"}</button><button onClick={() => setCollapsed((p) => ({ ...p, [e.id]: !isCollapsed }))} style={btnStyle({ padding: "2px 6px", borderRadius: 999, fontSize: 11 })}>{isCollapsed ? "▸" : "▾"}</button><input value={e.nome || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, nome: ev.target.value } : x))} style={inpStyle()} /><HoverButton onClick={() => saveEffects([{ ...e, id: uid(), nome: `${e.nome || "Efeito"} (cópia)` }, ...(charEffects || [])])}>⎘</HoverButton><HoverButton onClick={() => saveEffects(charEffects.filter((x) => x.id !== e.id))} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c" })}>✕</HoverButton></div>{isCollapsed ? <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>{e.tipo || "—"} · {e.nome || "Sem nome"} · {e.efeitoMecanico || "—"}</div> : <textarea value={e.descricao || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, descricao: ev.target.value } : x))} rows={2} style={inpStyle({ resize: "vertical" })} />}</div>;
+            return (
+              <div key={e.id} style={{ border: "1px solid #2a2a2a", borderRadius: 10, padding: 8, marginBottom: 8, background: "#0a0a0a", display: "grid", gap: 6 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "24px 80px 24px 24px 1fr auto auto", gap: 6, alignItems: "center" }}>
+                  <input type="checkbox" checked={e.ativo !== false} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, ativo: ev.target.checked } : x))} />
+                  <select value={e.tipo || "Buff"} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, tipo: ev.target.value } : x))} style={inpStyle()}><option>Buff</option><option>Debuff</option></select>
+                  <button onClick={() => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, sinalizar: !(x.sinalizar !== false) } : x))} style={btnStyle({ padding: "2px 6px", borderRadius: 999, fontSize: 11 })}>{e.sinalizar !== false ? "🔔" : "🔕"}</button>
+                  <button onClick={() => setCollapsed((p) => ({ ...p, [e.id]: !isCollapsed }))} style={btnStyle({ padding: "2px 6px", borderRadius: 999, fontSize: 11 })}>{isCollapsed ? "▸" : "▾"}</button>
+                  <input value={e.nome || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, nome: ev.target.value } : x))} style={inpStyle()} />
+                  <HoverButton onClick={() => saveEffects([{ ...e, id: uid(), nome: `${e.nome || "Efeito"} (cópia)` }, ...(charEffects || [])])}>⎘</HoverButton>
+                  <HoverButton onClick={() => saveEffects(charEffects.filter((x) => x.id !== e.id))} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c" })}>✕</HoverButton>
+                </div>
+
+                {isCollapsed ? (
+                  <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>{e.tipo || "—"} · {e.nome || "Sem nome"} · {e.efeitoMecanico || e.efeito || "—"}</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <textarea value={e.descricao || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, descricao: ev.target.value } : x))} rows={2} style={inpStyle({ resize: "vertical" })} placeholder="Descrição" />
+                    <input value={e.efeitoMecanico || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, efeitoMecanico: ev.target.value } : x))} style={inpStyle()} placeholder="Efeito mecânico" />
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                      <input value={e.duracao || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, duracao: ev.target.value } : x))} style={inpStyle()} placeholder="Duração" />
+                      <select value={e.alvo || "Portador"} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, alvo: ev.target.value } : x))} style={inpStyle()}>
+                        <option>Portador</option><option>Alvo</option><option>Área</option><option>Condição</option><option>Todos</option>
+                      </select>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                      <select value={String(e.eterno === true)} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, eterno: ev.target.value === "true" } : x))} style={inpStyle()}><option value="false">Não eterno</option><option value="true">Eterno</option></select>
+                      <select value={String(e.removivel === true)} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, removivel: ev.target.value === "true" } : x))} style={inpStyle()}><option value="false">Não removível</option><option value="true">Removível</option></select>
+                      <input value={e.condicaoRemocao || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, condicaoRemocao: ev.target.value } : x))} style={inpStyle()} placeholder="Condição remoção" />
+                    </div>
+                    <input value={e.frase || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, frase: ev.target.value } : x))} style={inpStyle()} placeholder="Frase/nota" />
+                  </div>
+                )}
+              </div>
+            );
           })}
         </div>
       )}
