@@ -1,10 +1,11 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { uid } from "../../../core/factories";
 import { G, inpStyle, btnStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
+import { Modal, ItemIcon } from "../../shared/components";
 
 const CARD_W = 220;
-const CARD_H = 130;
+const CARD_H = 144;
 const SIDES = ["top", "right", "bottom", "left"];
 const SIDE_OFFSET = {
   top: { x: CARD_W / 2, y: 0, vx: 0, vy: -1 },
@@ -13,8 +14,27 @@ const SIDE_OFFSET = {
   left: { x: 0, y: CARD_H / 2, vx: -1, vy: 0 },
 };
 
+const ACTIONS = [
+  { id: "regen5", label: "Regenerar +5", patch: (p) => ({ vida: num(p.vida) + 5 }) },
+  { id: "dano5", label: "Tomar dano -5", patch: (p) => ({ vida: Math.max(0, num(p.vida) - 5) }) },
+  { id: "armar", label: "Ativar blindagem", patch: (p) => ({ ossos: num(p.ossos) + 1, pele: num(p.pele) + 1 }) },
+  { id: "fadiga", label: "Aplicar fadiga", patch: (p) => ({ musculos: Math.max(0, num(p.musculos) - 1) }) },
+  { id: "reset", label: "Resetar atributos", patch: () => ({ saude: 0, ossos: 0, pele: 0, musculos: 0, bonus: 0 }) },
+];
+
 const defaultCorpo = () => ({ pontosTotal: 1000, partes: [], links: [] });
 const num = (v, min = 0) => Math.max(min, Number(v) || 0);
+
+const ATTACH_META = {
+  item_armadura: { icon: "🛡", tint: "#7be3ff", label: "Armadura" },
+  item_acessorio: { icon: "💍", tint: "#a4d8ff", label: "Acessório" },
+  item_vestimenta: { icon: "🧥", tint: "#9fc6ff", label: "Vestimenta" },
+  item: { icon: "🎒", tint: "#9fd0ff", label: "Item" },
+  effect_buff: { icon: "✨", tint: "#73e2ab", label: "Buff" },
+  effect_debuff: { icon: "☠", tint: "#ffac86", label: "Debuff" },
+  effect_maldicao: { icon: "🕯", tint: "#dca3ff", label: "Maldição" },
+  effect: { icon: "✦", tint: "#9ed4ff", label: "Efeito" },
+};
 
 function normalizeCorpo(raw) {
   const src = raw || {};
@@ -31,6 +51,8 @@ function normalizePart(p) {
     nome: p?.nome || "Parte",
     x: Number(p?.x) || 120,
     y: Number(p?.y) || 120,
+    cor: p?.cor || "#4aa3ff",
+    icone: p?.icone || "",
     vidaMax: num(p?.vidaMax, 1) || 20,
     vida: num(p?.vida, 0) || 20,
     saude: num(p?.saude, 0),
@@ -43,12 +65,32 @@ function normalizePart(p) {
   };
 }
 
+function inferItemKind(item) {
+  const t = String(item?.tipo || "").toLowerCase();
+  if (t.includes("armadura")) return "item_armadura";
+  if (t.includes("acess")) return "item_acessorio";
+  if (t.includes("vest") || t.includes("roupa")) return "item_vestimenta";
+  return "item";
+}
+
+function inferEffectKind(ef) {
+  const t = String(ef?.tipo || "").toLowerCase();
+  if (t.includes("mald")) return "effect_maldicao";
+  if (t.includes("debuff")) return "effect_debuff";
+  if (t.includes("buff")) return "effect_buff";
+  return "effect";
+}
+
+function metaOf(kind) {
+  return ATTACH_META[kind] || ATTACH_META.effect;
+}
+
 function portWorld(part, side) {
   const o = SIDE_OFFSET[side] || SIDE_OFFSET.right;
   return { x: (part.x || 0) + o.x, y: (part.y || 0) + o.y, vx: o.vx, vy: o.vy };
 }
 
-function MiniBodyCanvas({ title, state, onChange, selectedId, onSelect, canCreate = true, compact = false, onNotify }) {
+function MiniBodyCanvas({ title, state, onChange, selectedId, onSelect, canCreate = true, compact = false }) {
   const wrapRef = useRef(null);
   const dragRef = useRef(null);
   const [viewport, setViewport] = useState({ x: compact ? 30 : 80, y: compact ? 20 : 80, zoom: compact ? 0.9 : 1 });
@@ -135,13 +177,22 @@ function MiniBodyCanvas({ title, state, onChange, selectedId, onSelect, canCreat
     dragRef.current = { kind: "node", id: part.id, sx: e.clientX, sy: e.clientY, x: part.x || 0, y: part.y || 0 };
   };
 
-  const onWheel = (e) => {
+  const handleWheelZoom = (e) => {
     e.preventDefault();
+    e.stopPropagation();
     const d = e.deltaY > 0 ? -0.08 : 0.08;
     setViewport((p) => ({ ...p, zoom: Math.max(0.45, Math.min(2, Number((p.zoom + d).toFixed(2)))) }));
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
+    const target = wrapRef.current;
+    if (!target) return undefined;
+    const onNativeWheel = (e) => handleWheelZoom(e);
+    target.addEventListener("wheel", onNativeWheel, { passive: false });
+    return () => target.removeEventListener("wheel", onNativeWheel);
+  }, [viewport.zoom]);
+
+  useEffect(() => {
     const onMove = (e) => {
       if (linkDrag) setLinkDrag((p) => (p ? { ...p, mouse: worldFromClient(e.clientX, e.clientY) } : p));
       const d = dragRef.current;
@@ -164,7 +215,7 @@ function MiniBodyCanvas({ title, state, onChange, selectedId, onSelect, canCreat
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [viewport.zoom, linkDrag, state]);
+  }, [viewport.zoom, linkDrag]);
 
   return (
     <div style={{ border: "1px solid #2a3444", borderRadius: 12, background: compact ? "#0a1320" : "#090f19", padding: 8, display: "grid", gap: 8 }}>
@@ -178,9 +229,18 @@ function MiniBodyCanvas({ title, state, onChange, selectedId, onSelect, canCreat
 
       <div
         ref={wrapRef}
-        onWheel={onWheel}
+        onWheelCapture={handleWheelZoom}
         onMouseDown={onDownCanvas}
-        style={{ height: compact ? 260 : 620, border: "1px solid #213148", borderRadius: 10, background: "radial-gradient(circle at 20% 20%, #1a2740 0, #101a2d 48%, #0a1020 100%)", overflow: "hidden", position: "relative", cursor: "grab" }}
+        style={{
+          height: compact ? 280 : 620,
+          border: "1px solid #213148",
+          borderRadius: 10,
+          background: "radial-gradient(circle at 20% 20%, #1a2740 0, #101a2d 48%, #0a1020 100%)",
+          overflow: "hidden",
+          position: "relative",
+          cursor: "grab",
+          overscrollBehavior: "contain",
+        }}
       >
         <div style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`, transformOrigin: "top left", width: 2400, height: 1400, position: "relative" }}>
           <svg style={{ position: "absolute", inset: 0, width: 2400, height: 1400, pointerEvents: "none" }}>
@@ -190,13 +250,7 @@ function MiniBodyCanvas({ title, state, onChange, selectedId, onSelect, canCreat
               if (!from || !to) return null;
               const a = portWorld(from, l.from.side);
               const b = portWorld(to, l.to.side);
-              const ca = 42;
-              const cb = 42;
-              const c1x = a.x + a.vx * ca;
-              const c1y = a.y + a.vy * ca;
-              const c2x = b.x + b.vx * cb;
-              const c2y = b.y + b.vy * cb;
-              const d = `M ${a.x} ${a.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${b.x} ${b.y}`;
+              const d = `M ${a.x} ${a.y} C ${a.x + a.vx * 42} ${a.y + a.vy * 42}, ${b.x + b.vx * 42} ${b.y + b.vy * 42}, ${b.x} ${b.y}`;
               return <g key={l.id}><path d={d} stroke="#000" strokeWidth="7" fill="none" strokeLinecap="round" /><path d={d} stroke="#f6c46d" strokeWidth="3.2" fill="none" strokeLinecap="round" /></g>;
             })}
             {linkDrag && (() => {
@@ -211,34 +265,39 @@ function MiniBodyCanvas({ title, state, onChange, selectedId, onSelect, canCreat
 
           {parts.map((part) => {
             const ratio = num(part.vida) / Math.max(1, num(part.vidaMax, 1));
+            const hasItem = (part.anexos || []).some((a) => String(a.kind || "").startsWith("item"));
+            const hasEffect = (part.anexos || []).some((a) => String(a.kind || "").startsWith("effect"));
             return (
-              <div key={part.id} onMouseDown={(e) => onDownNode(part, e)} style={{ position: "absolute", left: part.x || 0, top: part.y || 0, width: CARD_W, height: CARD_H, border: `1px solid ${selectedId === part.id ? "#9fd7ff" : "#40546d"}`, borderRadius: 12, background: "linear-gradient(180deg, #0c1420, #090e16)", boxShadow: selectedId === part.id ? "0 0 18px #8fd8ff66" : "0 0 12px #000", padding: 8, userSelect: "none" }}>
+              <div key={part.id} onMouseDown={(e) => onDownNode(part, e)} style={{
+                position: "absolute", left: part.x || 0, top: part.y || 0, width: CARD_W, height: CARD_H,
+                border: `1px solid ${selectedId === part.id ? "#9fd7ff" : "#40546d"}`,
+                borderRadius: 12,
+                background: `linear-gradient(180deg, ${part.cor || "#4aa3ff"}33, #090e16)`,
+                boxShadow: `${hasItem ? "0 0 18px #73e3ff44" : ""}${hasEffect ? ", 0 0 18px #d49cff44" : ""}${selectedId === part.id ? ", 0 0 18px #8fd8ff66" : ", 0 0 12px #000"}`,
+                padding: 8,
+                userSelect: "none",
+              }}>
                 {SIDES.map((side) => {
                   const p = SIDE_OFFSET[side];
                   const linked = links.some((l) => (l.from.id === part.id && l.from.side === side) || (l.to.id === part.id && l.to.side === side));
                   return (
-                    <button
-                      key={`${part.id}-${side}`}
-                      onMouseDown={(e) => beginLink({ id: part.id, side }, e)}
-                      onMouseUp={(e) => { e.stopPropagation(); finishLink({ id: part.id, side }); }}
-                      title={`Conector ${side}`}
-                      style={{ position: "absolute", left: p.x - 6, top: p.y - 6, width: 12, height: 12, borderRadius: "50%", border: "1px solid #2b3f54", background: linked ? "radial-gradient(circle at 35% 35%, #fff, #f6c46d)" : "radial-gradient(circle at 35% 35%, #9ed0ff, #1f2d40)", boxShadow: linked ? "0 0 8px #f6c46d" : "none", cursor: "crosshair" }}
-                    />
+                    <button key={`${part.id}-${side}`} onMouseDown={(e) => beginLink({ id: part.id, side }, e)} onMouseUp={(e) => { e.stopPropagation(); finishLink({ id: part.id, side }); }} style={{ position: "absolute", left: p.x - 6, top: p.y - 6, width: 12, height: 12, borderRadius: "50%", border: "1px solid #2b3f54", background: linked ? "radial-gradient(circle at 35% 35%, #fff, #f6c46d)" : "radial-gradient(circle at 35% 35%, #9ed0ff, #1f2d40)", cursor: "crosshair" }} />
                   );
                 })}
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 6, alignItems: "center" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "22px 1fr auto", gap: 6, alignItems: "center" }}>
+                  <div style={{ width: 22, height: 22, borderRadius: 4, border: "1px solid #2f4e6c", background: part.cor || "#4aa3ff", display: "grid", placeItems: "center", fontSize: 12 }}>{part.icone || ""}</div>
                   <input value={part.nome || ""} onChange={(e) => patchPart(part.id, { nome: e.target.value })} style={inpStyle({ padding: "6px 8px" })} />
                   <button onClick={() => deletePart(part.id)} style={btnStyle({ borderColor: "#e74c3c55", color: "#ff7f7f", padding: "2px 6px" })}>✕</button>
                 </div>
                 <div style={{ marginTop: 6, height: 8, borderRadius: 999, background: "#111" }}><div style={{ width: `${Math.max(0, Math.min(100, ratio * 100))}%`, height: "100%", borderRadius: 999, background: "linear-gradient(90deg, #2ecc71, #f1c40f, #e74c3c)" }} /></div>
                 <div style={{ marginTop: 6, fontSize: 10, color: "#b6d2ef", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-                  <span>VIDA {num(part.vida)}/{Math.max(1, num(part.vidaMax, 1))}</span>
-                  <span>BÔNUS {Number(part.bonus) || 0}</span>
-                  <span>OSSOS {num(part.ossos)}</span>
-                  <span>MÚSCULOS {num(part.musculos)}</span>
-                  <span>PELE {num(part.pele)}</span>
-                  <span>SAÚDE {num(part.saude)}</span>
+                  <span>Pele grossa: {num(part.pele)}</span>
+                  <span>Músculos duros: {num(part.musculos)}</span>
+                  <span>Ossos fortes: {num(part.ossos)}</span>
+                  <span>Bônus: {Number(part.bonus) || 0}</span>
+                  <span>Saúde: {num(part.saude)}</span>
+                  <span>Vida: {num(part.vida)}</span>
                 </div>
               </div>
             );
@@ -249,21 +308,111 @@ function MiniBodyCanvas({ title, state, onChange, selectedId, onSelect, canCreat
   );
 }
 
+function PartInspector({ part, title, onPatch, onAddAnexo, onOpenAnexo, onApplyAction, inventoryItems, characterEffects }) {
+  if (!part) return null;
+  return (
+    <div style={{ border: "1px solid #2a3444", borderRadius: 12, background: "#0a121d", padding: 10, display: "grid", gap: 8 }}>
+      <div style={{ color: "#9fd1ff", fontFamily: "'Cinzel',serif" }}>{title}: {part.nome}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "70px 1fr", gap: 6 }}>
+        <input value={part.icone || ""} onChange={(e) => onPatch({ icone: e.target.value })} placeholder="Ícone" style={inpStyle()} />
+        <input type="color" value={part.cor || "#4aa3ff"} onChange={(e) => onPatch({ cor: e.target.value })} style={{ ...inpStyle(), padding: 2, height: 34 }} />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+        <input type="number" value={num(part.vida)} onChange={(e) => onPatch({ vida: num(e.target.value) })} style={inpStyle()} title="Vida" />
+        <input type="number" value={num(part.saude)} onChange={(e) => onPatch({ saude: num(e.target.value) })} style={inpStyle()} title="Saúde" />
+        <input type="number" value={num(part.ossos)} onChange={(e) => onPatch({ ossos: num(e.target.value) })} style={inpStyle()} title="Ossos fortes" />
+        <input type="number" value={num(part.pele)} onChange={(e) => onPatch({ pele: num(e.target.value) })} style={inpStyle()} title="Pele grossa" />
+        <input type="number" value={num(part.musculos)} onChange={(e) => onPatch({ musculos: num(e.target.value) })} style={inpStyle()} title="Músculos duros" />
+        <input type="number" value={Number(part.bonus) || 0} onChange={(e) => onPatch({ bonus: Number(e.target.value) || 0 })} style={inpStyle()} title="Bônus" />
+      </div>
+
+      <div style={{ borderTop: "1px solid #263446", paddingTop: 8, display: "grid", gap: 6 }}>
+        <div style={{ color: G.muted, fontSize: 11 }}>Anexar itens / efeitos cooperativos</div>
+        <select onChange={(e) => {
+          const item = inventoryItems.find((x) => x.id === e.target.value);
+          if (!item) return;
+          onAddAnexo({ kind: inferItemKind(item), label: item.nome || "Item", refId: item.id });
+          e.target.value = "";
+        }} style={inpStyle()} defaultValue="">
+          <option value="">Anexar item de inventário...</option>
+          {inventoryItems.map((it) => <option key={it.id} value={it.id}>{it.nome}</option>)}
+        </select>
+        <select onChange={(e) => {
+          const ef = characterEffects.find((x) => x.id === e.target.value);
+          if (!ef) return;
+          onAddAnexo({ kind: inferEffectKind(ef), label: ef.nome || "Efeito", refId: ef.id });
+          e.target.value = "";
+        }} style={inpStyle()} defaultValue="">
+          <option value="">Anexar efeito da ficha...</option>
+          {characterEffects.map((ef) => <option key={ef.id} value={ef.id}>{ef.nome || ef.id}</option>)}
+        </select>
+
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {(part.anexos || []).map((a) => {
+            const m = metaOf(a.kind);
+            return (
+              <button key={a.id} onClick={() => onOpenAnexo(a)} style={{ border: `1px solid ${m.tint}66`, background: `${m.tint}1f`, borderRadius: 999, padding: "3px 8px", color: m.tint, fontSize: 11, cursor: "pointer" }}>
+                {m.icon} {a.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ borderTop: "1px solid #263446", paddingTop: 8 }}>
+        <div style={{ color: G.muted, fontSize: 11, marginBottom: 6 }}>Ações rápidas</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {ACTIONS.map((a) => <HoverButton key={a.id} onClick={() => onApplyAction(a.patch)} style={btnStyle({ padding: "3px 8px" })}>{a.label}</HoverButton>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function TabCorpo({ ficha, onUpdate, onNotify }) {
   const state = useMemo(() => normalizeCorpo({ ...defaultCorpo(), ...(ficha.corpo || {}) }), [ficha.corpo]);
   const fileRef = useRef(null);
   const [selectedId, setSelectedId] = useState(null);
+  const [selectedInnerId, setSelectedInnerId] = useState(null);
+  const [inspectAnexo, setInspectAnexo] = useState(null);
 
   const save = (next) => onUpdate({ corpo: normalizeCorpo(next) });
   const parts = state.partes || [];
   const selected = parts.find((p) => p.id === selectedId) || null;
+  const innerState = selected ? normalizeCorpo(selected.interno) : normalizeCorpo({});
+  const innerParts = innerState.partes || [];
+  const selectedInner = innerParts.find((p) => p.id === selectedInnerId) || null;
   const spent = parts.reduce((acc, p) => acc + num(p.saude) + num(p.ossos) + num(p.pele) + num(p.musculos) + num(p.bonus), 0);
   const livre = Math.max(0, num(state.pontosTotal, 1) - spent);
 
   const inventoryItems = (ficha.inventario || []).map((x) => x.item).filter(Boolean);
   const characterEffects = ficha.modificadores?.efeitos || [];
 
+  useEffect(() => {
+    setSelectedInnerId(null);
+  }, [selectedId]);
+
   const patchPart = (id, patch) => save({ ...state, partes: parts.map((p) => (p.id === id ? { ...p, ...patch } : p)) });
+  const patchInnerPart = (id, patch) => {
+    if (!selected) return;
+    const next = { ...innerState, partes: innerParts.map((p) => (p.id === id ? { ...p, ...patch } : p)) };
+    patchPart(selected.id, { interno: next });
+  };
+
+  const addAnexo = (part, payload, isInner = false) => {
+    if (!part) return;
+    const atual = part.anexos || [];
+    if (atual.some((x) => x.kind === payload.kind && x.refId === payload.refId)) return;
+    const nextAnexos = [...atual, { id: uid(), ...payload }];
+    if (isInner) patchInnerPart(part.id, { anexos: nextAnexos });
+    else patchPart(part.id, { anexos: nextAnexos });
+  };
+
+  const openAnexo = (anexo, partNome) => {
+    const item = inventoryItems.find((x) => x.id === anexo.refId) || null;
+    const effect = characterEffects.find((x) => x.id === anexo.refId) || null;
+    setInspectAnexo({ anexo, item, effect, partNome });
+  };
 
   const exportJson = () => {
     const payload = JSON.stringify(state, null, 2);
@@ -289,19 +438,12 @@ export function TabCorpo({ ficha, onUpdate, onNotify }) {
     }
   };
 
-  const addAnexo = (kind, label, refId) => {
-    if (!selected) return;
-    const atual = selected.anexos || [];
-    if (atual.some((x) => x.kind === kind && x.refId === refId)) return;
-    patchPart(selected.id, { anexos: [...atual, { id: uid(), kind, label, refId }] });
-  };
-
   return (
     <div style={{ display: "grid", gap: 10 }}>
       <div style={{ border: "1px solid " + G.border, borderRadius: 12, background: G.bg2, padding: 10, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <div>
           <div style={{ fontFamily: "'Cinzel',serif", color: G.gold, letterSpacing: 1 }}>◈ CORPO · Logic Bricks Anatômico</div>
-          <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>Sistema modular de partes, conectores, subpartes e anexos cooperativos.</div>
+          <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>Zoom no canvas agora bloqueia o scroll da página enquanto o mouse está sobre ele.</div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <span style={{ color: G.muted, fontSize: 11 }}>Pontos</span>
@@ -313,71 +455,84 @@ export function TabCorpo({ ficha, onUpdate, onNotify }) {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 420px", gap: 10 }}>
-        <MiniBodyCanvas title="Canvas corporal principal" state={state} onChange={save} selectedId={selectedId} onSelect={setSelectedId} canCreate onNotify={onNotify} />
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 430px", gap: 10 }}>
+        <MiniBodyCanvas title="Canvas corporal principal" state={state} onChange={save} selectedId={selectedId} onSelect={setSelectedId} canCreate />
 
         <div style={{ display: "grid", gap: 10, alignContent: "start" }}>
-          {!selected && <div style={{ border: "1px solid #2a3444", borderRadius: 12, background: "#0a121d", padding: 10, color: G.muted, fontFamily: "monospace" }}>Selecione uma parte no canvas para editar HUD, resistências, anexos e subpartes internas.</div>}
+          {!selected && <div style={{ border: "1px solid #2a3444", borderRadius: 12, background: "#0a121d", padding: 10, color: G.muted, fontFamily: "monospace" }}>Selecione uma parte no canvas para editar HUD, anexos, ações e subpartes internas.</div>}
 
           {selected && (
             <>
-              <div style={{ border: "1px solid #2a3444", borderRadius: 12, background: "#0a121d", padding: 10, display: "grid", gap: 8 }}>
-                <div style={{ color: "#9fd1ff", fontFamily: "'Cinzel',serif" }}>HUD da parte selecionada: {selected.nome}</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                  <input type="number" value={num(selected.vida)} onChange={(e) => patchPart(selected.id, { vida: num(e.target.value) })} style={inpStyle()} title="Vida atual" />
-                  <input type="number" value={Math.max(1, num(selected.vidaMax, 1))} onChange={(e) => patchPart(selected.id, { vidaMax: Math.max(1, num(e.target.value, 1)) })} style={inpStyle()} title="Vida máxima" />
-                  <input type="number" value={num(selected.saude)} onChange={(e) => patchPart(selected.id, { saude: num(e.target.value) })} style={inpStyle()} title="Saúde" />
-                  <input type="number" value={num(selected.ossos)} onChange={(e) => patchPart(selected.id, { ossos: num(e.target.value) })} style={inpStyle()} title="Ossos fortes" />
-                  <input type="number" value={num(selected.pele)} onChange={(e) => patchPart(selected.id, { pele: num(e.target.value) })} style={inpStyle()} title="Pele grossa" />
-                  <input type="number" value={num(selected.musculos)} onChange={(e) => patchPart(selected.id, { musculos: num(e.target.value) })} style={inpStyle()} title="Músculos duros" />
-                  <input type="number" value={Number(selected.bonus) || 0} onChange={(e) => patchPart(selected.id, { bonus: Number(e.target.value) || 0 })} style={inpStyle()} title="Bônus" />
-                </div>
-
-                <div style={{ borderTop: "1px solid #263446", paddingTop: 8, display: "grid", gap: 6 }}>
-                  <div style={{ color: G.muted, fontSize: 11 }}>Anexar itens / efeitos cooperativos</div>
-                  <select onChange={(e) => {
-                    const item = inventoryItems.find((x) => x.id === e.target.value);
-                    if (!item) return;
-                    addAnexo("item", item.nome || "Item", item.id);
-                    e.target.value = "";
-                  }} style={inpStyle()} defaultValue="">
-                    <option value="">Anexar item de inventário...</option>
-                    {inventoryItems.map((it) => <option key={it.id} value={it.id}>{it.nome}</option>)}
-                  </select>
-                  <select onChange={(e) => {
-                    const ef = characterEffects.find((x) => x.id === e.target.value);
-                    if (!ef) return;
-                    addAnexo("effect", ef.nome || "Efeito", ef.id);
-                    e.target.value = "";
-                  }} style={inpStyle()} defaultValue="">
-                    <option value="">Anexar efeito da ficha...</option>
-                    {characterEffects.map((ef) => <option key={ef.id} value={ef.id}>{ef.nome || ef.id}</option>)}
-                  </select>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {(selected.anexos || []).map((a) => (
-                      <span key={a.id} style={{ border: "1px solid #3a4b60", borderRadius: 999, padding: "2px 8px", color: "#b9d8ff", fontSize: 11 }}>
-                        {a.kind === "item" ? "🛡 " : "✦ "}{a.label}
-                        <button onClick={() => patchPart(selected.id, { anexos: (selected.anexos || []).filter((x) => x.id !== a.id) })} style={{ marginLeft: 6, background: "transparent", border: "none", color: "#ff8f8f", cursor: "pointer" }}>×</button>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
+              <PartInspector
+                part={selected}
+                title="HUD da parte selecionada"
+                onPatch={(patch) => patchPart(selected.id, patch)}
+                onApplyAction={(patcher) => patchPart(selected.id, patcher(selected))}
+                onAddAnexo={(payload) => addAnexo(selected, payload, false)}
+                onOpenAnexo={(a) => openAnexo(a, selected.nome)}
+                inventoryItems={inventoryItems}
+                characterEffects={characterEffects}
+              />
 
               <MiniBodyCanvas
                 title={`Subcanvas interno · ${selected.nome}`}
-                state={normalizeCorpo(selected.interno)}
+                state={innerState}
                 onChange={(next) => patchPart(selected.id, { interno: next })}
-                selectedId={null}
-                onSelect={() => {}}
+                selectedId={selectedInnerId}
+                onSelect={setSelectedInnerId}
                 compact
                 canCreate
-                onNotify={onNotify}
               />
+
+              {selectedInner && (
+                <PartInspector
+                  part={selectedInner}
+                  title="HUD da subparte"
+                  onPatch={(patch) => patchInnerPart(selectedInner.id, patch)}
+                  onApplyAction={(patcher) => patchInnerPart(selectedInner.id, patcher(selectedInner))}
+                  onAddAnexo={(payload) => addAnexo(selectedInner, payload, true)}
+                  onOpenAnexo={(a) => openAnexo(a, `${selected.nome} / ${selectedInner.nome}`)}
+                  inventoryItems={inventoryItems}
+                  characterEffects={characterEffects}
+                />
+              )}
             </>
           )}
         </div>
       </div>
+
+      {inspectAnexo && (
+        <Modal title={`Anexo em ${inspectAnexo.partNome}`} onClose={() => setInspectAnexo(null)}>
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ color: metaOf(inspectAnexo.anexo.kind).tint, fontFamily: "'Cinzel',serif" }}>
+              {metaOf(inspectAnexo.anexo.kind).icon} {inspectAnexo.anexo.label} · {metaOf(inspectAnexo.anexo.kind).label}
+            </div>
+
+            {inspectAnexo.item && (
+              <div style={{ border: "1px solid #2b3d56", borderRadius: 10, padding: 8, display: "grid", gap: 6 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <ItemIcon item={inspectAnexo.item} size={18} />
+                  <strong>{inspectAnexo.item.nome}</strong>
+                </div>
+                <div style={{ fontSize: 12, color: G.muted }}>Tipo: {inspectAnexo.item.tipo || "—"} · Rank: {inspectAnexo.item.rank || "—"}</div>
+                <div style={{ fontSize: 12 }}>{inspectAnexo.item.descricao || "Sem descrição."}</div>
+                <div style={{ fontSize: 11, color: "#9dc8f5" }}>Efeitos no item: {(inspectAnexo.item.efeitos || []).length}</div>
+              </div>
+            )}
+
+            {inspectAnexo.effect && (
+              <div style={{ border: "1px solid #3f2b56", borderRadius: 10, padding: 8, display: "grid", gap: 6 }}>
+                <strong>{inspectAnexo.effect.nome || "Efeito"}</strong>
+                <div style={{ fontSize: 12, color: G.muted }}>{inspectAnexo.effect.tipo || "—"} · {inspectAnexo.effect.rank || "Sem rank"}</div>
+                <div style={{ fontFamily: "monospace", fontSize: 12, color: "#9edcff" }}>{inspectAnexo.effect.efeitoMecanico || inspectAnexo.effect.efeito || "Sem efeito mecânico"}</div>
+                <div style={{ fontSize: 12 }}>{inspectAnexo.effect.descricao || "Sem descrição."}</div>
+              </div>
+            )}
+
+            {!inspectAnexo.item && !inspectAnexo.effect && <div style={{ color: G.muted }}>Esse anexo não foi encontrado na ficha atual (pode ter sido removido).</div>}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
