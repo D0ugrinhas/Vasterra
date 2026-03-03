@@ -5,6 +5,7 @@ import { parseMechanicalEffects, instantiateEffectFromTemplate } from "../../cor
 import { G, inpStyle, btnStyle } from "../../ui/theme";
 import { Modal, EffectDetailsModal } from "../shared/components";
 import { EffectForgeEditor, makeDefaultEffect } from "../caldeirao/EffectForgeEditor";
+import { ImageAttachModal, ImageViewport } from "../../components/media/ImageAttachModal";
 
 const blankEffect = () => ({ id: uid(), nome: "", descricao: "", valor: "", ativo: true });
 
@@ -119,6 +120,7 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
   const [previewOpen, setPreviewOpen] = useState(false);
   const [effectEditorOpen, setEffectEditorOpen] = useState(false);
   const [effectEditorData, setEffectEditorData] = useState(null);
+  const [imageModalOpen, setImageModalOpen] = useState(false);
   const selectedEffect = (effectsLibrary || []).find((x) => x.id === selectedEffectId) || null;
 
   const defenseRegionOptions = useMemo(() => {
@@ -161,12 +163,7 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
     onClose();
   };
 
-  const onUploadIcon = (file) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => up("iconeData", String(reader.result || ""));
-    reader.readAsDataURL(file);
-  };
+  const iconModeUI = (d.iconeModo === "url" || d.iconeModo === "upload") ? "image" : (d.iconeModo || "emoji");
 
   return (
     <Modal title={item ? "Editar Item" : "Criar Item"} onClose={safeClose} wide>
@@ -250,14 +247,28 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
         <div style={{ display: "grid", gap: 8 }}>
           <div style={{ background: G.bg3, border: "1px solid " + G.border, borderRadius: 10, padding: 10 }}>
             <div style={{ fontSize: 11, color: G.gold, marginBottom: 5 }}>Imagem / Ícone</div>
-            <select value={d.iconeModo || "emoji"} onChange={(e) => up("iconeModo", e.target.value)} style={{ ...inpStyle(), marginBottom: 6 }}>
+            <select
+              value={iconModeUI}
+              onChange={(e) => {
+                if (e.target.value === "image") {
+                  up("iconeModo", d.iconeModo === "url" || d.iconeModo === "upload" ? d.iconeModo : "upload");
+                  setImageModalOpen(true);
+                  return;
+                }
+                up("iconeModo", e.target.value);
+              }}
+              style={{ ...inpStyle(), marginBottom: 6 }}
+            >
               <option value="emoji">Ícone (emoji)</option>
-              <option value="url">Imagem por URL</option>
-              <option value="upload">Imagem local</option>
+              <option value="image">Imagem</option>
             </select>
             {(d.iconeModo || "emoji") === "emoji" && <input value={d.icone || ""} onChange={(e) => up("icone", e.target.value)} placeholder="⚔️" style={inpStyle()} />}
-            {(d.iconeModo || "emoji") === "url" && <input value={d.iconeUrl || ""} onChange={(e) => up("iconeUrl", e.target.value)} placeholder="https://..." style={inpStyle()} />}
-            {(d.iconeModo || "emoji") === "upload" && <input type="file" accept="image/*" onChange={(e) => onUploadIcon(e.target.files?.[0])} style={inpStyle()} />}
+            {iconModeUI === "image" && (
+              <div style={{ display: "grid", gap: 6 }}>
+                <button onClick={() => setImageModalOpen(true)} style={btnStyle({ width: "100%" })}>Anexar imagem</button>
+                {(d.iconeData || d.iconeUrl) && <ImageViewport src={d.iconeData || d.iconeUrl} alt={d.nome || "Ícone"} size={46} adjust={d.iconeAjuste} />}
+              </div>
+            )}
           </div>
 
           <div>
@@ -302,6 +313,19 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
         <button style={btnStyle()} onClick={() => onSave({ ...d, regiaoEfeito: (d.regioesDefesa || [])[0] || "", regiaoEfeitoOutro: "", regioesDefesa: d.regioesDefesa || [] })}>Salvar Item</button>
       </div>
       {previewOpen && <EffectDetailsModal effect={selectedEffect} onClose={() => setPreviewOpen(false)} />}
+      <ImageAttachModal
+        open={imageModalOpen}
+        title="Anexar imagem do item"
+        initial={{ mode: d.iconeModo === "url" ? "url" : "upload", url: d.iconeUrl || "", data: d.iconeData || "", adjust: d.iconeAjuste }}
+        onClose={() => setImageModalOpen(false)}
+        onConfirm={(payload) => {
+          up("iconeModo", payload.mode);
+          up("iconeUrl", payload.url);
+          up("iconeData", payload.data);
+          up("iconeAjuste", payload.adjust);
+          setImageModalOpen(false);
+        }}
+      />
       {effectEditorOpen && <EffectForgeEditor effect={effectEditorData} onSave={(ef) => {
         const next = instantiateEffectFromTemplate(ef, { id: ef.id || uid(), origem: "Item", origemDetalhe: d.nome || "Item", ativo: ef.ativo ?? true });
         const exists = (d.efeitos || []).some((x) => x.id === next.id);

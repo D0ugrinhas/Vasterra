@@ -3,10 +3,11 @@ import { uid } from "../../core/factories";
 import { G, inpStyle, btnStyle } from "../../ui/theme";
 import { ARSENAL_RANKS, RANK_COR } from "../../data/gameData";
 import { EffectForgeEditor, makeDefaultEffect } from "./EffectForgeEditor";
+import { ImageViewport } from "../../components/media/ImageAttachModal";
 
 function EffectIcon({ ef, size = 20 }) {
-  if (ef.iconeModo === "url" && ef.iconeUrl) return <img src={ef.iconeUrl} alt={ef.nome} style={{ width: size, height: size, objectFit: "cover", borderRadius: 4 }} />;
-  if (ef.iconeModo === "upload" && ef.iconeData) return <img src={ef.iconeData} alt={ef.nome} style={{ width: size, height: size, objectFit: "cover", borderRadius: 4 }} />;
+  if (ef.iconeModo === "url" && ef.iconeUrl) return <ImageViewport src={ef.iconeUrl} alt={ef.nome} size={size} adjust={ef.iconeAjuste} />;
+  if (ef.iconeModo === "upload" && ef.iconeData) return <ImageViewport src={ef.iconeData} alt={ef.nome} size={size} adjust={ef.iconeAjuste} />;
   if (ef.iconeModo === "cor") return <span style={{ width: size, height: size, display: "inline-block", borderRadius: 5, background: ef.cor || "#7f8c8d", border: "1px solid #333" }} />;
   return <span style={{ fontSize: size }}>{ef.icone || "⚗️"}</span>;
 }

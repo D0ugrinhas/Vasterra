@@ -5,6 +5,7 @@ import { inventoryItemModifiers } from "../../../core/inventory";
 import { G, inpStyle, btnStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
 import { StatusBar } from "../../shared/components";
+import { ImageAttachModal, ImageViewport } from "../../../components/media/ImageAttachModal";
 
 const defaultInfo = {
   peso: "",
@@ -33,9 +34,14 @@ function AvatarPreview({ info }) {
     fontSize: 32,
     fontFamily: "'Cinzel',serif",
   };
-
-  if (i.avatarModo === "url" && i.avatarUrl) return <img src={i.avatarUrl} alt="Avatar" style={{ ...base, objectFit: "cover" }} />;
-  if (i.avatarModo === "upload" && i.avatarData) return <img src={i.avatarData} alt="Avatar" style={{ ...base, objectFit: "cover" }} />;
+  const avatarSrc = i.avatarModo === "url"
+    ? i.avatarUrl
+    : i.avatarModo === "upload"
+      ? i.avatarData
+      : i.avatarModo === "image"
+        ? (i.avatarData || i.avatarUrl)
+        : "";
+  if (avatarSrc) return <ImageViewport src={avatarSrc} alt="Avatar" size={86} radius={12} adjust={i.avatarAjuste} />;
   if (i.avatarModo === "icon") return <div style={base}>{i.avatarIcone || "?"}</div>;
   return <div style={base}>?</div>;
 }
@@ -45,8 +51,10 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
   const [c2, setC2] = useState("FOR");
   const [cRes, setCRes] = useState(null);
   const [burstRes, setBurstRes] = useState(null);
+  const [imageModalOpen, setImageModalOpen] = useState(false);
 
   const info = { ...defaultInfo, ...(ficha.informacoes || {}) };
+  const avatarModeUI = (info.avatarModo === "url" || info.avatarModo === "upload") ? "image" : (info.avatarModo || "fallback");
 
   const itemMods = useMemo(() => inventoryItemModifiers(ficha.inventario || [], arsenal), [ficha.inventario, arsenal]);
   const globalEffects = ficha.modificadores?.efeitos || [];
@@ -57,13 +65,6 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
 
   const upStatus = (sigla, field, val) => onUpdate({ status: { ...ficha.status, [sigla]: { ...ficha.status[sigla], [field]: val } } });
   const upInfo = (patch) => onUpdate({ informacoes: { ...info, ...patch } });
-
-  const onUploadAvatar = (file) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => upInfo({ avatarData: String(reader.result || ""), avatarModo: "upload" });
-    reader.readAsDataURL(file);
-  };
 
   const rolarConfronto = () => {
     const v1 = (ficha.atributos[c1]?.val || 5) + (attrBonus[c1] || 0);
@@ -111,21 +112,29 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                <select value={info.avatarModo || "fallback"} onChange={(e) => upInfo({ avatarModo: e.target.value })} style={inpStyle()}>
+                <select
+                  value={avatarModeUI}
+                  onChange={(e) => {
+                    if (e.target.value === "image") {
+                      upInfo({ avatarModo: info.avatarModo === "url" || info.avatarModo === "upload" ? info.avatarModo : "upload" });
+                      setImageModalOpen(true);
+                      return;
+                    }
+                    upInfo({ avatarModo: e.target.value });
+                  }}
+                  style={inpStyle()}
+                >
                   <option value="fallback">Fallback</option>
                   <option value="icon">Ícone + cor</option>
-                  <option value="url">Imagem URL</option>
-                  <option value="upload">Imagem local</option>
+                  <option value="image">Imagem</option>
                 </select>
                 {(info.avatarModo === "icon" || info.avatarModo === "fallback") ? (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 56px", gap: 6 }}>
                     <input value={info.avatarIcone || ""} onChange={(e) => upInfo({ avatarIcone: e.target.value })} placeholder="Ícone" style={inpStyle()} />
                     <input type="color" value={info.avatarCor || "#1b2330"} onChange={(e) => upInfo({ avatarCor: e.target.value })} style={{ ...inpStyle(), height: 34, padding: 2 }} />
                   </div>
-                ) : info.avatarModo === "url" ? (
-                  <input value={info.avatarUrl || ""} onChange={(e) => upInfo({ avatarUrl: e.target.value })} placeholder="https://..." style={inpStyle()} />
                 ) : (
-                  <input type="file" accept="image/*" onChange={(e) => onUploadAvatar(e.target.files?.[0])} style={inpStyle()} />
+                  <button onClick={() => setImageModalOpen(true)} style={btnStyle({ width: "100%" })}>Anexar imagem</button>
                 )}
               </div>
             </div>
@@ -149,6 +158,21 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
           {burstRes !== null && <div style={{ marginTop: 10, textAlign: "center", padding: 12, background: "#0a1a0a", border: "1px solid #2ecc7144", borderRadius: 8 }}><div style={{ fontFamily: "'Cinzel',serif", fontSize: 36, color: "#2ecc71" }}>{burstRes}</div></div>}
         </div>
       </div>
+      <ImageAttachModal
+        open={imageModalOpen}
+        title="Anexar Avatar"
+        initial={{ mode: info.avatarModo === "url" ? "url" : "upload", url: info.avatarUrl || "", data: info.avatarData || "", adjust: info.avatarAjuste }}
+        onClose={() => setImageModalOpen(false)}
+        onConfirm={(payload) => {
+          upInfo({
+            avatarModo: payload.mode,
+            avatarUrl: payload.url,
+            avatarData: payload.data,
+            avatarAjuste: payload.adjust,
+          });
+          setImageModalOpen(false);
+        }}
+      />
     </div>
   );
 }

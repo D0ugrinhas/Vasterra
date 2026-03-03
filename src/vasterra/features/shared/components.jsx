@@ -3,6 +3,7 @@ import { MOD_ORIGENS, STATUS_CFG } from "../../data/gameData";
 import { uid } from "../../core/factories";
 import { G, inpStyle, btnStyle } from "../../ui/theme";
 import { HoverButton } from "../../components/primitives/Interactive";
+import { ImageViewport } from "../../components/media/ImageAttachModal";
 
 export function Pill({ label, cor, small }) {
   return (
@@ -173,10 +174,10 @@ export function ModificadoresEditor({ title, list, onChange, inventarioItens, on
 
 export function ItemIcon({ item, size = 20 }) {
   if (item.iconeModo === "url" && item.iconeUrl) {
-    return <img src={item.iconeUrl} alt={item.nome} style={{ width: size, height: size, objectFit: "cover", borderRadius: 4 }} />;
+    return <ImageViewport src={item.iconeUrl} alt={item.nome} size={size} adjust={item.iconeAjuste} />;
   }
   if (item.iconeModo === "upload" && item.iconeData) {
-    return <img src={item.iconeData} alt={item.nome} style={{ width: size, height: size, objectFit: "cover", borderRadius: 4 }} />;
+    return <ImageViewport src={item.iconeData} alt={item.nome} size={size} adjust={item.iconeAjuste} />;
   }
   return <span style={{ fontSize: size }}>{item.icone || "?"}</span>;
 }

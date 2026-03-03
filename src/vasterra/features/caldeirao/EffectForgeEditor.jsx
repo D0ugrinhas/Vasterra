@@ -3,6 +3,7 @@ import { uid } from "../../core/factories";
 import { ARSENAL_RANKS, ESSENCIAS_VIRTUDES, ESSENCIAS_PECADOS, PERICIAS_GRUPOS } from "../../data/gameData";
 import { G, inpStyle, btnStyle } from "../../ui/theme";
 import { Modal } from "../shared/components";
+import { ImageAttachModal, ImageViewport } from "../../components/media/ImageAttachModal";
 
 const allEssencias = [...ESSENCIAS_VIRTUDES, ...ESSENCIAS_PECADOS];
 const RESIST_RESULTADOS = ["Evitar", "Reduzir pela metade", "Efeito Contrário", "Outro"];
@@ -58,6 +59,7 @@ const newEffect = () => ({
 
 export function EffectForgeEditor({ effect, onSave, onClose }) {
   const [d, setD] = useState(() => effect ? { ...effect, condicionais: (effect.condicionais || []).map(normalizeConditional) } : newEffect());
+  const [imageModalOpen, setImageModalOpen] = useState(false);
   const initialSnapshot = useMemo(() => JSON.stringify(effect ? { ...effect, condicionais: (effect.condicionais || []).map(normalizeConditional) } : newEffect()), [effect]);
   const up = (k, v) => setD((p) => ({ ...p, [k]: v }));
   const safeClose = () => {
@@ -66,12 +68,7 @@ export function EffectForgeEditor({ effect, onSave, onClose }) {
     onClose();
   };
 
-  const onUploadIcon = (file) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => up("iconeData", String(reader.result || ""));
-    reader.readAsDataURL(file);
-  };
+  const iconModeUI = (d.iconeModo === "url" || d.iconeModo === "upload") ? "image" : (d.iconeModo || "emoji");
 
   return (
     <Modal title={effect ? "Editar Efeito (Caldeirão)" : "Criar Efeito (Caldeirão)"} onClose={safeClose} wide>
@@ -129,15 +126,29 @@ export function EffectForgeEditor({ effect, onSave, onClose }) {
         <div style={{ display: "grid", gap: 8 }}>
           <div style={{ background: G.bg3, border: "1px solid " + G.border, borderRadius: 8, padding: 8 }}>
             <div style={{ fontFamily: "'Cinzel',serif", color: G.gold, marginBottom: 6 }}>Ícone</div>
-            <select value={d.iconeModo || "emoji"} onChange={(e) => up("iconeModo", e.target.value)} style={{ ...inpStyle(), marginBottom: 6 }}>
+            <select
+              value={iconModeUI}
+              onChange={(e) => {
+                if (e.target.value === "image") {
+                  up("iconeModo", d.iconeModo === "url" || d.iconeModo === "upload" ? d.iconeModo : "upload");
+                  setImageModalOpen(true);
+                  return;
+                }
+                up("iconeModo", e.target.value);
+              }}
+              style={{ ...inpStyle(), marginBottom: 6 }}
+            >
               <option value="emoji">Emoji</option>
-              <option value="url">URL</option>
-              <option value="upload">Imagem local</option>
+              <option value="image">Imagem</option>
               <option value="cor">Cor</option>
             </select>
             {(d.iconeModo || "emoji") === "emoji" && <input value={d.icone || ""} onChange={(e) => up("icone", e.target.value)} placeholder="⚗️" style={inpStyle()} />}
-            {(d.iconeModo || "emoji") === "url" && <input value={d.iconeUrl || ""} onChange={(e) => up("iconeUrl", e.target.value)} placeholder="https://" style={inpStyle()} />}
-            {(d.iconeModo || "emoji") === "upload" && <input type="file" accept="image/*" onChange={(e) => onUploadIcon(e.target.files?.[0])} style={inpStyle()} />}
+            {iconModeUI === "image" && (
+              <div style={{ display: "grid", gap: 6 }}>
+                <button onClick={() => setImageModalOpen(true)} style={btnStyle({ width: "100%" })}>Anexar imagem</button>
+                {(d.iconeData || d.iconeUrl) && <ImageViewport src={d.iconeData || d.iconeUrl} alt={d.nome || "Ícone"} size={46} adjust={d.iconeAjuste} />}
+              </div>
+            )}
             {(d.iconeModo || "emoji") === "cor" && <input type="color" value={d.cor || "#7f8c8d"} onChange={(e) => up("cor", e.target.value)} style={{ ...inpStyle(), height: 38 }} />}
           </div>
 
@@ -167,6 +178,19 @@ export function EffectForgeEditor({ effect, onSave, onClose }) {
         <button onClick={safeClose} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button>
         <button onClick={() => onSave({ ...d, atualizado: Date.now() })} style={btnStyle()}>Salvar Efeito</button>
       </div>
+      <ImageAttachModal
+        open={imageModalOpen}
+        title="Anexar imagem do efeito"
+        initial={{ mode: d.iconeModo === "url" ? "url" : "upload", url: d.iconeUrl || "", data: d.iconeData || "", adjust: d.iconeAjuste }}
+        onClose={() => setImageModalOpen(false)}
+        onConfirm={(payload) => {
+          up("iconeModo", payload.mode);
+          up("iconeUrl", payload.url);
+          up("iconeData", payload.data);
+          up("iconeAjuste", payload.adjust);
+          setImageModalOpen(false);
+        }}
+      />
     </Modal>
   );
 }
