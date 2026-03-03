@@ -67,6 +67,14 @@ export function parseMechanicalEffect(raw = "") {
   const ess = ESSENCIA_ALIAS[code];
   if (ess) return { scope: "essencia", key: ess, value, isPct, target: "base", raw: `${value >= 0 ? "+" : ""}${value}${isPct ? "%" : ""}${ess}` };
 
+  const genericStatus = code.match(/^([A-Z0-9]{2,6})(ATUAL|CURRENT|MAX|MAXIMO)?$/);
+  if (genericStatus) {
+    const key = genericStatus[1];
+    const suffix = genericStatus[2] || "";
+    const target = suffix === "ATUAL" || suffix === "CURRENT" ? "current" : (suffix === "MAX" || suffix === "MAXIMO" ? "max" : "base");
+    return { scope: "status", key, value, isPct, target, raw: `${value >= 0 ? "+" : ""}${value}${isPct ? "%" : ""}${key}${target === "current" ? "ATUAL" : target === "max" ? "MAX" : ""}` };
+  }
+
   return { scope: "pericias", key: code, value, isPct, target: "base", raw: `${value >= 0 ? "+" : ""}${value}${isPct ? "%" : ""}${code}` };
 }
 
