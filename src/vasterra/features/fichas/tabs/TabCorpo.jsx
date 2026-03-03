@@ -3,49 +3,61 @@ import { uid } from "../../../core/factories";
 import { G, inpStyle, btnStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
 
+const CARD_W = 220;
+const CARD_H = 130;
 const SIDES = ["top", "right", "bottom", "left"];
-const SIDE_POS = {
-  top: { x: 90, y: -6 },
-  right: { x: 186, y: 36 },
-  bottom: { x: 90, y: 78 },
-  left: { x: -6, y: 36 },
+const SIDE_OFFSET = {
+  top: { x: CARD_W / 2, y: 0, vx: 0, vy: -1 },
+  right: { x: CARD_W, y: CARD_H / 2, vx: 1, vy: 0 },
+  bottom: { x: CARD_W / 2, y: CARD_H, vx: 0, vy: 1 },
+  left: { x: 0, y: CARD_H / 2, vx: -1, vy: 0 },
 };
 
 const defaultCorpo = () => ({ pontosTotal: 1000, partes: [], links: [] });
-const clamp = (v, min = 0) => Math.max(min, Number(v) || 0);
+const num = (v, min = 0) => Math.max(min, Number(v) || 0);
 
-function shapeOfState(state) {
+function normalizeCorpo(raw) {
+  const src = raw || {};
   return {
-    pontosTotal: clamp(state?.pontosTotal, 1) || 1000,
-    partes: Array.isArray(state?.partes) ? state.partes : [],
-    links: Array.isArray(state?.links) ? state.links : [],
+    pontosTotal: num(src.pontosTotal, 1) || 1000,
+    links: Array.isArray(src.links) ? src.links : [],
+    partes: Array.isArray(src.partes) ? src.partes.map(normalizePart) : [],
   };
 }
 
-function sideWorld(part, side) {
-  const p = SIDE_POS[side] || SIDE_POS.right;
-  return { x: (part.x || 0) + p.x, y: (part.y || 0) + p.y };
+function normalizePart(p) {
+  return {
+    id: p?.id || uid(),
+    nome: p?.nome || "Parte",
+    x: Number(p?.x) || 120,
+    y: Number(p?.y) || 120,
+    vidaMax: num(p?.vidaMax, 1) || 20,
+    vida: num(p?.vida, 0) || 20,
+    saude: num(p?.saude, 0),
+    ossos: num(p?.ossos, 0),
+    pele: num(p?.pele, 0),
+    musculos: num(p?.musculos, 0),
+    bonus: Number(p?.bonus) || 0,
+    anexos: Array.isArray(p?.anexos) ? p.anexos : [],
+    interno: normalizeCorpo(p?.interno),
+  };
 }
 
-function MiniBodyCanvas({
-  title,
-  state,
-  onChange,
-  selectedId,
-  onSelect,
-  compact = false,
-  canCreate = true,
-  onNotify,
-}) {
+function portWorld(part, side) {
+  const o = SIDE_OFFSET[side] || SIDE_OFFSET.right;
+  return { x: (part.x || 0) + o.x, y: (part.y || 0) + o.y, vx: o.vx, vy: o.vy };
+}
+
+function MiniBodyCanvas({ title, state, onChange, selectedId, onSelect, canCreate = true, compact = false, onNotify }) {
   const wrapRef = useRef(null);
   const dragRef = useRef(null);
-  const [viewport, setViewport] = useState({ x: compact ? 20 : 60, y: compact ? 20 : 80, zoom: 1 });
+  const [viewport, setViewport] = useState({ x: compact ? 30 : 80, y: compact ? 20 : 80, zoom: compact ? 0.9 : 1 });
   const [linkDrag, setLinkDrag] = useState(null);
 
   const parts = state.partes || [];
   const links = state.links || [];
 
-  const toWorld = (clientX, clientY) => {
+  const worldFromClient = (clientX, clientY) => {
     if (!wrapRef.current) return { x: 0, y: 0 };
     const r = wrapRef.current.getBoundingClientRect();
     return { x: (clientX - r.left - viewport.x) / viewport.zoom, y: (clientY - r.top - viewport.y) / viewport.zoom };
@@ -53,28 +65,35 @@ function MiniBodyCanvas({
 
   const patchPart = (id, patch) => onChange({ ...state, partes: parts.map((p) => (p.id === id ? { ...p, ...patch } : p)) });
 
+  const centerView = () => {
+    if (!wrapRef.current || !parts.length) {
+      setViewport((v) => ({ ...v, x: compact ? 30 : 80, y: compact ? 20 : 80, zoom: compact ? 0.9 : 1 }));
+      return;
+    }
+    const minX = Math.min(...parts.map((p) => p.x || 0));
+    const maxX = Math.max(...parts.map((p) => (p.x || 0) + CARD_W));
+    const minY = Math.min(...parts.map((p) => p.y || 0));
+    const maxY = Math.max(...parts.map((p) => (p.y || 0) + CARD_H));
+    const w = Math.max(200, maxX - minX + 80);
+    const h = Math.max(160, maxY - minY + 80);
+    const vw = wrapRef.current.clientWidth;
+    const vh = wrapRef.current.clientHeight;
+    const zoom = Math.max(0.45, Math.min(1.4, Math.min(vw / w, vh / h)));
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    setViewport({ x: vw / 2 - cx * zoom, y: vh / 2 - cy * zoom, zoom });
+  };
+
   const createPart = () => {
     if (!canCreate) return;
-    const next = {
+    const n = normalizePart({
       id: uid(),
       nome: compact ? "Subparte" : "Parte",
-      x: Math.round((200 - viewport.x) / viewport.zoom),
-      y: Math.round((120 - viewport.y) / viewport.zoom),
-      vidaMax: 20,
-      vida: 20,
-      saude: 0,
-      ossos: 0,
-      pele: 0,
-      musculos: 0,
-      bonus: 0,
-      equipamentos: [],
-      marcas: [],
-      maldicoes: [],
-      efeitos: [],
-      interno: shapeOfState({}),
-    };
-    onChange({ ...state, partes: [...parts, next] });
-    onSelect?.(next.id);
+      x: Math.round((220 - viewport.x) / viewport.zoom),
+      y: Math.round((140 - viewport.y) / viewport.zoom),
+    });
+    onChange({ ...state, partes: [...parts, n] });
+    onSelect?.(n.id);
   };
 
   const deletePart = (id) => {
@@ -86,32 +105,29 @@ function MiniBodyCanvas({
     e.preventDefault();
     e.stopPropagation();
     const existing = links.find((l) => l.from.id === from.id && l.from.side === from.side);
-    if (existing) {
-      onChange({ ...state, links: links.filter((l) => l.id !== existing.id) });
-    }
-    setLinkDrag({ from, mouse: toWorld(e.clientX, e.clientY) });
+    if (existing) onChange({ ...state, links: links.filter((l) => l.id !== existing.id) });
+    setLinkDrag({ from, mouse: worldFromClient(e.clientX, e.clientY) });
   };
 
-  const completeLink = (to) => {
-    if (!linkDrag) return;
-    if (linkDrag.from.id === to.id) {
+  const finishLink = (to) => {
+    if (!linkDrag || linkDrag.from.id === to.id) {
       setLinkDrag(null);
       return;
     }
     const already = links.find((l) => l.to.id === to.id && l.to.side === to.side);
-    const nextLinks = already ? links.filter((l) => l.id !== already.id) : [...links];
-    nextLinks.push({ id: uid(), from: linkDrag.from, to });
-    onChange({ ...state, links: nextLinks });
+    const out = already ? links.filter((l) => l.id !== already.id) : [...links];
+    out.push({ id: uid(), from: linkDrag.from, to });
+    onChange({ ...state, links: out });
     setLinkDrag(null);
   };
 
-  const onMouseDownCanvas = (e) => {
+  const onDownCanvas = (e) => {
     if (e.button !== 1) return;
     e.preventDefault();
     dragRef.current = { kind: "pan", sx: e.clientX, sy: e.clientY, vx: viewport.x, vy: viewport.y };
   };
 
-  const onNodeDown = (part, e) => {
+  const onDownNode = (part, e) => {
     if (e.button !== 0) return;
     if (e.target.closest("button,input,select,textarea")) return;
     e.preventDefault();
@@ -121,15 +137,13 @@ function MiniBodyCanvas({
 
   const onWheel = (e) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.08 : 0.08;
-    setViewport((p) => ({ ...p, zoom: Math.max(0.5, Math.min(2.2, Number((p.zoom + delta).toFixed(2)))) }));
+    const d = e.deltaY > 0 ? -0.08 : 0.08;
+    setViewport((p) => ({ ...p, zoom: Math.max(0.45, Math.min(2, Number((p.zoom + d).toFixed(2)))) }));
   };
-
-  const points = parts.reduce((acc, p) => acc + clamp(p.saude) + clamp(p.ossos) + clamp(p.pele) + clamp(p.musculos) + clamp(p.bonus), 0);
 
   React.useEffect(() => {
     const onMove = (e) => {
-      if (linkDrag) setLinkDrag((p) => (p ? { ...p, mouse: toWorld(e.clientX, e.clientY) } : p));
+      if (linkDrag) setLinkDrag((p) => (p ? { ...p, mouse: worldFromClient(e.clientX, e.clientY) } : p));
       const d = dragRef.current;
       if (!d) return;
       if (d.kind === "pan") {
@@ -153,11 +167,11 @@ function MiniBodyCanvas({
   }, [viewport.zoom, linkDrag, state]);
 
   return (
-    <div style={{ border: "1px solid #2a2a2a", borderRadius: 12, background: compact ? "#0b111b" : "#080d15", padding: 8, display: "grid", gap: 8 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-        <div style={{ color: compact ? "#8fb7ff" : G.gold, fontFamily: "'Cinzel',serif", fontSize: compact ? 12 : 13 }}>{title}</div>
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <span style={{ color: G.muted, fontSize: 10, fontFamily: "monospace" }}>Pontos usados: {points}</span>
+    <div style={{ border: "1px solid #2a3444", borderRadius: 12, background: compact ? "#0a1320" : "#090f19", padding: 8, display: "grid", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ color: compact ? "#9ac4ff" : G.gold, fontFamily: "'Cinzel',serif", fontSize: compact ? 12 : 13 }}>{title}</div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <HoverButton onClick={centerView} style={btnStyle({ padding: "4px 8px" })}>Centralizar</HoverButton>
           {canCreate && <HoverButton onClick={createPart} style={btnStyle({ padding: "4px 8px" })}>+ Peça</HoverButton>}
         </div>
       </div>
@@ -165,60 +179,66 @@ function MiniBodyCanvas({
       <div
         ref={wrapRef}
         onWheel={onWheel}
-        onMouseDown={onMouseDownCanvas}
-        style={{ height: compact ? 220 : 360, border: "1px solid #1d2a3a", borderRadius: 10, background: "radial-gradient(circle at 20% 20%, #1a2538 0, #0e1522 50%, #090f1a 100%)", overflow: "hidden", position: "relative", cursor: "grab" }}
+        onMouseDown={onDownCanvas}
+        style={{ height: compact ? 260 : 620, border: "1px solid #213148", borderRadius: 10, background: "radial-gradient(circle at 20% 20%, #1a2740 0, #101a2d 48%, #0a1020 100%)", overflow: "hidden", position: "relative", cursor: "grab" }}
       >
-        <div style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`, transformOrigin: "top left", width: 1800, height: 1000, position: "relative" }}>
-          <svg style={{ position: "absolute", inset: 0, width: 1800, height: 1000, pointerEvents: "none" }}>
+        <div style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`, transformOrigin: "top left", width: 2400, height: 1400, position: "relative" }}>
+          <svg style={{ position: "absolute", inset: 0, width: 2400, height: 1400, pointerEvents: "none" }}>
             {links.map((l) => {
               const from = parts.find((p) => p.id === l.from.id);
               const to = parts.find((p) => p.id === l.to.id);
               if (!from || !to) return null;
-              const a = sideWorld(from, l.from.side);
-              const b = sideWorld(to, l.to.side);
-              const c1x = a.x + (l.from.side === "right" ? 40 : l.from.side === "left" ? -40 : 0);
-              const c1y = a.y + (l.from.side === "bottom" ? 30 : l.from.side === "top" ? -30 : 0);
-              const c2x = b.x + (l.to.side === "right" ? 40 : l.to.side === "left" ? -40 : 0);
-              const c2y = b.y + (l.to.side === "bottom" ? 30 : l.to.side === "top" ? -30 : 0);
+              const a = portWorld(from, l.from.side);
+              const b = portWorld(to, l.to.side);
+              const ca = 42;
+              const cb = 42;
+              const c1x = a.x + a.vx * ca;
+              const c1y = a.y + a.vy * ca;
+              const c2x = b.x + b.vx * cb;
+              const c2y = b.y + b.vy * cb;
               const d = `M ${a.x} ${a.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${b.x} ${b.y}`;
-              return <g key={l.id}><path d={d} stroke="#000" strokeWidth="6" fill="none" /><path d={d} stroke="#f6c46d" strokeWidth="3" fill="none" /></g>;
+              return <g key={l.id}><path d={d} stroke="#000" strokeWidth="7" fill="none" strokeLinecap="round" /><path d={d} stroke="#f6c46d" strokeWidth="3.2" fill="none" strokeLinecap="round" /></g>;
             })}
             {linkDrag && (() => {
-              const part = parts.find((p) => p.id === linkDrag.from.id);
-              if (!part) return null;
-              const a = sideWorld(part, linkDrag.from.side);
+              const from = parts.find((p) => p.id === linkDrag.from.id);
+              if (!from) return null;
+              const a = portWorld(from, linkDrag.from.side);
               const b = linkDrag.mouse;
-              const d = `M ${a.x} ${a.y} C ${a.x + 32} ${a.y}, ${b.x - 32} ${b.y}, ${b.x} ${b.y}`;
-              return <g><path d={d} stroke="#000" strokeWidth="6" fill="none" strokeDasharray="6 3" /><path d={d} stroke="#8fd8ff" strokeWidth="3" fill="none" strokeDasharray="6 3" /></g>;
+              const d = `M ${a.x} ${a.y} C ${a.x + a.vx * 48} ${a.y + a.vy * 48}, ${b.x - 30} ${b.y}, ${b.x} ${b.y}`;
+              return <g><path d={d} stroke="#000" strokeWidth="7" fill="none" strokeDasharray="7 4" /><path d={d} stroke="#8ad7ff" strokeWidth="3.2" fill="none" strokeDasharray="7 4" /></g>;
             })()}
           </svg>
 
           {parts.map((part) => {
-            const hp = clamp(part.vida, 0) / Math.max(1, clamp(part.vidaMax, 1));
+            const ratio = num(part.vida) / Math.max(1, num(part.vidaMax, 1));
             return (
-              <div key={part.id} onMouseDown={(e) => onNodeDown(part, e)} style={{ position: "absolute", left: part.x || 0, top: part.y || 0, width: 180, border: `1px solid ${selectedId === part.id ? "#9ed4ff" : "#3c4f66"}`, borderRadius: 10, background: "#04070dbd", boxShadow: selectedId === part.id ? "0 0 16px #8fd8ff66" : "0 0 12px #000", padding: 8, userSelect: "none", transition: "all .15s ease" }}>
-                {SIDES.map((s) => {
-                  const linked = links.some((l) => (l.from.id === part.id && l.from.side === s) || (l.to.id === part.id && l.to.side === s));
-                  const pos = SIDE_POS[s];
+              <div key={part.id} onMouseDown={(e) => onDownNode(part, e)} style={{ position: "absolute", left: part.x || 0, top: part.y || 0, width: CARD_W, height: CARD_H, border: `1px solid ${selectedId === part.id ? "#9fd7ff" : "#40546d"}`, borderRadius: 12, background: "linear-gradient(180deg, #0c1420, #090e16)", boxShadow: selectedId === part.id ? "0 0 18px #8fd8ff66" : "0 0 12px #000", padding: 8, userSelect: "none" }}>
+                {SIDES.map((side) => {
+                  const p = SIDE_OFFSET[side];
+                  const linked = links.some((l) => (l.from.id === part.id && l.from.side === side) || (l.to.id === part.id && l.to.side === side));
                   return (
                     <button
-                      key={`${part.id}-${s}`}
-                      onMouseDown={(e) => beginLink({ id: part.id, side: s }, e)}
-                      onMouseUp={(e) => { e.stopPropagation(); completeLink({ id: part.id, side: s }); }}
-                      title={`Conector ${s}`}
-                      style={{ position: "absolute", left: pos.x, top: pos.y, width: 12, height: 12, borderRadius: "50%", border: "1px solid #243445", background: linked ? "radial-gradient(circle at 35% 35%, #fff, #f6c46d)" : "radial-gradient(circle at 35% 35%, #7ca9d6, #1a2537)", boxShadow: linked ? "0 0 8px #f6c46d" : "none", cursor: "crosshair" }}
+                      key={`${part.id}-${side}`}
+                      onMouseDown={(e) => beginLink({ id: part.id, side }, e)}
+                      onMouseUp={(e) => { e.stopPropagation(); finishLink({ id: part.id, side }); }}
+                      title={`Conector ${side}`}
+                      style={{ position: "absolute", left: p.x - 6, top: p.y - 6, width: 12, height: 12, borderRadius: "50%", border: "1px solid #2b3f54", background: linked ? "radial-gradient(circle at 35% 35%, #fff, #f6c46d)" : "radial-gradient(circle at 35% 35%, #9ed0ff, #1f2d40)", boxShadow: linked ? "0 0 8px #f6c46d" : "none", cursor: "crosshair" }}
                     />
                   );
                 })}
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 6, alignItems: "center" }}>
                   <input value={part.nome || ""} onChange={(e) => patchPart(part.id, { nome: e.target.value })} style={inpStyle({ padding: "6px 8px" })} />
-                  <button onClick={() => deletePart(part.id)} style={btnStyle({ padding: "2px 6px", borderColor: "#e74c3c55", color: "#ff7f7f" })}>✕</button>
+                  <button onClick={() => deletePart(part.id)} style={btnStyle({ borderColor: "#e74c3c55", color: "#ff7f7f", padding: "2px 6px" })}>✕</button>
                 </div>
-                <div style={{ marginTop: 6, height: 8, borderRadius: 99, background: "#111" }}><div style={{ width: `${hp * 100}%`, height: "100%", borderRadius: 99, background: "linear-gradient(90deg, #2ecc71, #f1c40f, #e74c3c)" }} /></div>
-                <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-                  <input type="number" value={clamp(part.vida)} onChange={(e) => patchPart(part.id, { vida: clamp(e.target.value) })} style={inpStyle()} />
-                  <input type="number" value={Math.max(1, clamp(part.vidaMax, 1))} onChange={(e) => patchPart(part.id, { vidaMax: Math.max(1, clamp(e.target.value, 1)) })} style={inpStyle()} />
+                <div style={{ marginTop: 6, height: 8, borderRadius: 999, background: "#111" }}><div style={{ width: `${Math.max(0, Math.min(100, ratio * 100))}%`, height: "100%", borderRadius: 999, background: "linear-gradient(90deg, #2ecc71, #f1c40f, #e74c3c)" }} /></div>
+                <div style={{ marginTop: 6, fontSize: 10, color: "#b6d2ef", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                  <span>VIDA {num(part.vida)}/{Math.max(1, num(part.vidaMax, 1))}</span>
+                  <span>BÔNUS {Number(part.bonus) || 0}</span>
+                  <span>OSSOS {num(part.ossos)}</span>
+                  <span>MÚSCULOS {num(part.musculos)}</span>
+                  <span>PELE {num(part.pele)}</span>
+                  <span>SAÚDE {num(part.saude)}</span>
                 </div>
               </div>
             );
@@ -230,19 +250,20 @@ function MiniBodyCanvas({
 }
 
 export function TabCorpo({ ficha, onUpdate, onNotify }) {
-  const state = useMemo(() => shapeOfState({ ...defaultCorpo(), ...(ficha.corpo || {}) }), [ficha.corpo]);
-  const [selected, setSelected] = useState(null);
+  const state = useMemo(() => normalizeCorpo({ ...defaultCorpo(), ...(ficha.corpo || {}) }), [ficha.corpo]);
   const fileRef = useRef(null);
+  const [selectedId, setSelectedId] = useState(null);
 
-  const save = (next) => onUpdate({ corpo: shapeOfState(next) });
-  const part = (state.partes || []).find((p) => p.id === selected) || null;
+  const save = (next) => onUpdate({ corpo: normalizeCorpo(next) });
+  const parts = state.partes || [];
+  const selected = parts.find((p) => p.id === selectedId) || null;
+  const spent = parts.reduce((acc, p) => acc + num(p.saude) + num(p.ossos) + num(p.pele) + num(p.musculos) + num(p.bonus), 0);
+  const livre = Math.max(0, num(state.pontosTotal, 1) - spent);
 
-  const spent = (state.partes || []).reduce((acc, p) => acc + clamp(p.saude) + clamp(p.ossos) + clamp(p.pele) + clamp(p.musculos) + clamp(p.bonus), 0);
-  const livre = Math.max(0, clamp(state.pontosTotal, 1) - spent);
+  const inventoryItems = (ficha.inventario || []).map((x) => x.item).filter(Boolean);
+  const characterEffects = ficha.modificadores?.efeitos || [];
 
-  const inventarioOptions = (ficha.inventario || []).map((x) => x.item).filter(Boolean).map((it) => ({ id: it.id, nome: it.nome || "Item" }));
-
-  const patchPart = (id, patch) => save({ ...state, partes: (state.partes || []).map((p) => (p.id === id ? { ...p, ...patch } : p)) });
+  const patchPart = (id, patch) => save({ ...state, partes: parts.map((p) => (p.id === id ? { ...p, ...patch } : p)) });
 
   const exportJson = () => {
     const payload = JSON.stringify(state, null, 2);
@@ -257,110 +278,106 @@ export function TabCorpo({ ficha, onUpdate, onNotify }) {
 
   const importJson = async (file) => {
     try {
-      const txt = await file.text();
-      const data = JSON.parse(txt);
-      const normalized = shapeOfState(data || {});
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const normalized = normalizeCorpo(data);
       save(normalized);
-      setSelected(normalized.partes[0]?.id || null);
+      setSelectedId(normalized.partes[0]?.id || null);
       onNotify?.("Template de corpo carregado.", "success");
     } catch {
-      onNotify?.("Falha ao carregar JSON do corpo.", "error");
+      onNotify?.("JSON de corpo inválido.", "error");
     }
+  };
+
+  const addAnexo = (kind, label, refId) => {
+    if (!selected) return;
+    const atual = selected.anexos || [];
+    if (atual.some((x) => x.kind === kind && x.refId === refId)) return;
+    patchPart(selected.id, { anexos: [...atual, { id: uid(), kind, label, refId }] });
   };
 
   return (
     <div style={{ display: "grid", gap: 10 }}>
       <div style={{ border: "1px solid " + G.border, borderRadius: 12, background: G.bg2, padding: 10, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <div>
-          <div style={{ fontFamily: "'Cinzel',serif", color: G.gold }}>◈ CORPO · Logic Bricks</div>
-          <div style={{ fontSize: 11, color: G.muted, fontFamily: "monospace" }}>Monte o corpo por peças e conecte como blocos anatômicos.</div>
+          <div style={{ fontFamily: "'Cinzel',serif", color: G.gold, letterSpacing: 1 }}>◈ CORPO · Logic Bricks Anatômico</div>
+          <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>Sistema modular de partes, conectores, subpartes e anexos cooperativos.</div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ color: G.muted, fontSize: 11 }}>Pontos totais</span>
-          <input type="number" value={clamp(state.pontosTotal, 1)} onChange={(e) => save({ ...state, pontosTotal: clamp(e.target.value, 1) })} style={{ ...inpStyle(), width: 92 }} />
-          <span style={{ color: livre > 0 ? "#7cf0b3" : "#ff8a8a", fontFamily: "monospace", fontSize: 11 }}>Livre: {livre}</span>
+          <span style={{ color: G.muted, fontSize: 11 }}>Pontos</span>
+          <input type="number" value={num(state.pontosTotal, 1)} onChange={(e) => save({ ...state, pontosTotal: num(e.target.value, 1) })} style={{ ...inpStyle(), width: 90 }} />
+          <span style={{ color: livre > 0 ? "#7cf0b3" : "#ff8a8a", fontSize: 11, fontFamily: "monospace" }}>Livre: {livre}</span>
           <HoverButton onClick={exportJson}>Exportar</HoverButton>
           <HoverButton onClick={() => fileRef.current?.click()}>Importar</HoverButton>
           <input ref={fileRef} type="file" accept="application/json" style={{ display: "none" }} onChange={(e) => e.target.files?.[0] && importJson(e.target.files[0])} />
         </div>
       </div>
 
-      <MiniBodyCanvas title="Canvas corporal" state={state} onChange={save} selectedId={selected} onSelect={setSelected} onNotify={onNotify} />
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 420px", gap: 10 }}>
+        <MiniBodyCanvas title="Canvas corporal principal" state={state} onChange={save} selectedId={selectedId} onSelect={setSelectedId} canCreate onNotify={onNotify} />
 
-      {part && (
-        <div style={{ border: "1px solid #2a2a2a", borderRadius: 12, background: "#0a0f18", padding: 10, display: "grid", gap: 8 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ color: "#9fc3ff", fontFamily: "'Cinzel',serif" }}>HUD da parte: {part.nome}</div>
-            <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Vida {clamp(part.vida)}/{Math.max(1, clamp(part.vidaMax, 1))}</div>
-          </div>
+        <div style={{ display: "grid", gap: 10, alignContent: "start" }}>
+          {!selected && <div style={{ border: "1px solid #2a3444", borderRadius: 12, background: "#0a121d", padding: 10, color: G.muted, fontFamily: "monospace" }}>Selecione uma parte no canvas para editar HUD, resistências, anexos e subpartes internas.</div>}
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(80px, 1fr))", gap: 6 }}>
-            <input type="number" value={clamp(part.saude)} onChange={(e) => patchPart(part.id, { saude: clamp(e.target.value) })} style={inpStyle()} title="Saúde" />
-            <input type="number" value={clamp(part.ossos)} onChange={(e) => patchPart(part.id, { ossos: clamp(e.target.value) })} style={inpStyle()} title="Ossos fortes" />
-            <input type="number" value={clamp(part.pele)} onChange={(e) => patchPart(part.id, { pele: clamp(e.target.value) })} style={inpStyle()} title="Pele grossa" />
-            <input type="number" value={clamp(part.musculos)} onChange={(e) => patchPart(part.id, { musculos: clamp(e.target.value) })} style={inpStyle()} title="Músculos duros" />
-            <input type="number" value={Number(part.bonus) || 0} onChange={(e) => patchPart(part.id, { bonus: Number(e.target.value) || 0 })} style={inpStyle()} title="Bônus" />
-            <input type="number" value={Math.max(1, clamp(part.vidaMax, 1))} onChange={(e) => patchPart(part.id, { vidaMax: Math.max(1, clamp(e.target.value, 1)) })} style={inpStyle()} title="Vida máxima" />
-          </div>
+          {selected && (
+            <>
+              <div style={{ border: "1px solid #2a3444", borderRadius: 12, background: "#0a121d", padding: 10, display: "grid", gap: 8 }}>
+                <div style={{ color: "#9fd1ff", fontFamily: "'Cinzel',serif" }}>HUD da parte selecionada: {selected.nome}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                  <input type="number" value={num(selected.vida)} onChange={(e) => patchPart(selected.id, { vida: num(e.target.value) })} style={inpStyle()} title="Vida atual" />
+                  <input type="number" value={Math.max(1, num(selected.vidaMax, 1))} onChange={(e) => patchPart(selected.id, { vidaMax: Math.max(1, num(e.target.value, 1)) })} style={inpStyle()} title="Vida máxima" />
+                  <input type="number" value={num(selected.saude)} onChange={(e) => patchPart(selected.id, { saude: num(e.target.value) })} style={inpStyle()} title="Saúde" />
+                  <input type="number" value={num(selected.ossos)} onChange={(e) => patchPart(selected.id, { ossos: num(e.target.value) })} style={inpStyle()} title="Ossos fortes" />
+                  <input type="number" value={num(selected.pele)} onChange={(e) => patchPart(selected.id, { pele: num(e.target.value) })} style={inpStyle()} title="Pele grossa" />
+                  <input type="number" value={num(selected.musculos)} onChange={(e) => patchPart(selected.id, { musculos: num(e.target.value) })} style={inpStyle()} title="Músculos duros" />
+                  <input type="number" value={Number(selected.bonus) || 0} onChange={(e) => patchPart(selected.id, { bonus: Number(e.target.value) || 0 })} style={inpStyle()} title="Bônus" />
+                </div>
 
-          <div style={{ display: "grid", gap: 6 }}>
-            <div style={{ color: G.muted, fontSize: 11 }}>Anexos modulares (equipamentos / marcas / maldições / efeitos)</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <select onChange={(e) => {
-                const item = inventarioOptions.find((x) => x.id === e.target.value);
-                if (!item) return;
-                const has = (part.equipamentos || []).some((x) => x.itemId === item.id);
-                if (has) return;
-                patchPart(part.id, { equipamentos: [...(part.equipamentos || []), { itemId: item.id, nome: item.nome }] });
-                e.target.value = "";
-              }} style={inpStyle()} defaultValue="">
-                <option value="">Anexar item/armadura...</option>
-                {inventarioOptions.map((it) => <option key={it.id} value={it.id}>{it.nome}</option>)}
-              </select>
-              <input placeholder="Nova marca" style={inpStyle()} onKeyDown={(e) => {
-                if (e.key !== "Enter") return;
-                const txt = String(e.currentTarget.value || "").trim();
-                if (!txt) return;
-                patchPart(part.id, { marcas: [...(part.marcas || []), txt] });
-                e.currentTarget.value = "";
-              }} />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <input placeholder="Nova maldição" style={inpStyle()} onKeyDown={(e) => {
-                if (e.key !== "Enter") return;
-                const txt = String(e.currentTarget.value || "").trim();
-                if (!txt) return;
-                patchPart(part.id, { maldicoes: [...(part.maldicoes || []), txt] });
-                e.currentTarget.value = "";
-              }} />
-              <input placeholder="Novo efeito (caldeirão/outro)" style={inpStyle()} onKeyDown={(e) => {
-                if (e.key !== "Enter") return;
-                const txt = String(e.currentTarget.value || "").trim();
-                if (!txt) return;
-                patchPart(part.id, { efeitos: [...(part.efeitos || []), txt] });
-                e.currentTarget.value = "";
-              }} />
-            </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {(part.equipamentos || []).map((x) => <span key={x.itemId} style={{ border: "1px solid #385", borderRadius: 999, padding: "2px 8px", color: "#b7ffd9", fontSize: 11 }}>{x.nome}</span>)}
-              {(part.marcas || []).map((x, i) => <span key={`${x}-${i}`} style={{ border: "1px solid #555", borderRadius: 999, padding: "2px 8px", color: "#d6d6d6", fontSize: 11 }}>Marca: {x}</span>)}
-              {(part.maldicoes || []).map((x, i) => <span key={`${x}-${i}`} style={{ border: "1px solid #744", borderRadius: 999, padding: "2px 8px", color: "#ffbcbc", fontSize: 11 }}>Maldição: {x}</span>)}
-              {(part.efeitos || []).map((x, i) => <span key={`${x}-${i}`} style={{ border: "1px solid #347", borderRadius: 999, padding: "2px 8px", color: "#b8d7ff", fontSize: 11 }}>Efeito: {x}</span>)}
-            </div>
-          </div>
+                <div style={{ borderTop: "1px solid #263446", paddingTop: 8, display: "grid", gap: 6 }}>
+                  <div style={{ color: G.muted, fontSize: 11 }}>Anexar itens / efeitos cooperativos</div>
+                  <select onChange={(e) => {
+                    const item = inventoryItems.find((x) => x.id === e.target.value);
+                    if (!item) return;
+                    addAnexo("item", item.nome || "Item", item.id);
+                    e.target.value = "";
+                  }} style={inpStyle()} defaultValue="">
+                    <option value="">Anexar item de inventário...</option>
+                    {inventoryItems.map((it) => <option key={it.id} value={it.id}>{it.nome}</option>)}
+                  </select>
+                  <select onChange={(e) => {
+                    const ef = characterEffects.find((x) => x.id === e.target.value);
+                    if (!ef) return;
+                    addAnexo("effect", ef.nome || "Efeito", ef.id);
+                    e.target.value = "";
+                  }} style={inpStyle()} defaultValue="">
+                    <option value="">Anexar efeito da ficha...</option>
+                    {characterEffects.map((ef) => <option key={ef.id} value={ef.id}>{ef.nome || ef.id}</option>)}
+                  </select>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {(selected.anexos || []).map((a) => (
+                      <span key={a.id} style={{ border: "1px solid #3a4b60", borderRadius: 999, padding: "2px 8px", color: "#b9d8ff", fontSize: 11 }}>
+                        {a.kind === "item" ? "🛡 " : "✦ "}{a.label}
+                        <button onClick={() => patchPart(selected.id, { anexos: (selected.anexos || []).filter((x) => x.id !== a.id) })} style={{ marginLeft: 6, background: "transparent", border: "none", color: "#ff8f8f", cursor: "pointer" }}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
 
-          <MiniBodyCanvas
-            title={`Subcanvas interno de ${part.nome}`}
-            state={shapeOfState(part.interno || {})}
-            onChange={(childState) => patchPart(part.id, { interno: childState })}
-            selectedId={null}
-            onSelect={() => {}}
-            compact
-            canCreate
-            onNotify={onNotify}
-          />
+              <MiniBodyCanvas
+                title={`Subcanvas interno · ${selected.nome}`}
+                state={normalizeCorpo(selected.interno)}
+                onChange={(next) => patchPart(selected.id, { interno: next })}
+                selectedId={null}
+                onSelect={() => {}}
+                compact
+                canCreate
+                onNotify={onNotify}
+              />
+            </>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
