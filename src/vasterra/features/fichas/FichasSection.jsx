@@ -11,10 +11,12 @@ import { TabIdentidade } from "./tabs/TabIdentidade";
 import { TabEssencia } from "./tabs/TabEssencia";
 import { TabInventario } from "./tabs/TabInventario";
 import { TabCombate } from "./tabs/TabCombate";
+import { TabCorpo } from "./tabs/TabCorpo";
 
 export const FICHA_TABS = [
   { id: "status",     label: "Status" },
   { id: "combate",    label: "Combate" },
+  { id: "corpo",      label: "Corpo" },
   { id: "atributos",  label: "Atributos & Perícias" },
   { id: "identidade", label: "Identidade" },
   { id: "essencia",   label: "Essência" },
@@ -236,6 +238,7 @@ export function FichasSection({ fichas, onFichas, arsenal, efeitosCaldeirao = []
           <div className="v-fade" style={{ flex: 1, overflow: "auto", padding: 16 }}>
             {tab === "status" && <TabStatus ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} />}
             {tab === "combate" && <TabCombate ficha={ficha} onUpdate={updateFicha} efeitosCaldeirao={efeitosCaldeirao} onOpenCaldeirao={onOpenCaldeirao} onNotify={onNotify} />}
+            {tab === "corpo" && <TabCorpo ficha={ficha} onUpdate={updateFicha} onNotify={onNotify} />}
             {tab === "atributos" && <TabAtributos ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onOpenCaldeirao={onOpenCaldeirao} inventarioNomes={(ficha.inventario || []).map((e) => e.item?.nome).filter(Boolean)} />}
             {tab === "identidade" && <TabIdentidade ficha={ficha} onUpdate={updateFicha} />}
             {tab === "essencia" && <TabEssencia ficha={ficha} onUpdate={updateFicha} />}

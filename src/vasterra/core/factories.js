@@ -40,6 +40,10 @@ export const novaFicha = (nome = "Novo Personagem") => ({
     ESF: { total: 1, usado: 0 },
   },
   inventario: [],
+  corpo: {
+    pontosTotal: 1000,
+    partes: [],
+  },
   combate: {
     rodadaAtual: 0,
     abaAtiva: "recursos",
