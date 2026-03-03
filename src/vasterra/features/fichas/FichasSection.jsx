@@ -150,7 +150,7 @@ export function FichasSection({ fichas, onFichas, arsenal, efeitosCaldeirao = []
           }}
         />
         {createOpen && (
-          <Modal title="◈ Nova Ficha de Personagem" onClose={() => setCreate(false)}>
+          <Modal title="◈ Nova Ficha de Personagem" onClose={() => { if (newNome.trim() && !window.confirm("Descartar criação da ficha?")) return; setCreate(false); }}>
             <label style={{ color: G.muted, fontFamily: "monospace", fontSize: 12, display: "block", marginBottom: 6 }}>Nome do personagem</label>
             <input
               value={newNome}
@@ -161,7 +161,7 @@ export function FichasSection({ fichas, onFichas, arsenal, efeitosCaldeirao = []
               autoFocus
             />
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button style={btnStyle({ background: "transparent", border: "1px solid #333", color: G.muted })} onClick={() => setCreate(false)}>Cancelar</button>
+              <button style={btnStyle({ background: "transparent", border: "1px solid #333", color: G.muted })} onClick={() => { if (newNome.trim() && !window.confirm("Descartar criação da ficha?")) return; setCreate(false); }}>Cancelar</button>
               <button style={btnStyle()} onClick={criar}>Criar Personagem</button>
             </div>
           </Modal>
@@ -235,7 +235,7 @@ export function FichasSection({ fichas, onFichas, arsenal, efeitosCaldeirao = []
 
           <div className="v-fade" style={{ flex: 1, overflow: "auto", padding: 16 }}>
             {tab === "status" && <TabStatus ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} />}
-            {tab === "combate" && <TabCombate ficha={ficha} onUpdate={updateFicha} efeitosCaldeirao={efeitosCaldeirao} onOpenCaldeirao={onOpenCaldeirao} />}
+            {tab === "combate" && <TabCombate ficha={ficha} onUpdate={updateFicha} efeitosCaldeirao={efeitosCaldeirao} onOpenCaldeirao={onOpenCaldeirao} onNotify={onNotify} />}
             {tab === "atributos" && <TabAtributos ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onOpenCaldeirao={onOpenCaldeirao} inventarioNomes={(ficha.inventario || []).map((e) => e.item?.nome).filter(Boolean)} />}
             {tab === "identidade" && <TabIdentidade ficha={ficha} onUpdate={updateFicha} />}
             {tab === "essencia" && <TabEssencia ficha={ficha} onUpdate={updateFicha} />}

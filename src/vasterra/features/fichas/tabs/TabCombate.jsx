@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { uid } from "../../../core/factories";
 import { instantiateEffectFromTemplate } from "../../../core/effects";
 import { makeDefaultEffect } from "../../caldeirao/EffectForgeEditor";
@@ -10,14 +10,15 @@ const defaultCombate = () => ({
   abaAtiva: "recursos",
   lembretes: [],
   recursos: [
-    { id: uid(), nome: "MOV", cor: "#28a745", max: 0, atual: 0 },
-    { id: uid(), nome: "ACO", cor: "#007bff", max: 0, atual: 0 },
-    { id: uid(), nome: "REA", cor: "#dc3545", max: 0, atual: 0 },
-    { id: uid(), nome: "ESF", cor: "#8b0000", max: 0, atual: 0 },
+    { id: uid(), nome: "ACO", cor: "#2ecc71", max: 2, atual: 2 },
+    { id: uid(), nome: "MOV", cor: "#3498db", max: 1, atual: 1 },
+    { id: uid(), nome: "REA", cor: "#e74c3c", max: 1, atual: 1 },
+    { id: uid(), nome: "ESF", cor: "#8b0000", max: 1, atual: 1 },
   ],
 });
 
 const EFFECT_TARGETS = ["Portador", "Alvo", "Área", "Condição", "Todos"];
+const DEFAULT_RESOURCE_COLORS = { ACO: "#2ecc71", MOV: "#3498db", REA: "#e74c3c", ESF: "#8b0000" };
 
 function parseDice(expr = "") {
   const m = String(expr).trim().match(/^(\d+)d(\d+)$/i);
@@ -33,22 +34,24 @@ function rollDice(expr = "") {
   return total;
 }
 
-export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCaldeirao }) {
+export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCaldeirao, onNotify }) {
   const state = useMemo(() => ({ ...defaultCombate(), ...(ficha.combate || {}) }), [ficha.combate]);
   const [collapsed, setCollapsed] = useState({});
+  const [resourceOffset, setResourceOffset] = useState({ x: 0, y: 0 });
+  const dragState = useRef(null);
   const charEffects = ficha.modificadores?.efeitos || [];
 
   const saveCombate = (next) => onUpdate({ combate: { ...state, ...next } });
   const saveEffects = (next) => onUpdate({ modificadores: { ...(ficha.modificadores || {}), efeitos: next } });
 
   const upResource = (id, patch) => saveCombate({ recursos: state.recursos.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
-
   const setTab = (abaAtiva) => saveCombate({ abaAtiva });
   const setRodada = (rodadaAtual) => saveCombate({ rodadaAtual: Math.max(0, rodadaAtual) });
 
   const proxRodada = () => {
     const recursos = (state.recursos || []).map((r) => ({ ...r, atual: r.max }));
     saveCombate({ rodadaAtual: state.rodadaAtual + 1, recursos });
+    onNotify?.("Nova rodada: recursos resetados para o máximo.", "info");
   };
 
   const activeLembretes = (state.lembretes || []).filter((l) => {
@@ -62,11 +65,8 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
   const ensureItemEffects = () => {
     const invEffects = (ficha.inventario || []).flatMap((entry) => {
       const item = entry.item || {};
-      return (item.efeitos || [])
-        .filter((ef) => ef?.origemEffectId)
-        .map((ef) => ({ ef, item }));
+      return (item.efeitos || []).filter((ef) => ef?.origemEffectId).map((ef) => ({ ef, item }));
     });
-
     if (!invEffects.length) return;
 
     const existingKeys = new Set((charEffects || []).map((e) => `${e.origemEffectId || ""}::${e.origemItem || ""}`));
@@ -74,18 +74,39 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
 
     invEffects.forEach(({ ef, item }) => {
       const tpl = (efeitosCaldeirao || []).find((x) => x.id === ef.origemEffectId) || ef;
-      const isPortador = (tpl.alvo || "Portador") === "Portador";
-      if (!isPortador) return;
+      if ((tpl.alvo || "Portador") !== "Portador") return;
       const key = `${tpl.id || ef.origemEffectId}::${item.nome || ""}`;
       if (existingKeys.has(key)) return;
       additions.push(instantiateEffectFromTemplate(tpl, { rodadaInicio: state.rodadaAtual, origemItem: item.nome || "Item", ativo: false, sinalizar: false }));
     });
 
-    if (additions.length) saveEffects([...(charEffects || []), ...additions]);
+    if (additions.length) {
+      saveEffects([...(charEffects || []), ...additions]);
+      onNotify?.(`${additions.length} efeito(s) de item sincronizado(s).`, "success");
+    }
   };
+
+  const toggleResourceSlot = (resource, index) => {
+    const nextAtual = index < resource.atual ? index : Math.min(resource.max, index + 1);
+    upResource(resource.id, { atual: nextAtual });
+  };
+
+  const onCanvasMouseDown = (e) => {
+    dragState.current = { sx: e.clientX, sy: e.clientY, ox: resourceOffset.x, oy: resourceOffset.y };
+  };
+
+  const onCanvasMouseMove = (e) => {
+    if (!dragState.current) return;
+    const dx = e.clientX - dragState.current.sx;
+    const dy = e.clientY - dragState.current.sy;
+    setResourceOffset({ x: dragState.current.ox + dx, y: dragState.current.oy + dy });
+  };
+
+  const onCanvasMouseUp = () => { dragState.current = null; };
 
   return (
     <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 12, padding: 14 }}>
+      <style>{`@keyframes pulseSlot {0% {transform: scale(1);} 50% {transform: scale(1.06);} 100% {transform: scale(1);} }`}</style>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <span style={{ fontFamily: "'Cinzel',serif", color: G.gold, letterSpacing: 2 }}>◈ COMBATE</span>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -110,21 +131,57 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
 
       {state.abaAtiva === "recursos" && (
         <div>
-          {(state.recursos || []).map((r) => {
-            const max = Math.max(0, Number(r.max || 0));
-            const atual = Math.max(0, Math.min(max, Number(r.atual || 0)));
-            return (
-              <div key={r.id} style={{ border: "1px solid #2a2a2a", borderRadius: 10, padding: 8, marginBottom: 8, background: "#0a0a0a" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 110px 110px auto", gap: 6, alignItems: "center" }}>
-                  <input value={r.nome} onChange={(e) => upResource(r.id, { nome: e.target.value })} style={inpStyle()} />
-                  <input type="number" value={max} onChange={(e) => upResource(r.id, { max: Math.max(0, Number(e.target.value) || 0) })} style={inpStyle()} />
-                  <input type="number" value={atual} onChange={(e) => upResource(r.id, { atual: Math.max(0, Math.min(max, Number(e.target.value) || 0)) })} style={inpStyle()} />
-                  <HoverButton onClick={() => saveCombate({ recursos: state.recursos.filter((x) => x.id !== r.id) })} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c" })}>✕</HoverButton>
-                </div>
-              </div>
-            );
-          })}
-          <HoverButton onClick={() => saveCombate({ recursos: [...(state.recursos || []), { id: uid(), nome: "Novo", cor: "#ffffff", max: 0, atual: 0 }] })}>+ Novo Recurso</HoverButton>
+          <div
+            onMouseDown={onCanvasMouseDown}
+            onMouseMove={onCanvasMouseMove}
+            onMouseUp={onCanvasMouseUp}
+            onMouseLeave={onCanvasMouseUp}
+            style={{
+              border: "1px solid #2a2a2a", borderRadius: 12, background: "radial-gradient(circle at 20% 20%, #101726 0, #09090a 50%, #060606 100%)",
+              minHeight: 320, overflow: "hidden", position: "relative", cursor: dragState.current ? "grabbing" : "grab",
+            }}
+          >
+            <div style={{ position: "absolute", inset: 0, backgroundImage: "linear-gradient(#1a1a1a22 1px, transparent 1px), linear-gradient(90deg, #1a1a1a22 1px, transparent 1px)", backgroundSize: "24px 24px" }} />
+            <div style={{ transform: `translate(${resourceOffset.x}px, ${resourceOffset.y}px)`, transition: dragState.current ? "none" : "transform .12s", position: "relative", padding: 16, display: "grid", gap: 12, width: 900 }}>
+              {(state.recursos || []).map((r) => {
+                const max = Math.max(0, Number(r.max || 0));
+                const atual = Math.max(0, Math.min(max, Number(r.atual || 0)));
+                const cor = r.cor || DEFAULT_RESOURCE_COLORS[r.nome] || "#95a5a6";
+                return (
+                  <div key={r.id} style={{ border: `1px solid ${cor}55`, borderRadius: 10, background: "#00000066", padding: 10 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 36px", gap: 6, marginBottom: 8, alignItems: "center" }}>
+                      <input value={r.nome} onChange={(e) => upResource(r.id, { nome: e.target.value })} style={inpStyle({ borderColor: cor + "55", color: cor })} />
+                      <input type="number" min={0} value={max} onChange={(e) => upResource(r.id, { max: Math.max(0, Number(e.target.value) || 0), atual: Math.min(atual, Math.max(0, Number(e.target.value) || 0)) })} style={inpStyle()} />
+                      <input type="number" min={0} value={atual} onChange={(e) => upResource(r.id, { atual: Math.max(0, Math.min(max, Number(e.target.value) || 0)) })} style={inpStyle()} />
+                      <button onClick={() => saveCombate({ recursos: state.recursos.filter((x) => x.id !== r.id) })} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c", padding: "4px 8px" })}>✕</button>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {Array.from({ length: max }).map((_, i) => {
+                        const on = i < atual;
+                        return (
+                          <button
+                            key={i}
+                            onClick={() => toggleResourceSlot(r, i)}
+                            style={{
+                              width: 24, height: 24, borderRadius: 6, border: `1px solid ${cor}`,
+                              background: on ? cor : "#151515", opacity: on ? 1 : 0.35,
+                              boxShadow: on ? `0 0 10px ${cor}99` : "none", animation: on ? "pulseSlot 1.2s ease-in-out infinite" : "none",
+                              cursor: "pointer", transition: "all .18s",
+                            }}
+                            title={`${r.nome} ${i + 1}/${max}`}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <HoverButton onClick={() => saveCombate({ recursos: [...(state.recursos || []), { id: uid(), nome: "NOVO", cor: "#95a5a6", max: 1, atual: 1 }] })}>+ Novo Recurso</HoverButton>
+            <HoverButton onClick={() => saveCombate({ recursos: (state.recursos || []).map((r) => ({ ...r, atual: r.max })) })} style={btnStyle({ borderColor: "#2ecc7144", color: "#7cf0b3" })}>Resetar Recursos</HoverButton>
+          </div>
         </div>
       )}
 
@@ -134,29 +191,31 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
             <select defaultValue="" onChange={(ev) => {
               const ref = (efeitosCaldeirao || []).find((x) => x.id === ev.target.value);
               if (!ref) return;
-              saveEffects([...(charEffects || []), instantiateEffectFromTemplate(ref, { rodadaInicio: state.rodadaAtual, ativo: false })]);
+              const next = instantiateEffectFromTemplate(ref, { rodadaInicio: state.rodadaAtual, ativo: false });
+              saveEffects([next, ...(charEffects || [])]);
+              onNotify?.(`Efeito anexado: ${next.nome}`, "success");
               ev.target.value = "";
             }} style={inpStyle()}>
               <option value="">Adicionar efeito do Caldeirão...</option>
               {(efeitosCaldeirao || []).map((ef) => <option key={ef.id} value={ef.id}>{ef.nome} · {ef.efeitoMecanico || "—"}</option>)}
             </select>
             <HoverButton onClick={() => onOpenCaldeirao?.()}>Criar no Caldeirão</HoverButton>
-            <HoverButton onClick={() => saveEffects([...(charEffects || []), instantiateEffectFromTemplate(makeDefaultEffect(), { nome: "Novo efeito local", origem: "Local", origemDetalhe: "Combate", ativo: false, rodadaInicio: state.rodadaAtual, sinalizar: false })])} style={btnStyle({ borderColor: "#8e44ad55", color: "#dcb3ff" })}>Criar local</HoverButton>
+            <HoverButton onClick={() => saveEffects([instantiateEffectFromTemplate(makeDefaultEffect(), { nome: "Novo efeito local", origem: "Local", origemDetalhe: "Combate", ativo: false, rodadaInicio: state.rodadaAtual, sinalizar: false }), ...(charEffects || [])])} style={btnStyle({ borderColor: "#8e44ad55", color: "#dcb3ff" })}>Criar local</HoverButton>
             <HoverButton onClick={ensureItemEffects} style={btnStyle({ borderColor: "#2ecc7144", color: "#7cf0b3" })}>Sincronizar itens</HoverButton>
             <HoverButton onClick={() => saveEffects([...(charEffects || [])])}>Atualizar</HoverButton>
           </div>
 
           {(charEffects || []).map((e) => {
-            const isCollapsed = !!collapsed[e.id];
+            const isCollapsed = collapsed[e.id] ?? true;
             return (
               <div key={e.id} style={{ border: "1px solid #2a2a2a", borderRadius: 10, padding: 8, marginBottom: 8, background: "#0a0a0a", display: "grid", gap: 6 }}>
                 <div style={{ display: "grid", gridTemplateColumns: "24px 80px 24px 24px 1fr auto auto", gap: 6, alignItems: "center" }}>
-                  <input type="checkbox" checked={e.ativo !== false} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, ativo: ev.target.checked } : x))} />
+                  <input type="checkbox" checked={e.ativo !== false} onChange={(ev) => { saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, ativo: ev.target.checked } : x)); onNotify?.(`Efeito ${ev.target.checked ? "ativado" : "desativado"}: ${e.nome || "Sem nome"}`, "info"); }} />
                   <select value={e.tipo || "Buff"} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, tipo: ev.target.value } : x))} style={inpStyle()}><option>Buff</option><option>Debuff</option></select>
-                  <button onClick={() => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, sinalizar: !(x.sinalizar !== false) } : x))} style={btnStyle({ padding: "2px 4px" })} title="Sinalizar alertas">{e.sinalizar !== false ? "🔔" : "🔕"}</button>
-                  <button onClick={() => setCollapsed((p) => ({ ...p, [e.id]: !p[e.id] }))} style={btnStyle({ padding: "2px 4px" })} title="Minimizar/Expandir">{isCollapsed ? "▸" : "▾"}</button>
+                  <button onClick={() => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, sinalizar: !(x.sinalizar !== false) } : x))} style={btnStyle({ padding: "2px 4px" })}>{e.sinalizar !== false ? "🔔" : "🔕"}</button>
+                  <button onClick={() => setCollapsed((p) => ({ ...p, [e.id]: !isCollapsed }))} style={btnStyle({ padding: "2px 4px" })}>{isCollapsed ? "▸" : "▾"}</button>
                   <input value={e.nome || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, nome: ev.target.value } : x))} style={inpStyle()} />
-                  <HoverButton onClick={() => saveEffects([...(charEffects || []), { ...e, id: uid(), nome: `${e.nome || "Efeito"} (cópia)` }])}>⎘</HoverButton>
+                  <HoverButton onClick={() => saveEffects([{ ...e, id: uid(), nome: `${e.nome || "Efeito"} (cópia)` }, ...(charEffects || [])])}>⎘</HoverButton>
                   <HoverButton onClick={() => saveEffects(charEffects.filter((x) => x.id !== e.id))} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c" })}>✕</HoverButton>
                 </div>
 
@@ -166,36 +225,18 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                   <>
                     <textarea value={e.descricao || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, descricao: ev.target.value } : x))} rows={2} style={inpStyle({ resize: "vertical" })} />
                     <input value={e.frase || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, frase: ev.target.value } : x))} placeholder="Frase de efeito" style={inpStyle()} />
-
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
                       <input value={e.duracao || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, duracao: ev.target.value } : x))} placeholder="Duração (ex: 2d4)" style={inpStyle()} disabled={!!e.eterno} />
                       <select value={String(!!e.eterno)} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, eterno: ev.target.value === "true", duracao: ev.target.value === "true" ? "" : (x.duracao || "") } : x))} style={inpStyle()}><option value="false">Não eterno</option><option value="true">Eterno</option></select>
-                      <HoverButton onClick={() => {
-                        const roll = rollDice(e.duracao || "");
-                        if (roll == null) return;
-                        saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, duracaoRolada: roll, rodadaInicio: state.rodadaAtual } : x));
-                      }}>🎲 Duração</HoverButton>
+                      <HoverButton onClick={() => { const roll = rollDice(e.duracao || ""); if (roll == null) return; saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, duracaoRolada: roll, rodadaInicio: state.rodadaAtual } : x)); }}>🎲 Duração</HoverButton>
                     </div>
-
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-                      <select value={String(!!e.removivel)} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, removivel: ev.target.value === "true" } : x))} style={inpStyle()}><option value="false">Não removível</option><option value="true">Removível</option></select>
-                      <input value={e.condicaoRemocao || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, condicaoRemocao: ev.target.value } : x))} placeholder="Condição de remoção" style={inpStyle()} disabled={!e.removivel} />
-                      <input value={e.essenciaAtribuida || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, essenciaAtribuida: ev.target.value } : x))} placeholder="Essência atrelada" style={inpStyle()} />
-                    </div>
-
                     <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 1fr", gap: 6 }}>
                       <input value={e.rank || "Comum"} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, rank: ev.target.value } : x))} style={inpStyle()} />
-                      <input value={e.efeitoMecanico || e.efeito || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, efeitoMecanico: ev.target.value } : x))} placeholder="-2FOR, -10Agilidade" style={inpStyle()} />
+                      <input value={e.efeitoMecanico || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, efeitoMecanico: ev.target.value } : x))} placeholder="-2FOR, +2VIT" style={inpStyle()} />
                       <select value={e.alvo || "Portador"} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, alvo: ev.target.value } : x))} style={inpStyle()}>{EFFECT_TARGETS.map((t) => <option key={t}>{t}</option>)}</select>
                     </div>
                   </>
                 )}
-
-                <div style={{ fontFamily: "monospace", fontSize: 11, color: e.ativo !== false ? "#62e39e" : "#777" }}>
-                  {e.ativo !== false ? `Ativo${e.eterno ? " · Eterno" : (e.duracaoRolada ? ` · ${Math.max(0, e.duracaoRolada - (state.rodadaAtual - (e.rodadaInicio || state.rodadaAtual)))} rodadas restantes` : "")}` : "Pausado"}
-                  {e.origemItem ? ` · Origem item: ${e.origemItem}` : ""}
-                  {e.sinalizar === false ? " · Sem alerta" : ""}
-                </div>
               </div>
             );
           })}

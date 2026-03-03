@@ -114,6 +114,7 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
     };
   });
 
+  const initialSnapshot = useMemo(() => JSON.stringify(item ? { ...item } : novoItem()), [item]);
   const [selectedEffectId, setSelectedEffectId] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [effectEditorOpen, setEffectEditorOpen] = useState(false);
@@ -134,6 +135,13 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
     onEditEffect?.(ref);
   };
 
+
+  const safeClose = () => {
+    const isDirty = JSON.stringify(d) !== initialSnapshot;
+    if (isDirty && !window.confirm("Descartar alterações do item?")) return;
+    onClose();
+  };
+
   const onUploadIcon = (file) => {
     if (!file) return;
     const reader = new FileReader();
@@ -142,7 +150,7 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
   };
 
   return (
-    <Modal title={item ? "Editar Item" : "Criar Item"} onClose={onClose} wide>
+    <Modal title={item ? "Editar Item" : "Criar Item"} onClose={safeClose} wide>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         <div style={{ display: "grid", gap: 8 }}>
           <div>
@@ -259,7 +267,7 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
       </div>
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
-        <button style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })} onClick={onClose}>Cancelar</button>
+        <button style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })} onClick={safeClose}>Cancelar</button>
         <button style={btnStyle()} onClick={() => onSave(d)}>Salvar Item</button>
       </div>
       {previewOpen && <EffectDetailsModal effect={selectedEffect} onClose={() => setPreviewOpen(false)} />}

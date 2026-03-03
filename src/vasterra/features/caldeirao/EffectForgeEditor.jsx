@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { uid } from "../../core/factories";
 import { ARSENAL_RANKS, ESSENCIAS_VIRTUDES, ESSENCIAS_PECADOS, PERICIAS_GRUPOS } from "../../data/gameData";
 import { G, inpStyle, btnStyle } from "../../ui/theme";
@@ -58,7 +58,13 @@ const newEffect = () => ({
 
 export function EffectForgeEditor({ effect, onSave, onClose }) {
   const [d, setD] = useState(() => effect ? { ...effect, condicionais: (effect.condicionais || []).map(normalizeConditional) } : newEffect());
+  const initialSnapshot = useMemo(() => JSON.stringify(effect ? { ...effect, condicionais: (effect.condicionais || []).map(normalizeConditional) } : newEffect()), [effect]);
   const up = (k, v) => setD((p) => ({ ...p, [k]: v }));
+  const safeClose = () => {
+    const isDirty = JSON.stringify(d) !== initialSnapshot;
+    if (isDirty && !window.confirm("Descartar alterações do efeito?")) return;
+    onClose();
+  };
 
   const onUploadIcon = (file) => {
     if (!file) return;
@@ -68,7 +74,7 @@ export function EffectForgeEditor({ effect, onSave, onClose }) {
   };
 
   return (
-    <Modal title={effect ? "Editar Efeito (Caldeirão)" : "Criar Efeito (Caldeirão)"} onClose={onClose} wide>
+    <Modal title={effect ? "Editar Efeito (Caldeirão)" : "Criar Efeito (Caldeirão)"} onClose={safeClose} wide>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <div style={{ display: "grid", gap: 8 }}>
           <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 8 }}>
@@ -80,7 +86,7 @@ export function EffectForgeEditor({ effect, onSave, onClose }) {
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             <input value={d.duracao} onChange={(e) => up("duracao", e.target.value)} placeholder="Tempo de duração (ex: 3 rodadas)" style={inpStyle()} />
-            <select value={String(d.eterno)} onChange={(e) => up("eterno", e.target.value === "true")} style={inpStyle()}><option value="false">Não eterno</option><option value="true">Eterno</option></select>
+            <select value={String(d.eterno)} onChange={(e) => up("eterno", e.target.value === "true" ? true : false)} style={inpStyle()}><option value="false">Não eterno</option><option value="true">Eterno</option></select>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -158,7 +164,7 @@ export function EffectForgeEditor({ effect, onSave, onClose }) {
       </div>
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-        <button onClick={onClose} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button>
+        <button onClick={safeClose} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button>
         <button onClick={() => onSave({ ...d, atualizado: Date.now() })} style={btnStyle()}>Salvar Efeito</button>
       </div>
     </Modal>

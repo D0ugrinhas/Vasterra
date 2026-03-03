@@ -17,10 +17,10 @@ export function Pill({ label, cor, small }) {
   );
 }
 
-export function Modal({ title, children, onClose, wide }) {
+export function Modal({ title, children, onClose, wide, closeOnBackdrop = false }) {
   return (
     <div
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={e => { if (closeOnBackdrop && e.target === e.currentTarget) onClose(); }}
       style={{
         position: "fixed", inset: 0, background: "rgba(0,0,0,.75)",
         display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
