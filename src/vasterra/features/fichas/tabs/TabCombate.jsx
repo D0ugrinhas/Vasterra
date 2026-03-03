@@ -5,62 +5,15 @@ import { makeDefaultEffect } from "../../caldeirao/EffectForgeEditor";
 import { Modal } from "../../shared/components";
 import { G, inpStyle, btnStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
-
-const defaultCombate = () => ({
-  rodadaAtual: 0,
-  abaAtiva: "recursos",
-  lembretes: [],
-  nodeLinks: [],
-  recursos: [
-    { id: uid(), nome: "ACO", cor: "#2ecc71", max: 2, atual: 2, descricao: "", slotShape: "square", x: 40, y: 40 },
-    { id: uid(), nome: "MOV", cor: "#3498db", max: 1, atual: 1, descricao: "", slotShape: "square", x: 280, y: 40 },
-  ],
-  statusNodes: [],
-  genericNodes: [],
-});
-
-const SHAPES = ["square", "circle", "diamond", "triangle", "hex"];
-const NODE_TYPES = ["Recurso", "Barra de Status", "Valor", "Math", "Condicionais", "Color picker"];
-
-function slotShapeStyle(shape, color, active) {
-  const base = { width: 18, height: 18, border: `1px solid ${color}`, background: active ? color : "#151515", opacity: active ? 1 : 0.35 };
-  if (shape === "circle") return { ...base, borderRadius: "50%" };
-  if (shape === "diamond") return { ...base, transform: "rotate(45deg)", borderRadius: 3 };
-  if (shape === "triangle") return { ...base, clipPath: "polygon(50% 0, 0 100%, 100% 100%)", borderRadius: 0 };
-  if (shape === "hex") return { ...base, clipPath: "polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%)" };
-  return { ...base, borderRadius: 4 };
-}
-
-function defaultResourceForm() { return { nome: "NOVO", cor: "#95a5a6", max: 1, atual: 1, descricao: "", slotShape: "square", x: 120, y: 120 }; }
-function defaultStatusForm() { return { nome: "Novo Status", sigla: "NOV", cor: "#f39c12", base: 10, max: 10, val: 10, x: 120, y: 240 }; }
-function defaultGenericForm(kind = "Valor") {
-  if (kind === "Valor") return { nodeType: "value", label: "Valor", value: 0, sourcePath: "", x: 420, y: 120 };
-  if (kind === "Math") return { nodeType: "math", label: "Math", op: "+", x: 420, y: 220 };
-  if (kind === "Condicionais") return { nodeType: "conditional", label: "Cond", cmp: ">", trueValue: 1, falseValue: 0, x: 420, y: 320 };
-  return { nodeType: "color", label: "Cor", color: "#95a5a6", x: 420, y: 420 };
-}
-
-const parseDice = (expr = "") => { const m = String(expr).trim().match(/^(\d+)d(\d+)$/i); return m ? { n: Number(m[1]), d: Number(m[2]) } : null; };
-const rollDice = (expr = "") => { const p = parseDice(expr); if (!p) return null; let t = 0; for (let i = 0; i < p.n; i += 1) t += 1 + Math.floor(Math.random() * p.d); return t; };
-
-function getFichaValueByPath(ficha, path) {
-  if (!path) return 0;
-  if (path.startsWith("status.")) {
-    const [_, sig, field] = path.split(".");
-    return Number(ficha?.status?.[sig]?.[field] || 0);
-  }
-  if (path.startsWith("atributos.")) {
-    const [_, sig, field] = path.split(".");
-    return Number(ficha?.atributos?.[sig]?.[field] || 0);
-  }
-  return 0;
-}
+import {
+  NODE_TYPES, SHAPES, defaultCombatState, defaultResourceForm, defaultStatusForm, defaultGenericForm,
+  getFichaValueByPath, toAllNodes, getInputPorts, getOutputPorts, canLink, evaluateNodeOutputs,
+} from "./combatNodeSystem";
 
 export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCaldeirao, onNotify }) {
-  const state = useMemo(() => ({ ...defaultCombate(), ...(ficha.combate || {}) }), [ficha.combate]);
+  const state = useMemo(() => ({ ...defaultCombatState(), ...(ficha.combate || {}) }), [ficha.combate]);
   const [collapsed, setCollapsed] = useState({});
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
-  const [hoverSlot, setHoverSlot] = useState({});
   const [nodePickerOpen, setNodePickerOpen] = useState(false);
   const [resourceEditorOpen, setResourceEditorOpen] = useState(false);
   const [statusEditorOpen, setStatusEditorOpen] = useState(false);
@@ -69,137 +22,48 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
   const [statusEditorData, setStatusEditorData] = useState(defaultStatusForm());
   const [genericEditorData, setGenericEditorData] = useState(defaultGenericForm());
   const [editing, setEditing] = useState({ kind: null, id: null });
-  const [linkDrag, setLinkDrag] = useState(null);
-  const dragRef = useRef(null);
-  const canvasRef = useRef(null);
+  const [linkStart, setLinkStart] = useState(null);
+  const [edgePanEnabled, setEdgePanEnabled] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [hoverSlot, setHoverSlot] = useState({});
+
+  const canvasWrapRef = useRef(null);
+  const edgeVecRef = useRef({ x: 0, y: 0 });
+  const rafRef = useRef(null);
   const charEffects = ficha.modificadores?.efeitos || [];
 
   const saveCombate = (next) => onUpdate({ combate: { ...state, ...next } });
   const saveEffects = (next) => onUpdate({ modificadores: { ...(ficha.modificadores || {}), efeitos: next } });
-
   const setTab = (abaAtiva) => saveCombate({ abaAtiva });
   const setRodada = (rodadaAtual) => saveCombate({ rodadaAtual: Math.max(0, rodadaAtual) });
   const updateResourceById = (id, patch) => saveCombate({ recursos: state.recursos.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
   const updateStatusById = (id, patch) => saveCombate({ statusNodes: (state.statusNodes || []).map((r) => (r.id === id ? { ...r, ...patch } : r)) });
   const updateGenericById = (id, patch) => saveCombate({ genericNodes: (state.genericNodes || []).map((r) => (r.id === id ? { ...r, ...patch } : r)) });
 
+  const allNodes = useMemo(() => toAllNodes(state), [state]);
+  const outputs = useMemo(() => evaluateNodeOutputs(state, ficha), [state, ficha]);
+  const links = state.nodeLinks || [];
+
   const fichaValueOptions = useMemo(() => {
     const out = [];
     Object.keys(ficha?.status || {}).forEach((k) => { out.push({ label: `Status ${k} atual`, value: `status.${k}.val` }); out.push({ label: `Status ${k} max`, value: `status.${k}.max` }); });
     Object.keys(ficha?.atributos || {}).forEach((k) => out.push({ label: `Atributo ${k}`, value: `atributos.${k}.val` }));
+    Object.keys(ficha?.pericias || {}).forEach((k) => out.push({ label: `Perícia ${k}`, value: `pericias.${k}` }));
     return out;
   }, [ficha]);
 
-  const links = state.nodeLinks || [];
-  const incomingFor = (nodeId, input) => links.find((l) => l.to.id === nodeId && l.to.port === input) || null;
-
-  const nodeOutput = (node) => {
-    const n = node;
-    if (n.kind === "resource") return { value: Number(n.atual || 0), max: Number(n.max || 0), color: n.cor || "#95a5a6" };
-    if (n.kind === "status") return { value: Number(n.val || 0), max: Number(n.max || 0), color: n.cor || "#f39c12" };
-    if (n.kind === "generic") {
-      if (n.nodeType === "value") {
-        const source = incomingFor(n.id, "value");
-        if (source) return { value: 0, color: "#95a5a6" };
-        if (n.sourcePath) return { value: Number(getFichaValueByPath(ficha, n.sourcePath) || 0), color: "#95a5a6" };
-        return { value: Number(n.value || 0), color: "#95a5a6" };
-      }
-      if (n.nodeType === "math") {
-        const a = Number(resolveInputValue(n.id, "a") || 0); const b = Number(resolveInputValue(n.id, "b") || 0);
-        if (n.op === "+") return { value: a + b }; if (n.op === "-") return { value: a - b }; if (n.op === "*") return { value: a * b }; return { value: b === 0 ? 0 : a / b };
-      }
-      if (n.nodeType === "conditional") {
-        const a = Number(resolveInputValue(n.id, "a") || 0); const b = Number(resolveInputValue(n.id, "b") || 0);
-        const ok = n.cmp === ">" ? a > b : n.cmp === "<" ? a < b : a === b;
-        return { value: ok ? Number(n.trueValue || 0) : Number(n.falseValue || 0) };
-      }
-      if (n.nodeType === "color") return { color: n.color || "#95a5a6", value: 0 };
-    }
-    return { value: 0, max: 0, color: "#95a5a6" };
-  };
-
-  function resolveInputValue(nodeId, inputPort) {
-    const ln = incomingFor(nodeId, inputPort);
-    if (!ln) return 0;
-    const src = allNodes.find((x) => x.id === ln.from.id);
-    if (!src) return 0;
-    return nodeOutput(src).value || 0;
-  }
-
-  const allNodes = useMemo(() => [
-    ...(state.recursos || []).map((x) => ({ ...x, kind: "resource" })),
-    ...((state.statusNodes || []).map((x) => ({ ...x, kind: "status" }))),
-    ...((state.genericNodes || []).map((x) => ({ ...x, kind: "generic" }))),
-  ], [state.recursos, state.statusNodes, state.genericNodes]);
-
-  useEffect(() => () => { document.body.style.overflow = ""; }, []);
-
-  const canLink = (fromNode, toNode, toPort) => {
-    const fromType = toPort === "cor" ? "color" : "value";
-    if (toPort === "cor") return fromNode.kind === "generic" && fromNode.nodeType === "color";
-    return ["resource", "status", "generic"].includes(toNode.kind) && (fromNode.kind === "generic" || fromNode.kind === "resource" || fromNode.kind === "status") && fromType === "value";
-  };
-
-  const beginLink = (from) => setLinkDrag({ from, x: 0, y: 0 });
-  const endLink = (to) => {
-    if (!linkDrag) return;
-    const fromNode = allNodes.find((n) => n.id === linkDrag.from.id);
-    const toNode = allNodes.find((n) => n.id === to.id);
-    if (!fromNode || !toNode || !canLink(fromNode, toNode, to.port)) {
-      onNotify?.("Erro: esse node não pode ser ligado a um node desse tipo.", "error");
-      setLinkDrag(null);
-      return;
-    }
-    const filtered = links.filter((l) => !(l.to.id === to.id && l.to.port === to.port));
-    saveCombate({ nodeLinks: [...filtered, { id: uid(), from: linkDrag.from, to }] });
-    setLinkDrag(null);
-  };
-
-  const beginCanvasPan = (e) => {
-    if (e.button !== 0) return;
-    dragRef.current = { mode: "pan", startX: e.clientX, startY: e.clientY, vx: viewport.x, vy: viewport.y };
-    e.preventDefault();
-  };
-  const beginNodeDrag = (e, nodeId, nodeKind) => {
-    const n = allNodes.find((x) => x.id === nodeId && x.kind === nodeKind);
-    if (!n) return;
-    dragRef.current = { mode: "item", itemId: nodeId, nodeKind, startX: e.clientX, startY: e.clientY, ix: n.x || 0, iy: n.y || 0 };
-    e.preventDefault();
-    e.stopPropagation();
-  };
-  const onMouseMove = (e) => {
-    if (linkDrag) setLinkDrag((p) => (p ? { ...p, x: e.clientX, y: e.clientY } : p));
-    const d = dragRef.current;
-    if (!d) return;
-    const dx = e.clientX - d.startX;
-    const dy = e.clientY - d.startY;
-    if (d.mode === "pan") { setViewport((p) => ({ ...p, x: d.vx + dx, y: d.vy + dy })); return; }
-    const patch = { x: d.ix + (dx / viewport.zoom), y: d.iy + (dy / viewport.zoom) };
-    if (d.nodeKind === "resource") updateResourceById(d.itemId, patch);
-    if (d.nodeKind === "status") updateStatusById(d.itemId, patch);
-    if (d.nodeKind === "generic") updateGenericById(d.itemId, patch);
-  };
-  const stopDrag = () => { dragRef.current = null; };
-  const onCanvasWheel = (e) => { e.preventDefault(); e.stopPropagation(); const dir = e.deltaY > 0 ? -0.08 : 0.08; setViewport((p) => ({ ...p, zoom: Math.max(0.45, Math.min(2.2, Number((p.zoom + dir).toFixed(2)))) })); };
+  const activeLembretes = (state.lembretes || []).filter((l) => (l.tipo === "naRodada" ? l.lembrarNaRodada : (l.criadoNaRodada + l.lembrarNaRodada)) === state.rodadaAtual);
+  const activeEfeitos = (charEffects || []).filter((e) => e.ativo !== false);
+  const notifyingEffects = activeEfeitos.filter((e) => e.sinalizar !== false);
 
   const proxRodada = () => {
-    const recursos = (state.recursos || []).map((r) => ({ ...r, atual: r.max }));
+    const recursos = (state.recursos || []).map((r) => ({ ...r, atual: Number(outputs[r.id]?.max ?? r.max) }));
     saveCombate({ rodadaAtual: state.rodadaAtual + 1, recursos });
     onNotify?.("Nova rodada: recursos resetados para o máximo.", "info");
   };
 
-  const activeLembretes = (state.lembretes || []).filter((l) => {
-    const rodadaLembrete = l.tipo === "naRodada" ? l.lembrarNaRodada : (l.criadoNaRodada + l.lembrarNaRodada);
-    return rodadaLembrete === state.rodadaAtual;
-  });
-  const activeEfeitos = (charEffects || []).filter((e) => e.ativo !== false);
-  const notifyingEffects = activeEfeitos.filter((e) => e.sinalizar !== false);
-
   const ensureItemEffects = () => {
-    const invEffects = (ficha.inventario || []).flatMap((entry) => {
-      const item = entry.item || {};
-      return (item.efeitos || []).filter((ef) => ef?.origemEffectId).map((ef) => ({ ef, item }));
-    });
+    const invEffects = (ficha.inventario || []).flatMap((entry) => ((entry.item || {}).efeitos || []).filter((ef) => ef?.origemEffectId).map((ef) => ({ ef, item: entry.item || {} })));
     const existingKeys = new Set((charEffects || []).map((e) => `${e.origemEffectId || ""}::${e.origemItem || ""}`));
     const additions = [];
     invEffects.forEach(({ ef, item }) => {
@@ -212,6 +76,81 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
     if (additions.length) saveEffects([...(charEffects || []), ...additions]);
   };
 
+  const getNodePos = (node) => ({ x: (node.x || 0) * viewport.zoom + viewport.x, y: (node.y || 0) * viewport.zoom + viewport.y });
+
+  const beginLink = (from) => setLinkStart(from);
+  const endLink = (to) => {
+    if (!linkStart) return;
+    const fromNode = allNodes.find((n) => n.id === linkStart.id);
+    const toNode = allNodes.find((n) => n.id === to.id);
+    if (!fromNode || !toNode || !canLink(fromNode, linkStart.port, toNode, to.port)) {
+      onNotify?.("Erro: esse node não pode ser ligado a um node desse tipo.", "error");
+      setLinkStart(null);
+      return;
+    }
+    const filtered = links.filter((l) => !(l.to.id === to.id && l.to.port === to.port));
+    saveCombate({ nodeLinks: [...filtered, { id: uid(), from: linkStart, to }] });
+    setLinkStart(null);
+  };
+
+  const onWheelCanvas = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const dir = e.deltaY > 0 ? -0.08 : 0.08;
+    setViewport((p) => ({ ...p, zoom: Math.max(0.45, Math.min(2.2, Number((p.zoom + dir).toFixed(2)))) }));
+  };
+
+  const tickEdgePan = () => {
+    const v = edgeVecRef.current;
+    if (isFullscreen && edgePanEnabled && (v.x || v.y)) {
+      const speedX = v.x * 22;
+      const speedY = v.y * 22;
+      setViewport((p) => ({ ...p, x: p.x + speedX, y: p.y + speedY }));
+    }
+    rafRef.current = requestAnimationFrame(tickEdgePan);
+  };
+
+  useEffect(() => {
+    rafRef.current = requestAnimationFrame(tickEdgePan);
+    return () => cancelAnimationFrame(rafRef.current);
+  });
+
+  useEffect(() => {
+    const onFs = () => setIsFullscreen(document.fullscreenElement === canvasWrapRef.current);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!isFullscreen) return;
+      const m = 20;
+      if (e.key.toLowerCase() === "w") setViewport((p) => ({ ...p, y: p.y + m }));
+      if (e.key.toLowerCase() === "s") setViewport((p) => ({ ...p, y: p.y - m }));
+      if (e.key.toLowerCase() === "a") setViewport((p) => ({ ...p, x: p.x + m }));
+      if (e.key.toLowerCase() === "d") setViewport((p) => ({ ...p, x: p.x - m }));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isFullscreen]);
+
+  const onCanvasMouseMove = (e) => {
+    if (!isFullscreen || !edgePanEnabled || !canvasWrapRef.current) return;
+    const r = canvasWrapRef.current.getBoundingClientRect();
+    const m = 80;
+    const lx = e.clientX - r.left;
+    const ly = e.clientY - r.top;
+    let vx = 0; let vy = 0;
+    if (lx < m) vx = (m - lx) / m;
+    else if (lx > r.width - m) vx = -((lx - (r.width - m)) / m);
+    if (ly < m) vy = (m - ly) / m;
+    else if (ly > r.height - m) vy = -((ly - (r.height - m)) / m);
+    edgeVecRef.current = { x: Math.max(-1, Math.min(1, vx)), y: Math.max(-1, Math.min(1, vy)) };
+  };
+
+  const onCanvasEnter = () => { document.body.style.overflow = "hidden"; };
+  const onCanvasLeave = () => { document.body.style.overflow = ""; edgeVecRef.current = { x: 0, y: 0 }; };
+
   const openNodeType = (type) => {
     setNodePickerOpen(false);
     setEditing({ kind: null, id: null });
@@ -222,32 +161,31 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
   };
 
   const saveResourceEditor = () => {
-    const payload = { ...resourceEditorData, max: Math.max(0, Number(resourceEditorData.max) || 0), atual: Math.max(0, Math.min(Number(resourceEditorData.atual) || 0, Math.max(0, Number(resourceEditorData.max) || 0))) };
-    if (!editing.id) saveCombate({ recursos: [...(state.recursos || []), { id: uid(), ...payload }] });
-    else updateResourceById(editing.id, payload);
+    const p = { ...resourceEditorData, max: Math.max(0, Number(resourceEditorData.max) || 0), atual: Math.max(0, Math.min(Number(resourceEditorData.atual) || 0, Math.max(0, Number(resourceEditorData.max) || 0))) };
+    if (!editing.id) saveCombate({ recursos: [...(state.recursos || []), { id: uid(), ...p }] });
+    else updateResourceById(editing.id, p);
     setResourceEditorOpen(false);
   };
+
   const saveStatusEditor = () => {
-    const payload = { ...statusEditorData, sigla: String(statusEditorData.sigla || "NOV").toUpperCase(), max: Math.max(1, Number(statusEditorData.max || 1)), val: Math.max(0, Math.min(Number(statusEditorData.val || 0), Math.max(1, Number(statusEditorData.max || 1)))) };
-    if (!editing.id) saveCombate({ statusNodes: [...(state.statusNodes || []), { id: uid(), ...payload }] });
-    else updateStatusById(editing.id, payload);
+    const p = { ...statusEditorData, sigla: String(statusEditorData.sigla || "NOV").toUpperCase(), max: Math.max(1, Number(statusEditorData.max || 1)), val: Math.max(0, Math.min(Number(statusEditorData.val || 0), Math.max(1, Number(statusEditorData.max || 1)))) };
+    if (!editing.id) saveCombate({ statusNodes: [...(state.statusNodes || []), { id: uid(), ...p }] });
+    else updateStatusById(editing.id, p);
     setStatusEditorOpen(false);
   };
+
   const saveGenericEditor = () => {
-    const payload = { ...genericEditorData };
-    if (!editing.id) saveCombate({ genericNodes: [...(state.genericNodes || []), { id: uid(), ...payload }] });
-    else updateGenericById(editing.id, payload);
+    const p = { ...genericEditorData };
+    if (!editing.id) saveCombate({ genericNodes: [...(state.genericNodes || []), { id: uid(), ...p }] });
+    else updateGenericById(editing.id, p);
     setGenericEditorOpen(false);
   };
 
-  const onUploadIcon = (file) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setResourceEditorData((p) => ({ ...p, slotIconData: String(reader.result || ""), slotIconMode: "upload" }));
-    reader.readAsDataURL(file);
+  const toggleFullscreen = async () => {
+    if (!canvasWrapRef.current) return;
+    if (!document.fullscreenElement) await canvasWrapRef.current.requestFullscreen();
+    else await document.exitFullscreen();
   };
-
-  const getNodePos = (node) => ({ x: (node.x || 0) * viewport.zoom + viewport.x, y: (node.y || 0) * viewport.zoom + viewport.y });
 
   return (
     <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 12, padding: 12 }}>
@@ -271,21 +209,19 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
       {state.abaAtiva === "recursos" && (
         <div>
           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <HoverButton onClick={() => setNodePickerOpen(true)}>+ Novo Nó</HoverButton>
-            <HoverButton onClick={() => saveCombate({ recursos: (state.recursos || []).map((r) => ({ ...r, atual: r.max })) })} style={btnStyle({ borderColor: "#2ecc7144", color: "#7cf0b3" })}>Resetar Recursos</HoverButton>
-            <HoverButton onClick={() => setViewport((p) => ({ ...p, zoom: Math.max(0.45, Number((p.zoom - 0.1).toFixed(2))) }))}>− Zoom</HoverButton>
-            <HoverButton onClick={() => setViewport((p) => ({ ...p, zoom: Math.min(2.2, Number((p.zoom + 0.1).toFixed(2))) }))}>+ Zoom</HoverButton>
+            <HoverButton onClick={() => setNodePickerOpen(true)}>{isFullscreen ? "+ Nó" : "+ Novo Nó"}</HoverButton>
+            <HoverButton onClick={() => saveCombate({ recursos: (state.recursos || []).map((r) => ({ ...r, atual: Number(outputs[r.id]?.max ?? r.max) })) })} style={btnStyle({ borderColor: "#2ecc7144", color: "#7cf0b3" })}>{isFullscreen ? "Reset" : "Resetar Recursos"}</HoverButton>
+            <HoverButton onClick={toggleFullscreen} style={btnStyle({ borderColor: "#3498db55", color: "#8fc8ff" })}>{isFullscreen ? "🡼" : "⛶"}</HoverButton>
+            {isFullscreen && <HoverButton onClick={() => setEdgePanEnabled((v) => !v)} style={btnStyle({ borderColor: "#f39c1255", color: "#f7c96b" })}>{edgePanEnabled ? "Edge ON" : "Edge OFF"}</HoverButton>}
           </div>
 
           <div
-            ref={canvasRef}
-            onMouseDown={beginCanvasPan}
-            onMouseMove={onMouseMove}
-            onMouseUp={stopDrag}
-            onMouseLeave={() => { stopDrag(); document.body.style.overflow = ""; }}
-            onMouseEnter={() => { document.body.style.overflow = "hidden"; }}
-            onWheel={onCanvasWheel}
-            style={{ border: "1px solid #2a2a2a", borderRadius: 12, background: "radial-gradient(circle at 20% 20%, #101726 0, #09090a 50%, #060606 100%)", height: 340, overflow: "hidden", position: "relative", cursor: dragRef.current?.mode === "pan" ? "grabbing" : "grab" }}
+            ref={canvasWrapRef}
+            onWheel={onWheelCanvas}
+            onMouseMove={onCanvasMouseMove}
+            onMouseEnter={onCanvasEnter}
+            onMouseLeave={onCanvasLeave}
+            style={{ border: "1px solid #2a2a2a", borderRadius: 12, background: "radial-gradient(circle at 20% 20%, #101726 0, #09090a 50%, #060606 100%)", height: isFullscreen ? "100vh" : 340, overflow: "hidden", position: "relative" }}
           >
             <svg style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
               {links.map((l) => {
@@ -293,50 +229,48 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                 const to = allNodes.find((n) => n.id === l.to.id);
                 if (!from || !to) return null;
                 const fp = getNodePos(from); const tp = getNodePos(to);
-                return <line key={l.id} x1={fp.x + 210} y1={fp.y + 24} x2={tp.x} y2={tp.y + 24} stroke="#7aa9d8" strokeWidth="2" />;
+                return <path key={l.id} d={`M ${fp.x + 220} ${fp.y + 24} C ${fp.x + 280} ${fp.y + 24}, ${tp.x - 40} ${tp.y + 24}, ${tp.x} ${tp.y + 24}`} stroke="#87cefa" fill="none" strokeWidth="2" />;
               })}
-              {linkDrag && <line x1={getNodePos(allNodes.find((n) => n.id === linkDrag.from.id) || { x: 0, y: 0 }).x + 210} y1={getNodePos(allNodes.find((n) => n.id === linkDrag.from.id) || { x: 0, y: 0 }).y + 24} x2={linkDrag.x} y2={linkDrag.y} stroke="#b388ff" strokeWidth="2" />}
             </svg>
 
-            <div style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`, transformOrigin: "top left", width: 1800, height: 1200, position: "relative" }}>
+            <div style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`, transformOrigin: "top left", width: 2000, height: 1400, position: "relative" }}>
               {allNodes.map((n) => {
-                const isResource = n.kind === "resource";
-                const isStatus = n.kind === "status";
-                const isGeneric = n.kind === "generic";
-                const cor = n.cor || (isResource ? "#95a5a6" : "#f39c12");
+                const out = outputs[n.id] || {};
+                const cor = out.cor || n.cor || "#95a5a6";
+                const inputPorts = getInputPorts(n);
+                const outputPorts = getOutputPorts(n);
+                const incomingValue = links.find((l) => l.to.id === n.id && l.to.port === "value");
                 return (
-                  <div key={n.id} style={{ position: "absolute", left: n.x || 0, top: n.y || 0, width: 220, border: `1px solid ${cor}66`, borderRadius: 10, background: "#000000aa", padding: 8 }}>
-                    <div style={{ position: "absolute", left: -8, top: 20, display: "grid", gap: 4 }}>
-                      {(isResource || isStatus || (isGeneric && ["math", "conditional", "value"].includes(n.nodeType))) && <button onMouseUp={() => endLink({ id: n.id, port: isGeneric && n.nodeType !== "value" ? "a" : "value" })} style={{ width: 10, height: 10, borderRadius: "50%", border: "1px solid #9cf", background: "#123" }} />}
-                      {(isGeneric && ["math", "conditional"].includes(n.nodeType)) && <button onMouseUp={() => endLink({ id: n.id, port: "b" })} style={{ width: 10, height: 10, borderRadius: "50%", border: "1px solid #9cf", background: "#123" }} />}
+                  <div key={n.id} style={{ position: "absolute", left: n.x || 0, top: n.y || 0, width: 220, border: `1px solid ${cor}77`, borderRadius: 12, background: "#000000bb", padding: 8, boxShadow: "0 0 18px #000" }}>
+                    <div style={{ position: "absolute", left: -10, top: 16, display: "grid", gap: 8 }}>
+                      {inputPorts.map((p) => <button key={p} onClick={() => endLink({ id: n.id, port: p })} style={{ width: 12, height: 12, borderRadius: "50%", border: "1px solid #9ad", background: "radial-gradient(circle at 30% 30%, #dff, #245)", cursor: "pointer" }} title={`Input ${p}`} />)}
                     </div>
-                    <div style={{ position: "absolute", right: -8, top: 20, display: "grid", gap: 4 }}>
-                      <button onMouseDown={() => beginLink({ id: n.id, port: "out" })} style={{ width: 10, height: 10, borderRadius: "50%", border: "1px solid #f9c", background: "#312" }} />
+                    <div style={{ position: "absolute", right: -10, top: 16, display: "grid", gap: 8 }}>
+                      {outputPorts.map((p) => <button key={p} onClick={() => beginLink({ id: n.id, port: p })} style={{ width: 12, height: 12, borderRadius: "50%", border: "1px solid #f9c", background: linkStart?.id === n.id && linkStart?.port === p ? "radial-gradient(circle at 30% 30%, #fff, #a0f)" : "radial-gradient(circle at 30% 30%, #ffe, #524)", cursor: "pointer" }} title={`Output ${p}`} />)}
                     </div>
 
-                    <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto auto auto", gap: 5, alignItems: "center", marginBottom: 6 }}>
-                      <button onMouseDown={(e) => beginNodeDrag(e, n.id, n.kind)} style={btnStyle({ padding: "2px 4px" })}>⠿</button>
-                      <div style={{ color: cor, fontFamily: "'Cinzel',serif", fontSize: 11 }}>{isResource ? n.nome : isStatus ? `${n.nome} (${n.sigla})` : (n.label || n.nodeType)}</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: 5, alignItems: "center", marginBottom: 6 }}>
+                      <div style={{ color: cor, fontFamily: "'Cinzel',serif", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.kind === "resource" ? n.nome : n.kind === "status" ? `${n.nome} (${n.sigla})` : (n.label || n.nodeType)}</div>
                       <button onClick={() => {
-                        if (isResource) { setEditing({ kind: "resource", id: n.id }); setResourceEditorData({ ...n }); setResourceEditorOpen(true); }
-                        else if (isStatus) { setEditing({ kind: "status", id: n.id }); setStatusEditorData({ ...n }); setStatusEditorOpen(true); }
+                        if (n.kind === "resource") { setEditing({ kind: "resource", id: n.id }); setResourceEditorData({ ...n }); setResourceEditorOpen(true); }
+                        else if (n.kind === "status") { setEditing({ kind: "status", id: n.id }); setStatusEditorData({ ...n }); setStatusEditorOpen(true); }
                         else { setEditing({ kind: "generic", id: n.id }); setGenericEditorData({ ...n }); setGenericEditorOpen(true); }
                       }} style={btnStyle({ padding: "2px 4px" })}>⚙</button>
                       <button onClick={() => {
-                        if (isResource) saveCombate({ recursos: [...(state.recursos || []), { ...n, id: uid(), x: (n.x || 0) + 30, y: (n.y || 0) + 30, nome: `${n.nome} (cópia)` }] });
-                        if (isStatus) saveCombate({ statusNodes: [...(state.statusNodes || []), { ...n, id: uid(), x: (n.x || 0) + 30, y: (n.y || 0) + 30, nome: `${n.nome} (cópia)` }] });
-                        if (isGeneric) saveCombate({ genericNodes: [...(state.genericNodes || []), { ...n, id: uid(), x: (n.x || 0) + 30, y: (n.y || 0) + 30, label: `${n.label || n.nodeType} (cópia)` }] });
+                        if (n.kind === "resource") saveCombate({ recursos: [...(state.recursos || []), { ...n, id: uid(), x: (n.x || 0) + 24, y: (n.y || 0) + 24, nome: `${n.nome} (cópia)` }] });
+                        else if (n.kind === "status") saveCombate({ statusNodes: [...(state.statusNodes || []), { ...n, id: uid(), x: (n.x || 0) + 24, y: (n.y || 0) + 24, nome: `${n.nome} (cópia)` }] });
+                        else saveCombate({ genericNodes: [...(state.genericNodes || []), { ...n, id: uid(), x: (n.x || 0) + 24, y: (n.y || 0) + 24, label: `${n.label || n.nodeType} (cópia)` }] });
                       }} style={btnStyle({ padding: "2px 4px" })}>⎘</button>
                       <button onClick={() => {
-                        if (isResource) saveCombate({ recursos: (state.recursos || []).filter((x) => x.id !== n.id), nodeLinks: links.filter((l) => l.from.id !== n.id && l.to.id !== n.id) });
-                        if (isStatus) saveCombate({ statusNodes: (state.statusNodes || []).filter((x) => x.id !== n.id), nodeLinks: links.filter((l) => l.from.id !== n.id && l.to.id !== n.id) });
-                        if (isGeneric) saveCombate({ genericNodes: (state.genericNodes || []).filter((x) => x.id !== n.id), nodeLinks: links.filter((l) => l.from.id !== n.id && l.to.id !== n.id) });
+                        if (n.kind === "resource") saveCombate({ recursos: (state.recursos || []).filter((x) => x.id !== n.id), nodeLinks: links.filter((l) => l.from.id !== n.id && l.to.id !== n.id) });
+                        else if (n.kind === "status") saveCombate({ statusNodes: (state.statusNodes || []).filter((x) => x.id !== n.id), nodeLinks: links.filter((l) => l.from.id !== n.id && l.to.id !== n.id) });
+                        else saveCombate({ genericNodes: (state.genericNodes || []).filter((x) => x.id !== n.id), nodeLinks: links.filter((l) => l.from.id !== n.id && l.to.id !== n.id) });
                       }} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c", padding: "2px 4px" })}>✕</button>
                     </div>
 
-                    {isResource && (() => {
-                      const max = Math.max(0, Number(n.max || 0));
-                      const atual = Math.max(0, Math.min(max, Number(n.atual || 0)));
+                    {n.kind === "resource" && (() => {
+                      const max = Math.max(0, Number(out.max ?? n.max ?? 0));
+                      const atual = Math.max(0, Math.min(max, Number(out.value ?? n.atual ?? 0)));
                       const hover = hoverSlot[n.id];
                       const preview = Number.isInteger(hover) ? hover + 1 : atual;
                       const gasto = Math.max(0, atual - preview);
@@ -345,11 +279,12 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                           <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                             {Array.from({ length: max }).map((_, i) => {
                               const on = i < preview;
+                              const style = { width: 18, height: 18, border: `1px solid ${cor}`, background: on ? cor : "#151515", opacity: on ? 1 : 0.35, borderRadius: n.slotShape === "circle" ? "50%" : n.slotShape === "triangle" ? 0 : 4, clipPath: n.slotShape === "triangle" ? "polygon(50% 0, 0 100%, 100% 100%)" : undefined };
                               return <button key={i} onMouseEnter={() => setHoverSlot((p) => ({ ...p, [n.id]: i }))} onMouseLeave={() => setHoverSlot((p) => ({ ...p, [n.id]: null }))} onClick={() => {
                                 if (atual === 1 && i === 0) updateResourceById(n.id, { atual: 0 });
                                 else if (i === atual - 1) updateResourceById(n.id, { atual: Math.max(0, i) });
                                 else updateResourceById(n.id, { atual: i + 1 });
-                              }} style={slotShapeStyle(n.slotShape || "square", n.cor || "#95a5a6", on)} />;
+                              }} style={style} />;
                             })}
                           </div>
                           <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10, color: G.muted }}>{atual}/{max} · gasto previsto: {gasto}</div>
@@ -357,29 +292,28 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                       );
                     })()}
 
-                    {isStatus && (() => {
-                      const max = Math.max(1, Number(n.max || 1));
-                      const val = Math.max(0, Math.min(max, Number(n.val || 0)));
+                    {n.kind === "status" && (() => {
+                      const max = Math.max(1, Number(out.max ?? n.max ?? 1));
+                      const val = Math.max(0, Math.min(max, Number(out.value ?? n.val ?? 0)));
                       return (
                         <>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 5 }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 4 }}>
                             <input type="number" value={val} min={0} max={max} onChange={(e) => updateStatusById(n.id, { val: Math.max(0, Math.min(max, Number(e.target.value) || 0)) })} style={inpStyle()} />
                             <input type="number" value={max} min={1} onChange={(e) => updateStatusById(n.id, { max: Math.max(1, Number(e.target.value) || 1) })} style={inpStyle()} />
                           </div>
-                          <div style={{ height: 8, borderRadius: 4, background: "#111", overflow: "hidden" }}><div style={{ width: `${(val / max) * 100}%`, height: "100%", background: n.cor || "#f39c12" }} /></div>
+                          <div style={{ height: 8, borderRadius: 4, background: "#111", overflow: "hidden" }}><div style={{ width: `${(val / max) * 100}%`, height: "100%", background: cor }} /></div>
+                          <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10, color: G.muted }}>zero output: {Number(out.zero || 0)}</div>
                         </>
                       );
                     })()}
 
-                    {isGeneric && (() => {
-                      const incoming = incomingFor(n.id, "value");
-                      return (
-                        <>
-                          {n.nodeType === "value" && <input type="number" disabled={!!incoming || !!n.sourcePath} value={Number(n.value || 0)} onChange={(e) => updateGenericById(n.id, { value: Number(e.target.value) || 0 })} style={inpStyle()} />}
-                          <div style={{ fontFamily: "monospace", color: "#7fb3ff", fontSize: 10, marginTop: 4 }}>out: {String(nodeOutput(n).value ?? nodeOutput(n).color ?? 0)}</div>
-                        </>
-                      );
-                    })()}
+                    {n.kind === "generic" && (
+                      <>
+                        {n.nodeType === "value" && <input type="number" disabled={!!incomingValue || !!n.sourcePath} value={Number(n.value || 0)} onChange={(e) => updateGenericById(n.id, { value: Number(e.target.value) || 0 })} style={inpStyle()} />}
+                        {n.nodeType === "comment" && <div style={{ padding: 6, borderRadius: 6, background: Number(out.value || 0) > 0 ? "#f1c40f22" : "#111", boxShadow: Number(out.value || 0) > 0 ? "0 0 12px #f1c40f99" : "none", color: G.text, minHeight: 34 }}>{n.text || "Comentário"}</div>}
+                        <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10, color: G.muted }}>out: {String(out.value ?? out.cor ?? 0)}</div>
+                      </>
+                    )}
                   </div>
                 );
               })}
@@ -418,7 +352,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
 
       {statusEditorOpen && <Modal title={editing.id ? "Configurar Barra de Status" : "Nova Barra de Status"} onClose={() => setStatusEditorOpen(false)}><div style={{ display: "grid", gap: 8 }}><input value={statusEditorData.nome || ""} onChange={(e) => setStatusEditorData((p) => ({ ...p, nome: e.target.value }))} placeholder="Nome" style={inpStyle()} /><input value={statusEditorData.sigla || ""} onChange={(e) => setStatusEditorData((p) => ({ ...p, sigla: e.target.value.toUpperCase() }))} placeholder="Sigla" style={inpStyle()} /><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}><input type="number" value={Number(statusEditorData.base || 0)} onChange={(e) => setStatusEditorData((p) => ({ ...p, base: Number(e.target.value) || 0 }))} style={inpStyle()} /><input type="number" value={Number(statusEditorData.max || 1)} onChange={(e) => setStatusEditorData((p) => ({ ...p, max: Math.max(1, Number(e.target.value) || 1) }))} style={inpStyle()} /><input type="number" value={Number(statusEditorData.val || 0)} onChange={(e) => setStatusEditorData((p) => ({ ...p, val: Math.max(0, Number(e.target.value) || 0) }))} style={inpStyle()} /></div><div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><button onClick={() => setStatusEditorOpen(false)} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button><button onClick={saveStatusEditor} style={btnStyle()}>Salvar</button></div></div></Modal>}
 
-      {genericEditorOpen && <Modal title={editing.id ? "Configurar Node Genérico" : "Novo Node Genérico"} onClose={() => setGenericEditorOpen(false)}><div style={{ display: "grid", gap: 8 }}><input value={genericEditorData.label || ""} onChange={(e) => setGenericEditorData((p) => ({ ...p, label: e.target.value }))} placeholder="Rótulo" style={inpStyle()} />{genericEditorData.nodeType === "value" && <><input type="number" value={Number(genericEditorData.value || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, value: Number(e.target.value) || 0 }))} style={inpStyle()} /><select value={genericEditorData.sourcePath || ""} onChange={(e) => setGenericEditorData((p) => ({ ...p, sourcePath: e.target.value }))} style={inpStyle()}><option value="">Puxar valor: nenhum</option>{fichaValueOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></>}{genericEditorData.nodeType === "math" && <><select value={genericEditorData.op || "+"} onChange={(e) => setGenericEditorData((p) => ({ ...p, op: e.target.value }))} style={inpStyle()}><option>+</option><option>-</option><option>*</option><option>/</option></select></>}{genericEditorData.nodeType === "conditional" && <><select value={genericEditorData.cmp || ">"} onChange={(e) => setGenericEditorData((p) => ({ ...p, cmp: e.target.value }))} style={inpStyle()}><option value=">">{">"}</option><option value="<">{"<"}</option><option value="=">{"="}</option></select><input type="number" value={Number(genericEditorData.trueValue || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, trueValue: Number(e.target.value) || 0 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.falseValue || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, falseValue: Number(e.target.value) || 0 }))} style={inpStyle()} /></>}{genericEditorData.nodeType === "color" && <input type="color" value={genericEditorData.color || "#95a5a6"} onChange={(e) => setGenericEditorData((p) => ({ ...p, color: e.target.value }))} style={{ ...inpStyle(), height: 38 }} />}<div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><button onClick={() => setGenericEditorOpen(false)} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button><button onClick={saveGenericEditor} style={btnStyle()}>Salvar</button></div></div></Modal>}
+      {genericEditorOpen && <Modal title={editing.id ? "Configurar Node Genérico" : "Novo Node Genérico"} onClose={() => setGenericEditorOpen(false)}><div style={{ display: "grid", gap: 8 }}><input value={genericEditorData.label || ""} onChange={(e) => setGenericEditorData((p) => ({ ...p, label: e.target.value }))} placeholder="Rótulo" style={inpStyle()} />{genericEditorData.nodeType === "value" && <><input type="number" value={Number(genericEditorData.value || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, value: Number(e.target.value) || 0 }))} style={inpStyle()} /><select value={genericEditorData.sourcePath || ""} onChange={(e) => setGenericEditorData((p) => ({ ...p, sourcePath: e.target.value }))} style={inpStyle()}><option value="">Puxar valor: nenhum</option>{fichaValueOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></>}{genericEditorData.nodeType === "math" && <select value={genericEditorData.op || "+"} onChange={(e) => setGenericEditorData((p) => ({ ...p, op: e.target.value }))} style={inpStyle()}><option>+</option><option>-</option><option>*</option><option>/</option></select>}{genericEditorData.nodeType === "conditional" && <><select value={genericEditorData.cmp || ">"} onChange={(e) => setGenericEditorData((p) => ({ ...p, cmp: e.target.value }))} style={inpStyle()}><option value=">">{">"}</option><option value="<">{"<"}</option><option value="=">{"="}</option></select><input type="number" value={Number(genericEditorData.trueValue || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, trueValue: Number(e.target.value) || 0 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.falseValue || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, falseValue: Number(e.target.value) || 0 }))} style={inpStyle()} /></>}{genericEditorData.nodeType === "color" && <input type="color" value={genericEditorData.color || "#95a5a6"} onChange={(e) => setGenericEditorData((p) => ({ ...p, color: e.target.value }))} style={{ ...inpStyle(), height: 38 }} />}{genericEditorData.nodeType === "comment" && <textarea value={genericEditorData.text || ""} onChange={(e) => setGenericEditorData((p) => ({ ...p, text: e.target.value }))} rows={3} style={inpStyle()} />}<div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><button onClick={() => setGenericEditorOpen(false)} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button><button onClick={saveGenericEditor} style={btnStyle()}>Salvar</button></div></div></Modal>}
     </div>
   );
 }
