@@ -22,7 +22,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
   const [statusEditorData, setStatusEditorData] = useState(defaultStatusForm());
   const [genericEditorData, setGenericEditorData] = useState(defaultGenericForm());
   const [editing, setEditing] = useState({ kind: null, id: null });
-  const [linkStart, setLinkStart] = useState(null);
+  const [linkDrag, setLinkDrag] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hoverSlot, setHoverSlot] = useState({});
 
@@ -84,19 +84,41 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
     return "#7dd3fc";
   };
 
-  const beginLink = (from) => setLinkStart(from);
-  const endLink = (to) => {
-    if (!linkStart) return;
-    const fromNode = allNodes.find((n) => n.id === linkStart.id);
+  const clientToWorld = (clientX, clientY) => {
+    if (!canvasWrapRef.current) return { x: 0, y: 0 };
+    const r = canvasWrapRef.current.getBoundingClientRect();
+    return { x: (clientX - r.left - viewport.x) / viewport.zoom, y: (clientY - r.top - viewport.y) / viewport.zoom };
+  };
+
+  const beginLinkDrag = (from, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const mouse = clientToWorld(e.clientX, e.clientY);
+    setLinkDrag({ from, mouse });
+  };
+
+  const completeLinkDrop = (to) => {
+    if (!linkDrag) return;
+    const fromNode = allNodes.find((n) => n.id === linkDrag.from.id);
     const toNode = allNodes.find((n) => n.id === to.id);
-    if (!fromNode || !toNode || !canLink(fromNode, linkStart.port, toNode, to.port)) {
+    if (!fromNode || !toNode || !canLink(fromNode, linkDrag.from.port, toNode, to.port)) {
       onNotify?.("Erro: esse node não pode ser ligado a um node desse tipo.", "error");
-      setLinkStart(null);
+      setLinkDrag(null);
       return;
     }
     const filtered = links.filter((l) => !(l.to.id === to.id && l.to.port === to.port));
-    saveCombate({ nodeLinks: [...filtered, { id: uid(), from: linkStart, to }] });
-    setLinkStart(null);
+    saveCombate({ nodeLinks: [...filtered, { id: uid(), from: linkDrag.from, to }] });
+    setLinkDrag(null);
+  };
+
+  const startUnlinkDrag = (to, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const existing = links.find((l) => l.to.id === to.id && l.to.port === to.port);
+    if (!existing) return;
+    saveCombate({ nodeLinks: links.filter((l) => l.id !== existing.id) });
+    const mouse = clientToWorld(e.clientX, e.clientY);
+    setLinkDrag({ from: existing.from, mouse });
   };
 
   const onWheelCanvas = (e) => {
@@ -122,6 +144,9 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
 
   useEffect(() => {
     const onMove = (e) => {
+      if (linkDrag) {
+        setLinkDrag((p) => (p ? { ...p, mouse: clientToWorld(e.clientX, e.clientY) } : p));
+      }
       const d = dragRef.current;
       if (!d) return;
       if (d.kind === "pan") {
@@ -137,17 +162,20 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
       else if (node.kind === "status") updateStatusById(node.id, patch);
       else updateGenericById(node.id, patch);
     };
-    const onUp = () => { dragRef.current = null; };
+    const onUp = () => {
+      dragRef.current = null;
+      setLinkDrag(null);
+    };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [viewport.zoom, allNodes]);
+  }, [viewport.zoom, allNodes, linkDrag]);
 
   useEffect(() => {
-    const onFs = () => setIsFullscreen(document.fullscreenElement === canvasWrapRef.current);
+    const onFs = () => setIsFullscreen(document.fullscreenElement === fullscreenRootRef.current);
     document.addEventListener("fullscreenchange", onFs);
     return () => document.removeEventListener("fullscreenchange", onFs);
   }, []);
@@ -196,12 +224,14 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
   };
 
   const toggleFullscreen = async () => {
-    if (!canvasWrapRef.current) return;
-    if (document.fullscreenElement === canvasWrapRef.current) await document.exitFullscreen();
-    else await canvasWrapRef.current.requestFullscreen();
+    if (!fullscreenRootRef.current) return;
+    if (document.fullscreenElement === fullscreenRootRef.current) await document.exitFullscreen();
+    else await fullscreenRootRef.current.requestFullscreen();
   };
 
   return (
+    <>
+      <style>{`@keyframes canvasGlow {0%{background-position:0% 40%}50%{background-position:100% 60%}100%{background-position:0% 40%}} @keyframes nodePop {0%{transform:translateY(0)}50%{transform:translateY(-1px)}100%{transform:translateY(0)}}`}</style>
     <div ref={fullscreenRootRef} style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 12, padding: 12, position: "relative", minHeight: undefined }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <span style={{ fontFamily: "'Cinzel',serif", color: G.gold, letterSpacing: 2 }}>◈ COMBATE</span>
@@ -234,7 +264,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
             onMouseDown={onCanvasMouseDown}
             onMouseEnter={onCanvasEnter}
             onMouseLeave={onCanvasLeave}
-            style={{ border: "1px solid #2a2a2a", borderRadius: 12, background: "radial-gradient(circle at 20% 20%, #14203a 0, #0b101d 45%, #07090f 100%)", height: isFullscreen ? "100vh" : 340, overflow: "hidden", position: "relative", cursor: "grab" }}
+            style={{ border: "1px solid #2a2a2a", borderRadius: 12, background: "radial-gradient(circle at 20% 20%, #14203a 0, #0b101d 45%, #07090f 100%)", backgroundSize: "120% 120%", animation: "canvasGlow 9s ease-in-out infinite", height: isFullscreen ? "100vh" : 340, overflow: "hidden", position: "relative", cursor: "grab", transition: "all .2s ease" }}
           >
             {isFullscreen && <div style={{ position: "absolute", top: 10, right: 10, zIndex: 30, display: "flex", gap: 6, alignItems: "center", background: "#05070bcc", border: "1px solid #335", borderRadius: 10, padding: "6px 8px" }}>
               <HoverButton onClick={() => setNodePickerOpen(true)} style={btnStyle({ padding: "5px 8px" })}>+ Nó</HoverButton>
@@ -273,6 +303,21 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                     </g>
                   );
                 })}
+                {linkDrag && (() => {
+                  const from = allNodes.find((n) => n.id === linkDrag.from.id);
+                  if (!from) return null;
+                  const fromPorts = getOutputPorts(from);
+                  const fromIndex = Math.max(0, fromPorts.indexOf(linkDrag.from.port));
+                  const x1 = (from.x || 0) + 222;
+                  const y1 = (from.y || 0) + getPortY(fromIndex);
+                  const x2 = linkDrag.mouse.x;
+                  const y2 = linkDrag.mouse.y;
+                  const c1 = x1 + 28;
+                  const c2 = x2 - 28;
+                  const d = `M ${x1} ${y1} C ${c1} ${y1}, ${c2} ${y2}, ${x2} ${y2}`;
+                  const stroke = getLinkColor(linkDrag.from.port, from);
+                  return <g><path d={d} stroke="#000" fill="none" strokeWidth="6" strokeLinecap="round" strokeDasharray="6 4" /><path d={d} stroke={stroke} fill="none" strokeWidth="3" strokeLinecap="round" strokeDasharray="6 4" /></g>;
+                })()}
               </svg>
               <div style={{ position: "absolute", left: 1000, top: 0, width: 1, height: 1400, background: "#ffffff14" }} />
               <div style={{ position: "absolute", left: 0, top: 700, width: 2000, height: 1, background: "#ffffff14" }} />
@@ -284,25 +329,23 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                 const incomingValue = links.find((l) => l.to.id === n.id && l.to.port === "value");
                 const hasInputLink = (port) => links.some((l) => l.to.id === n.id && l.to.port === port);
                 return (
-                  <div key={n.id} onMouseDown={(e) => onNodeMouseDown(n, e)} style={{ position: "absolute", left: n.x || 0, top: n.y || 0, width: 220, border: `1px solid ${cor}77`, borderRadius: 12, background: "#000000bb", padding: 8, boxShadow: "0 0 18px #000", userSelect: "none" }}>
+                  <div key={n.id} onMouseDown={(e) => onNodeMouseDown(n, e)} style={{ position: "absolute", left: n.x || 0, top: n.y || 0, width: 220, border: `1px solid ${cor}77`, borderRadius: 12, background: "#000000bb", padding: 8, boxShadow: "0 0 18px #000", userSelect: "none", animation: "nodePop 4s ease-in-out infinite", transition: "box-shadow .2s ease, border-color .2s ease" }}>
                     <div style={{ position: "absolute", left: -36, top: 14, display: "grid", gap: 4 }}>
                       {inputPorts.map((p, i) => {
                         const linked = links.some((l) => l.to.id === n.id && l.to.port === p);
                         return (
-                          <div key={p} style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 5, height: 16 }}>
-                            <small style={{ fontSize: 9, color: linked ? "#a3d9ff" : "#6e88a8", fontFamily: "monospace" }}>{getPortLabel(p)}</small>
-                            <button onClick={() => endLink({ id: n.id, port: p })} style={{ width: 12, height: 12, borderRadius: "50%", border: "1px solid #9ad", background: linked ? "radial-gradient(circle at 30% 30%, #fff, #2f9eff)" : "radial-gradient(circle at 30% 30%, #dff, #245)", cursor: "pointer" }} title={`Input ${p}`} />
+                          <div key={p} style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", height: 18 }}>
+                            <button onMouseDown={(e) => startUnlinkDrag({ id: n.id, port: p }, e)} onMouseUp={(e) => { e.stopPropagation(); completeLinkDrop({ id: n.id, port: p }); }} style={{ width: 14, height: 14, borderRadius: "50%", border: `1px solid ${cor}aa`, background: linked ? `radial-gradient(circle at 35% 35%, #fff, ${cor})` : "radial-gradient(circle at 35% 35%, #242b38, #10131a)", boxShadow: linked ? `0 0 6px ${cor}` : "inset 0 0 0 1px #000", cursor: "crosshair", transition: "all .15s ease" }} title={`Input: ${getPortLabel(p)}`} />
                           </div>
                         );
                       })}
                     </div>
                     <div style={{ position: "absolute", right: -36, top: 14, display: "grid", gap: 4 }}>
                       {outputPorts.map((p) => {
-                        const active = linkStart?.id === n.id && linkStart?.port === p;
+                        const active = linkDrag?.from?.id === n.id && linkDrag?.from?.port === p;
                         return (
-                          <div key={p} style={{ display: "flex", alignItems: "center", gap: 5, height: 16 }}>
-                            <button onClick={() => beginLink({ id: n.id, port: p })} style={{ width: 12, height: 12, borderRadius: "50%", border: "1px solid #f9c", background: active ? "radial-gradient(circle at 30% 30%, #fff, #a0f)" : "radial-gradient(circle at 30% 30%, #ffe, #524)", cursor: "pointer" }} title={`Output ${p}`} />
-                            <small style={{ fontSize: 9, color: active ? "#ffd6ff" : "#a58aa8", fontFamily: "monospace" }}>{getPortLabel(p)}</small>
+                          <div key={p} style={{ display: "flex", alignItems: "center", height: 18 }}>
+                            <button onMouseDown={(e) => beginLinkDrag({ id: n.id, port: p }, e)} style={{ width: 14, height: 14, borderRadius: "50%", border: `1px solid ${cor}aa`, background: active ? `radial-gradient(circle at 35% 35%, #fff, ${cor})` : "radial-gradient(circle at 35% 35%, #f0f3ff, #1b2030)", boxShadow: active ? `0 0 8px ${cor}` : "inset 0 0 0 1px #000", cursor: "grab", transition: "all .15s ease" }} title={`Output: ${getPortLabel(p)}`} />
                           </div>
                         );
                       })}
@@ -430,5 +473,6 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
 
       {genericEditorOpen && <Modal title={editing.id ? "Configurar Node Genérico" : "Novo Node Genérico"} onClose={() => setGenericEditorOpen(false)}><div style={{ display: "grid", gap: 8 }}><input value={genericEditorData.label || ""} onChange={(e) => setGenericEditorData((p) => ({ ...p, label: e.target.value }))} placeholder="Rótulo" style={inpStyle()} />{genericEditorData.nodeType === "value" && <><input type="number" value={Number(genericEditorData.value || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, value: Number(e.target.value) || 0 }))} style={inpStyle()} /><select value={genericEditorData.sourcePath || ""} onChange={(e) => setGenericEditorData((p) => ({ ...p, sourcePath: e.target.value }))} style={inpStyle()}><option value="">Puxar valor: nenhum</option>{fichaValueOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></>}{genericEditorData.nodeType === "math" && <select value={genericEditorData.op || "+"} onChange={(e) => setGenericEditorData((p) => ({ ...p, op: e.target.value }))} style={inpStyle()}><option>+</option><option>-</option><option>*</option><option>/</option></select>}{genericEditorData.nodeType === "conditional" && <><select value={genericEditorData.cmp || ">"} onChange={(e) => setGenericEditorData((p) => ({ ...p, cmp: e.target.value }))} style={inpStyle()}><option value=">">{">"}</option><option value="<">{"<"}</option><option value="=">{"="}</option></select><input type="number" value={Number(genericEditorData.trueValue || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, trueValue: Number(e.target.value) || 0 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.falseValue || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, falseValue: Number(e.target.value) || 0 }))} style={inpStyle()} /></>}{genericEditorData.nodeType === "color" && <input type="color" value={genericEditorData.color || "#95a5a6"} onChange={(e) => setGenericEditorData((p) => ({ ...p, color: e.target.value }))} style={{ ...inpStyle(), height: 38 }} />}{genericEditorData.nodeType === "comment" && <textarea value={genericEditorData.text || ""} onChange={(e) => setGenericEditorData((p) => ({ ...p, text: e.target.value }))} rows={3} style={inpStyle()} />}{genericEditorData.nodeType === "dice" && <><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><input type="number" value={Number(genericEditorData.qty || 1)} onChange={(e) => setGenericEditorData((p) => ({ ...p, qty: Math.max(1, Number(e.target.value) || 1) }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.faces || 20)} onChange={(e) => setGenericEditorData((p) => ({ ...p, faces: Math.max(2, Number(e.target.value) || 2) }))} style={inpStyle()} /></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><input type="number" value={Number(genericEditorData.critMin || 20)} onChange={(e) => setGenericEditorData((p) => ({ ...p, critMin: Number(e.target.value) || 1 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.critMax || 20)} onChange={(e) => setGenericEditorData((p) => ({ ...p, critMax: Number(e.target.value) || 1 }))} style={inpStyle()} /></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}><input type="number" value={Number(genericEditorData.bonus || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, bonus: Number(e.target.value) || 0 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.critValue || 1)} onChange={(e) => setGenericEditorData((p) => ({ ...p, critValue: Number(e.target.value) || 0 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.failValue || -1)} onChange={(e) => setGenericEditorData((p) => ({ ...p, failValue: Number(e.target.value) || 0 }))} style={inpStyle()} /></div></>}<div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><button onClick={() => setGenericEditorOpen(false)} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button><button onClick={saveGenericEditor} style={btnStyle()}>Salvar</button></div></div></Modal>}
     </div>
+    </>
   );
 }
