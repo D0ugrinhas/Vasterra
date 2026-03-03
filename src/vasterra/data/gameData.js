@@ -20,12 +20,12 @@ export const ATRIBUTOS = [
 export const PERICIAS_GRUPOS = [
   { g:"Combate",   cor:"#e74c3c", list:["Lâminas Pesadas","Lâminas Grandes","Lâminas Médias","Lâminas Pequenas","Contundentes Pesados","Contundentes Grandes","Contundentes Médios","Contundentes Pequenos","Punhos","Chutes","Arte Marcial","Pontaria"] },
   { g:"Físico",    cor:"#e67e22", list:["Agilidade","Acrobacia","Atletismo","Fortitude"] },
-  { g:"Social",    cor:"#f39c12", list:["Enganação","Diplomacia","Intimidação","Social","Carisma Pessoal"] },
+  { g:"Social",    cor:"#f39c12", list:["Enganação","Diplomacia","Intimidação","Social","Sedução"] },
   { g:"Mental",    cor:"#9b59b6", list:["Conhecimento","Cognitiva","Misticismo","Religiões","Nobreza","Atualidades","Vontade","Mentalidade","Estratégia"] },
-  { g:"Percepção", cor:"#3498db", list:["Percepção","Intuição","Iniciativa"] },
+  { g:"Reativas", cor:"#3498db", list:["Percepção","Intuição","Reflexos"] },
   { g:"Furtivo",   cor:"#2ecc71", list:["Furtividade","Ladinagem"] },
-  { g:"Sobrev.",   cor:"#27ae60", list:["Sobrevivência","Primeiros-Socorros","Adestramento","Cavalgar","Pilotagem"] },
-  { g:"Especial",  cor:"#c8a96e", list:["Artística","Poder","Profissão 1","Profissão 2"] },
+  { g:"Sobrev.",   cor:"#27ae60", list:["Sobrevivência","Primeiros-Socorros","Adestramento","Cavalgar","Pilotagem","Construção", "Fabricação"] },
+  { g:"Especial",  cor:"#c8a96e", list:["Artística","Poder","Aura", "Profissão 1","Profissão 2", "Iniciativa"] },
 ];
 
 export const ESSENCIAS_VIRTUDES = [
@@ -72,7 +72,8 @@ export const MOD_ORIGENS = ["Efeito", "Maldição", "Item", "Outro"];
 export const RACAS_COMBINACOES = {
   "Anão+Elfo": "Dwalf",
   "Elfo+Anão": "Alfar",
-  "Thiliano+Adroxxiano+Elfo+Humano": "Glastiniano",
+    "Thiliano+Adroxxiano+Elfo+Humano": "Glastiniano",
+  "Druida+Anjo": "Deva",
 };
 
 export const normalizarCombinacaoRacas = (racas = []) => racas.filter(Boolean).join("+");
