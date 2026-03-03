@@ -75,7 +75,6 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
     if (additions.length) saveEffects([...(charEffects || []), ...additions]);
   };
 
-  const getNodePos = (node) => ({ x: (node.x || 0) * viewport.zoom + viewport.x, y: (node.y || 0) * viewport.zoom + viewport.y });
   const getPortY = (index) => 22 + index * 20;
   const getPortLabel = (port) => ({ atual: "atual", max: "máx", base: "base", val: "valor", value: "valor", cor: "cor", zero: "zero", a: "A", b: "B", trueValue: "true", falseValue: "false", qty: "qtd", faces: "dado", bonus: "bônus", critMin: "crit min", critMax: "crit max", critValue: "valor crit", failValue: "valor falha", crit: "crítico" }[port] || port);
   const getLinkColor = (port, fromNode) => {
@@ -147,6 +146,12 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
     };
   }, [viewport.zoom, allNodes]);
 
+  useEffect(() => {
+    const onFs = () => setIsFullscreen(document.fullscreenElement === canvasWrapRef.current);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
+
   const onCanvasEnter = () => { document.body.style.overflow = "hidden"; };
   const onCanvasLeave = () => { document.body.style.overflow = ""; dragRef.current = null; };
 
@@ -191,13 +196,13 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
   };
 
   const toggleFullscreen = async () => {
-    if (!fullscreenRootRef.current) return;
-    if (!document.fullscreenElement) await fullscreenRootRef.current.requestFullscreen();
-    else await document.exitFullscreen();
+    if (!canvasWrapRef.current) return;
+    if (document.fullscreenElement === canvasWrapRef.current) await document.exitFullscreen();
+    else await canvasWrapRef.current.requestFullscreen();
   };
 
   return (
-    <div ref={fullscreenRootRef} style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 12, padding: 12, position: "relative", minHeight: isFullscreen ? "100vh" : undefined }}>
+    <div ref={fullscreenRootRef} style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 12, padding: 12, position: "relative", minHeight: undefined }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <span style={{ fontFamily: "'Cinzel',serif", color: G.gold, letterSpacing: 2 }}>◈ COMBATE</span>
         {!isFullscreen && <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -229,7 +234,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
             onMouseDown={onCanvasMouseDown}
             onMouseEnter={onCanvasEnter}
             onMouseLeave={onCanvasLeave}
-            style={{ border: "1px solid #2a2a2a", borderRadius: 12, background: "radial-gradient(circle at 20% 20%, #101726 0, #09090a 50%, #060606 100%)", height: isFullscreen ? "100vh" : 340, overflow: "hidden", position: "relative", cursor: "grab" }}
+            style={{ border: "1px solid #2a2a2a", borderRadius: 12, background: "radial-gradient(circle at 20% 20%, #14203a 0, #0b101d 45%, #07090f 100%)", height: isFullscreen ? "100vh" : 340, overflow: "hidden", position: "relative", cursor: "grab" }}
           >
             {isFullscreen && <div style={{ position: "absolute", top: 10, right: 10, zIndex: 30, display: "flex", gap: 6, alignItems: "center", background: "#05070bcc", border: "1px solid #335", borderRadius: 10, padding: "6px 8px" }}>
               <HoverButton onClick={() => setNodePickerOpen(true)} style={btnStyle({ padding: "5px 8px" })}>+ Nó</HoverButton>
@@ -241,37 +246,34 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
               <HoverButton onClick={toggleFullscreen} style={btnStyle({ borderColor: "#3498db55", color: "#8fc8ff", padding: "5px 8px" })}>🡼</HoverButton>
             </div>}
 
-            <svg style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
-              {links.map((l) => {
-                const from = allNodes.find((n) => n.id === l.from.id);
-                const to = allNodes.find((n) => n.id === l.to.id);
-                if (!from || !to) return null;
-                const fp = getNodePos(from);
-                const tp = getNodePos(to);
-                const fromPorts = getOutputPorts(from);
-                const toPorts = getInputPorts(to);
-                const fromIndex = Math.max(0, fromPorts.indexOf(l.from.port));
-                const toIndex = Math.max(0, toPorts.indexOf(l.to.port));
-                const y1 = fp.y + getPortY(fromIndex);
-                const y2 = tp.y + getPortY(toIndex);
-                const x1 = fp.x + 220;
-                const x2 = tp.x;
-                const c1 = x1 + Math.max(48, Math.abs(x2 - x1) * 0.45);
-                const c2 = x2 - Math.max(48, Math.abs(x2 - x1) * 0.45);
-                const pathD = `M ${x1} ${y1} C ${c1} ${y1}, ${c2} ${y2}, ${x2} ${y2}`;
-                const stroke = getLinkColor(l.from.port, from);
-                return (
-                  <g key={l.id}>
-                    <line x1={x1 - 8} y1={y1} x2={x1} y2={y1} stroke="#000" strokeWidth="4" />
-                    <line x1={x2} y1={y2} x2={x2 + 8} y2={y2} stroke="#000" strokeWidth="4" />
-                    <path d={pathD} stroke="#000" fill="none" strokeWidth="6" strokeLinecap="round" />
-                    <path d={pathD} stroke={stroke} fill="none" strokeWidth="3" strokeLinecap="round" />
-                  </g>
-                );
-              })}
-            </svg>
-
             <div style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`, transformOrigin: "top left", width: 2000, height: 1400, position: "relative" }}>
+              <svg style={{ position: "absolute", inset: 0, width: 2000, height: 1400, pointerEvents: "none", overflow: "visible" }}>
+                {links.map((l) => {
+                  const from = allNodes.find((n) => n.id === l.from.id);
+                  const to = allNodes.find((n) => n.id === l.to.id);
+                  if (!from || !to) return null;
+                  const fromPorts = getOutputPorts(from);
+                  const toPorts = getInputPorts(to);
+                  const fromIndex = Math.max(0, fromPorts.indexOf(l.from.port));
+                  const toIndex = Math.max(0, toPorts.indexOf(l.to.port));
+                  const y1 = (from.y || 0) + getPortY(fromIndex);
+                  const y2 = (to.y || 0) + getPortY(toIndex);
+                  const x1 = (from.x || 0) + 222;
+                  const x2 = (to.x || 0) - 2;
+                  const c1 = x1 + Math.max(24, Math.abs(x2 - x1) * 0.32);
+                  const c2 = x2 - Math.max(24, Math.abs(x2 - x1) * 0.32);
+                  const pathD = `M ${x1} ${y1} C ${c1} ${y1}, ${c2} ${y2}, ${x2} ${y2}`;
+                  const stroke = getLinkColor(l.from.port, from);
+                  return (
+                    <g key={l.id}>
+                      <line x1={x1 - 5} y1={y1} x2={x1 + 1} y2={y1} stroke="#000" strokeWidth="4" />
+                      <line x1={x2 - 1} y1={y2} x2={x2 + 5} y2={y2} stroke="#000" strokeWidth="4" />
+                      <path d={pathD} stroke="#000" fill="none" strokeWidth="6" strokeLinecap="round" />
+                      <path d={pathD} stroke={stroke} fill="none" strokeWidth="3" strokeLinecap="round" />
+                    </g>
+                  );
+                })}
+              </svg>
               <div style={{ position: "absolute", left: 1000, top: 0, width: 1, height: 1400, background: "#ffffff14" }} />
               <div style={{ position: "absolute", left: 0, top: 700, width: 2000, height: 1, background: "#ffffff14" }} />
               {allNodes.map((n) => {
@@ -283,7 +285,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                 const hasInputLink = (port) => links.some((l) => l.to.id === n.id && l.to.port === port);
                 return (
                   <div key={n.id} onMouseDown={(e) => onNodeMouseDown(n, e)} style={{ position: "absolute", left: n.x || 0, top: n.y || 0, width: 220, border: `1px solid ${cor}77`, borderRadius: 12, background: "#000000bb", padding: 8, boxShadow: "0 0 18px #000", userSelect: "none" }}>
-                    <div style={{ position: "absolute", left: -64, top: 14, display: "grid", gap: 4 }}>
+                    <div style={{ position: "absolute", left: -36, top: 14, display: "grid", gap: 4 }}>
                       {inputPorts.map((p, i) => {
                         const linked = links.some((l) => l.to.id === n.id && l.to.port === p);
                         return (
@@ -294,7 +296,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                         );
                       })}
                     </div>
-                    <div style={{ position: "absolute", right: -64, top: 14, display: "grid", gap: 4 }}>
+                    <div style={{ position: "absolute", right: -36, top: 14, display: "grid", gap: 4 }}>
                       {outputPorts.map((p) => {
                         const active = linkStart?.id === n.id && linkStart?.port === p;
                         return (
