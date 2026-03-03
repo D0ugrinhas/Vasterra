@@ -9,7 +9,6 @@ import { EffectForgeEditor, makeDefaultEffect } from "../caldeirao/EffectForgeEd
 const blankEffect = () => ({ id: uid(), nome: "", descricao: "", valor: "", ativo: true });
 
 const WEAPON_TYPES = ["Espada Longa", "Espada Pesada", "Arco", "Cajado", "Glaive", "Polearm", "Machado", "Adaga", "Lança", "Martelo", "Outros"];
-const BODY_REGIONS = ["Cabeça", "Torso", "Braço Direito", "Braço Esquerdo", "Mão Direita", "Mão Esquerda", "Pernas", "Pés", "Costas", "Outro"];
 
 function VastosInput({ value = {}, onChange }) {
   const set = (k, v) => onChange({ ...(value || {}), [k]: Math.max(0, Number(v) || 0) });
@@ -92,7 +91,7 @@ function ItemEffectsEditor({ list = [], onChange, onEditSource, onEditLocal }) {
 
 const allEssencias = [...ESSENCIAS_VIRTUDES, ...ESSENCIAS_PECADOS];
 
-export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreateEffect, onEditEffect }) {
+export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreateEffect, onEditEffect, bodyRegionOptions = [] }) {
   const [d, setD] = useState(() => {
     const base = item ? { ...item } : novoItem();
     return {
@@ -104,8 +103,9 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
       iconeModo: base.iconeModo || "emoji",
       subtipo: base.subtipo || "",
       comentario: base.comentario || "",
-      regiaoEfeito: base.regiaoEfeito || "",
-      regiaoEfeitoOutro: base.regiaoEfeitoOutro || "",
+      regioesDefesa: Array.isArray(base.regioesDefesa)
+        ? base.regioesDefesa
+        : [base.regiaoEfeito, base.regiaoEfeitoOutro].filter(Boolean),
       empilhavel: base.empilhavel ?? true,
       quantidadeMax: Number(base.quantidadeMax || 1),
       gastoPorUso: Number(base.gastoPorUso || 1),
@@ -120,6 +120,25 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
   const [effectEditorOpen, setEffectEditorOpen] = useState(false);
   const [effectEditorData, setEffectEditorData] = useState(null);
   const selectedEffect = (effectsLibrary || []).find((x) => x.id === selectedEffectId) || null;
+
+  const defenseRegionOptions = useMemo(() => {
+    const base = Array.isArray(bodyRegionOptions) ? bodyRegionOptions : [];
+    const unique = [];
+    const seen = new Set();
+    base.forEach((x) => {
+      const v = String(x || "").trim();
+      if (!v || seen.has(v)) return;
+      seen.add(v);
+      unique.push(v);
+    });
+    return unique;
+  }, [bodyRegionOptions]);
+
+  const toggleDefenseRegion = (region) => {
+    const current = Array.isArray(d.regioesDefesa) ? d.regioesDefesa : [];
+    if (current.includes(region)) up("regioesDefesa", current.filter((x) => x !== region));
+    else up("regioesDefesa", [...current, region]);
+  };
 
   const up = (k, v) => setD((p) => ({ ...p, [k]: v }));
   const isArma = d.tipo === "Arma";
@@ -192,12 +211,24 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
           {isArma && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><div><label style={{ display: "block", color: G.muted, fontSize: 10, marginBottom: 3 }}>Alcance — distância efetiva</label><input value={d.alcance || ""} onChange={(e) => up("alcance", e.target.value)} placeholder="Ex: corpo a corpo / 12m" style={inpStyle()} /></div><div><label style={{ display: "block", color: G.muted, fontSize: 10, marginBottom: 3 }}>Tamanho — dimensão física da arma</label><input value={d.tamanho || ""} onChange={(e) => up("tamanho", e.target.value)} placeholder="Ex: 1.2m" style={inpStyle()} /></div></div>}
 
           {isArmaduraLike && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <select value={d.regiaoEfeito || ""} onChange={(e) => up("regiaoEfeito", e.target.value)} style={inpStyle()}>
-                <option value="">Região do efeito</option>
-                {BODY_REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
-              </select>
-              {(d.regiaoEfeito === "Outro") && <input value={d.regiaoEfeitoOutro || ""} onChange={(e) => up("regiaoEfeitoOutro", e.target.value)} placeholder="Outra região" style={inpStyle()} />}
+            <div style={{ border: "1px solid #243248", borderRadius: 8, padding: 8, display: "grid", gap: 6 }}>
+              <div style={{ color: G.muted, fontSize: 11 }}>Região de Defesa (múltiplas partes do Corpo)</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", maxHeight: 120, overflowY: "auto", paddingRight: 4 }}>
+                {defenseRegionOptions.length === 0 && <span style={{ color: G.muted, fontSize: 11 }}>Sem partes/subpartes disponíveis nesta ficha.</span>}
+                {defenseRegionOptions.map((r) => {
+                  const on = (d.regioesDefesa || []).includes(r);
+                  return (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => toggleDefenseRegion(r)}
+                      style={btnStyle({ padding: "3px 8px", borderRadius: 999, borderColor: on ? "#49c1ff66" : "#2b3f56", color: on ? "#9ed8ff" : G.muted, background: on ? "#49c1ff22" : "transparent" })}
+                    >
+                      {on ? "☑" : "☐"} {r}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -268,7 +299,7 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
         <button style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })} onClick={safeClose}>Cancelar</button>
-        <button style={btnStyle()} onClick={() => onSave(d)}>Salvar Item</button>
+        <button style={btnStyle()} onClick={() => onSave({ ...d, regiaoEfeito: (d.regioesDefesa || [])[0] || "", regiaoEfeitoOutro: "", regioesDefesa: d.regioesDefesa || [] })}>Salvar Item</button>
       </div>
       {previewOpen && <EffectDetailsModal effect={selectedEffect} onClose={() => setPreviewOpen(false)} />}
       {effectEditorOpen && <EffectForgeEditor effect={effectEditorData} onSave={(ef) => {

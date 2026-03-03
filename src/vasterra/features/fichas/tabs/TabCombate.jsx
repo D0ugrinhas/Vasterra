@@ -29,6 +29,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
   const [selectedNodes, setSelectedNodes] = useState([]);
   const [marquee, setMarquee] = useState(null);
   const [flash, setFlash] = useState({});
+  const [reduceMotion, setReduceMotion] = useState(false);
 
   const fullscreenRootRef = useRef(null);
   const canvasWrapRef = useRef(null);
@@ -135,13 +136,6 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
 
 
   const snapValue = (v, e) => (e?.altKey ? v : Math.round(v / 16) * 16);
-  const setNodePatchById = (id, patch) => {
-    const node = allNodes.find((x) => x.id === id);
-    if (!node) return;
-    if (node.kind === "resource") updateResourceById(id, patch);
-    else if (node.kind === "status") updateStatusById(id, patch);
-    else updateGenericById(id, patch);
-  };
   const duplicateNode = (n) => {
     setFlash((p) => ({ ...p, [n.id]: "dup" }));
     setTimeout(() => setFlash((p) => ({ ...p, [n.id]: null })), 220);
@@ -205,10 +199,25 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
       }
       const dx = (e.clientX - d.startX) / viewport.zoom;
       const dy = (e.clientY - d.startY) / viewport.zoom;
-      (d.startNodes || []).forEach((s) => {
-        const patch = { x: snapValue(s.x + dx, e), y: snapValue(s.y + dy, e) };
-        setNodePatchById(s.id, patch);
+      const changedByKind = { resource: [], status: [], generic: [] };
+      (d.startNodes || []).forEach((s0) => {
+        const patch = { x: snapValue(s0.x + dx, e), y: snapValue(s0.y + dy, e) };
+        const node = allNodes.find((n) => n.id === s0.id);
+        if (!node || (node.x === patch.x && node.y === patch.y)) return;
+        changedByKind[node.kind].push({ id: s0.id, patch });
       });
+      if (changedByKind.resource.length) {
+        const mp = new Map(changedByKind.resource.map((x) => [x.id, x.patch]));
+        saveCombate({ recursos: (state.recursos || []).map((r) => (mp.has(r.id) ? { ...r, ...mp.get(r.id) } : r)) });
+      }
+      if (changedByKind.status.length) {
+        const mp = new Map(changedByKind.status.map((x) => [x.id, x.patch]));
+        saveCombate({ statusNodes: (state.statusNodes || []).map((r) => (mp.has(r.id) ? { ...r, ...mp.get(r.id) } : r)) });
+      }
+      if (changedByKind.generic.length) {
+        const mp = new Map(changedByKind.generic.map((x) => [x.id, x.patch]));
+        saveCombate({ genericNodes: (state.genericNodes || []).map((r) => (mp.has(r.id) ? { ...r, ...mp.get(r.id) } : r)) });
+      }
     };
     const onUp = () => {
       dragRef.current = null;
@@ -221,8 +230,17 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [viewport.zoom, allNodes, linkDrag]);
+  }, [viewport.zoom, allNodes, linkDrag, state]);
 
+
+  const moveSelectedNodes = (dx, dy) => {
+    if (!selectedNodes.length) return;
+    const selectedSet = new Set(selectedNodes);
+    const res = (state.recursos || []).map((n) => (selectedSet.has(n.id) ? { ...n, x: Math.round((n.x || 0) + dx), y: Math.round((n.y || 0) + dy) } : n));
+    const sts = (state.statusNodes || []).map((n) => (selectedSet.has(n.id) ? { ...n, x: Math.round((n.x || 0) + dx), y: Math.round((n.y || 0) + dy) } : n));
+    const gen = (state.genericNodes || []).map((n) => (selectedSet.has(n.id) ? { ...n, x: Math.round((n.x || 0) + dx), y: Math.round((n.y || 0) + dy) } : n));
+    saveCombate({ recursos: res, statusNodes: sts, genericNodes: gen });
+  };
 
   useEffect(() => {
     const onKey = (e) => {
@@ -234,15 +252,31 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
         e.preventDefault();
         selectedNodes.forEach((id) => { const n = allNodes.find((x) => x.id === id); if (n) duplicateNode(n); });
       }
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key) && selectedNodes.length) {
+        e.preventDefault();
+        const step = e.shiftKey ? 16 : 4;
+        if (e.key === "ArrowUp") moveSelectedNodes(0, -step);
+        if (e.key === "ArrowDown") moveSelectedNodes(0, step);
+        if (e.key === "ArrowLeft") moveSelectedNodes(-step, 0);
+        if (e.key === "ArrowRight") moveSelectedNodes(step, 0);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedNodes, allNodes]);
+  }, [selectedNodes, allNodes, state]);
 
   useEffect(() => {
     const onFs = () => setIsFullscreen(document.fullscreenElement === fullscreenRootRef.current);
     document.addEventListener("fullscreenchange", onFs);
     return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = () => setReduceMotion(media.matches);
+    sync();
+    media.addEventListener?.("change", sync);
+    return () => media.removeEventListener?.("change", sync);
   }, []);
 
   const onCanvasEnter = () => { document.body.style.overflow = "hidden"; };
@@ -296,7 +330,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
 
   return (
     <>
-      <style>{`@keyframes canvasGlow {0%{background-position:0% 40%}50%{background-position:100% 60%}100%{background-position:0% 40%}} @keyframes nodePop {0%{transform:translateY(0)}50%{transform:translateY(-1px)}100%{transform:translateY(0)}} @keyframes linkPulse {0%{filter:drop-shadow(0 0 0 #7dd3fc)}50%{filter:drop-shadow(0 0 6px #7dd3fc)}100%{filter:drop-shadow(0 0 0 #7dd3fc)}}`}</style>
+      <style>{`@keyframes canvasGlow {0%{background-position:0% 40%}50%{background-position:100% 60%}100%{background-position:0% 40%}} @keyframes nodePop {0%{transform:translateY(0)}50%{transform:translateY(-1px)}100%{transform:translateY(0)}} @keyframes linkPulse {0%{filter:drop-shadow(0 0 0 #7dd3fc)}50%{filter:drop-shadow(0 0 6px #7dd3fc)}100%{filter:drop-shadow(0 0 0 #7dd3fc)}} @keyframes resourcePulse {0%{box-shadow:0 0 0 rgba(255,255,255,0)}50%{box-shadow:0 0 8px rgba(255,255,255,.35)}100%{box-shadow:0 0 0 rgba(255,255,255,0)}} @media (prefers-reduced-motion: reduce){*{animation-duration:0.001ms !important; animation-iteration-count:1 !important; transition-duration:0.001ms !important;}}`}</style>
     <div ref={fullscreenRootRef} style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 12, padding: 12, position: "relative", minHeight: undefined }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <span style={{ fontFamily: "'Cinzel',serif", color: G.gold, letterSpacing: 2 }}>◈ COMBATE</span>
@@ -329,7 +363,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
             onMouseDown={onCanvasMouseDown}
             onMouseEnter={onCanvasEnter}
             onMouseLeave={onCanvasLeave}
-            style={{ border: "1px solid #2a2a2a", borderRadius: 12, background: "radial-gradient(circle at 20% 20%, #14203a 0, #0b101d 45%, #07090f 100%)", backgroundSize: "120% 120%", animation: "canvasGlow 9s ease-in-out infinite", height: isFullscreen ? "100vh" : 340, overflow: "hidden", position: "relative", cursor: "grab", transition: "all .2s ease" }}
+            style={{ border: "1px solid #2a2a2a", borderRadius: 12, background: "radial-gradient(circle at 20% 20%, #14203a 0, #0b101d 45%, #07090f 100%)", backgroundSize: "120% 120%", animation: reduceMotion ? "none" : "canvasGlow 9s ease-in-out infinite", height: isFullscreen ? "100vh" : 340, overflow: "hidden", position: "relative", cursor: "grab", transition: "all .2s ease" }}
           >
             {isFullscreen && <div style={{ position: "absolute", top: 10, right: 10, zIndex: 30, display: "flex", gap: 6, alignItems: "center", background: "#05070bcc", border: "1px solid #335", borderRadius: 10, padding: "6px 8px" }}>
               <HoverButton onClick={() => setNodePickerOpen(true)} style={btnStyle({ padding: "5px 8px" })}>+ Nó</HoverButton>
@@ -397,13 +431,13 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                 const incomingValue = links.find((l) => l.to.id === n.id && l.to.port === "value");
                 const hasInputLink = (port) => links.some((l) => l.to.id === n.id && l.to.port === port);
                 return (
-                  <div data-node-card="1" key={n.id} onMouseDown={(e) => onNodeMouseDown(n, e)} style={{ position: "absolute", left: n.x || 0, top: n.y || 0, width: 220, border: `1px solid ${selectedNodes.includes(n.id) ? "#7dd3fc" : cor+"77"}`, borderRadius: 12, background: "#000000bb", padding: 8, boxShadow: flash[n.id] === "del" ? "0 0 20px #ff4d6d" : flash[n.id] === "dup" ? "0 0 20px #7cf0b3" : (selectedNodes.includes(n.id) ? "0 0 16px #7dd3fc66" : "0 0 18px #000"), transform: flash[n.id] === "dup" ? "scale(1.03)" : flash[n.id] === "del" ? "scale(0.96) rotate(-1deg)" : "none", userSelect: "none", animation: "nodePop 4s ease-in-out infinite", transition: "all .18s ease" }}>
+                  <div data-node-card="1" key={n.id} role="group" aria-label={`Nó ${n.kind} ${n.nome || n.label || n.nodeType || "sem nome"}`} tabIndex={0} onMouseDown={(e) => onNodeMouseDown(n, e)} style={{ position: "absolute", left: n.x || 0, top: n.y || 0, width: 220, border: `1px solid ${selectedNodes.includes(n.id) ? "#7dd3fc" : cor+"77"}`, borderRadius: 12, background: "#000000bb", padding: 8, boxShadow: flash[n.id] === "del" ? "0 0 20px #ff4d6d" : flash[n.id] === "dup" ? "0 0 20px #7cf0b3" : (selectedNodes.includes(n.id) ? "0 0 16px #7dd3fc66" : "0 0 18px #000"), transform: flash[n.id] === "dup" ? "scale(1.03)" : flash[n.id] === "del" ? "scale(0.96) rotate(-1deg)" : "none", userSelect: "none", animation: reduceMotion ? "none" : "nodePop 4s ease-in-out infinite", transition: "all .18s ease", outline: selectedNodes.includes(n.id) ? "2px solid #7dd3fc66" : "none" }}>
                     <div style={{ position: "absolute", left: -8, top: 14, display: "grid", gap: 4 }}>
                       {inputPorts.map((p, i) => {
                         const linked = links.some((l) => l.to.id === n.id && l.to.port === p);
                         return (
                           <div key={p} style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", height: 18 }}>
-                            <button onMouseDown={(e) => startUnlinkDrag({ id: n.id, port: p }, e)} onMouseUp={(e) => { e.stopPropagation(); completeLinkDrop({ id: n.id, port: p }); }} style={{ width: 14, height: 14, borderRadius: "50%", border: `1px solid ${cor}aa`, background: linked ? `radial-gradient(circle at 35% 35%, #fff, ${cor})` : "radial-gradient(circle at 35% 35%, #242b38, #10131a)", boxShadow: linked ? `0 0 6px ${cor}` : "inset 0 0 0 1px #000", cursor: "crosshair", transition: "all .15s ease" }} title={`Input: ${getPortLabel(p)}`} />
+                            <button onMouseDown={(e) => startUnlinkDrag({ id: n.id, port: p }, e)} onMouseUp={(e) => { e.stopPropagation(); completeLinkDrop({ id: n.id, port: p }); }} style={{ width: 14, height: 14, borderRadius: "50%", border: `1px solid ${cor}aa`, background: linked ? `radial-gradient(circle at 35% 35%, #fff, ${cor})` : "radial-gradient(circle at 35% 35%, #242b38, #10131a)", boxShadow: linked ? `0 0 6px ${cor}` : "inset 0 0 0 1px #000", cursor: "crosshair", transition: "all .15s ease" }} title={`Input: ${getPortLabel(p)}`} aria-label={`Entrada ${getPortLabel(p)} do nó ${n.nome || n.label || n.nodeType || "sem nome"}`} />
                           </div>
                         );
                       })}
@@ -413,7 +447,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                         const active = linkDrag?.from?.id === n.id && linkDrag?.from?.port === p;
                         return (
                           <div key={p} style={{ display: "flex", alignItems: "center", height: 18 }}>
-                            <button onMouseDown={(e) => beginLinkDrag({ id: n.id, port: p }, e)} style={{ width: 14, height: 14, borderRadius: "50%", border: `1px solid ${cor}aa`, background: active ? `radial-gradient(circle at 35% 35%, #fff, ${cor})` : "radial-gradient(circle at 35% 35%, #f0f3ff, #1b2030)", boxShadow: active ? `0 0 8px ${cor}` : "inset 0 0 0 1px #000", cursor: "grab", transition: "all .15s ease" }} title={`Output: ${getPortLabel(p)}`} />
+                            <button onMouseDown={(e) => beginLinkDrag({ id: n.id, port: p }, e)} style={{ width: 14, height: 14, borderRadius: "50%", border: `1px solid ${cor}aa`, background: active ? `radial-gradient(circle at 35% 35%, #fff, ${cor})` : "radial-gradient(circle at 35% 35%, #f0f3ff, #1b2030)", boxShadow: active ? `0 0 8px ${cor}` : "inset 0 0 0 1px #000", cursor: "grab", transition: "all .15s ease" }} title={`Output: ${getPortLabel(p)}`} aria-label={`Saída ${getPortLabel(p)} do nó ${n.nome || n.label || n.nodeType || "sem nome"}`} />
                           </div>
                         );
                       })}
@@ -450,12 +484,12 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                             {Array.from({ length: max }).map((_, i) => {
                               const on = i < preview;
                               const style = { width: 18, height: 18, border: `1px solid ${cor}`, background: on ? cor : "#151515", opacity: on ? 1 : 0.35, borderRadius: n.slotShape === "circle" ? "50%" : n.slotShape === "triangle" ? 0 : 4, clipPath: n.slotShape === "triangle" ? "polygon(50% 0, 0 100%, 100% 100%)" : undefined };
-                              return <button key={i} disabled={atualLinked} onMouseEnter={() => setHoverSlot((p) => ({ ...p, [n.id]: i }))} onMouseLeave={() => setHoverSlot((p) => ({ ...p, [n.id]: null }))} onClick={() => {
+                              return <button key={i} type="button" aria-label={`Slot ${i + 1} de ${max} em ${n.nome || "recurso"}`} disabled={atualLinked} onMouseEnter={() => setHoverSlot((p) => ({ ...p, [n.id]: i }))} onMouseLeave={() => setHoverSlot((p) => ({ ...p, [n.id]: null }))} onClick={() => {
                                 if (atualLinked) return;
                                 if (atual === 1 && i === 0) updateResourceById(n.id, { atual: 0 });
                                 else if (i === atual - 1) updateResourceById(n.id, { atual: Math.max(0, i) });
                                 else updateResourceById(n.id, { atual: i + 1 });
-                              }} style={{ ...style, cursor: atualLinked ? "not-allowed" : "pointer" }} />;
+                              }} style={{ ...style, cursor: atualLinked ? "not-allowed" : "pointer", animation: !reduceMotion && on ? "resourcePulse 2.6s ease-in-out infinite" : "none", transition: "transform .14s ease, opacity .2s ease, background .2s ease", transform: hover === i ? "scale(1.08)" : "scale(1)" }} />;
                             })}
                           </div>
                           <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10, color: G.muted }}>{atual}/{max} · gasto previsto: {gasto}{maxLinked ? " · máx via link" : ""}{atualLinked ? " · atual via link" : ""}</div>

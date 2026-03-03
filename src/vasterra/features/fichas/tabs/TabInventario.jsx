@@ -10,6 +10,21 @@ import { ArsenalDetalhe } from "../../arsenal/ArsenalDetalhe";
 const blankAdj = () => ({ id: uid(), nome: "", tipo: "peso", valor: 0 });
 const sumByType = (list, type) => (list || []).filter((x) => x.tipo === type).reduce((s, x) => s + (Number(x.valor) || 0), 0);
 
+function listCorpoPartes(corpo) {
+  const out = [];
+  const walk = (node, path = "") => {
+    const partes = Array.isArray(node?.partes) ? node.partes : [];
+    partes.forEach((p) => {
+      const nome = String(p?.nome || "Parte").trim();
+      const full = path ? `${path} › ${nome}` : nome;
+      out.push(full);
+      walk(p?.interno, full);
+    });
+  };
+  walk(corpo || {});
+  return Array.from(new Set(out));
+}
+
 function VastosCalc({ vastos, onUpdate }) {
   const [preco, setPreco] = useState({ cobre: 0, prata: 0, ouro: 0, platina: 0 });
   const [pago, setPago] = useState({ cobre: 0, prata: 0, ouro: 0, platina: 0 });
@@ -51,6 +66,7 @@ export function TabInventario({ ficha, onUpdate, arsenal, efeitosCaldeirao = [],
   const [localOpen, setLocalOpen] = useState(false);
   const [detail, setDetail] = useState(null);
   const cfg = ficha.inventarioCfg || { slotsBase: 10, capacidadePorForca: 5, ajustes: [], vastos: { cobre: 0, prata: 0, ouro: 0, platina: 0 } };
+  const corpoPartes = useMemo(() => listCorpoPartes(ficha.corpo), [ficha.corpo]);
 
   const addFromArsenal = (it) => {
     const idx = ficha.inventario.findIndex((x) => x.tipo === "arsenal" && x.itemId === it.id);
@@ -180,7 +196,7 @@ export function TabInventario({ ficha, onUpdate, arsenal, efeitosCaldeirao = [],
         </Modal>
       )}
 
-      {localOpen && <ItemEditor item={localEdit} effectsLibrary={efeitosCaldeirao} onCreateEffect={onOpenCaldeirao} onEditEffect={onOpenCaldeirao} onSave={saveLocal} onClose={() => setLocalOpen(false)} />}
+      {localOpen && <ItemEditor item={localEdit} effectsLibrary={efeitosCaldeirao} bodyRegionOptions={corpoPartes} onCreateEffect={onOpenCaldeirao} onEditEffect={onOpenCaldeirao} onSave={saveLocal} onClose={() => setLocalOpen(false)} />}
       {detail && <Modal title={`Detalhes: ${detail.nome}`} onClose={() => setDetail(null)} wide><ArsenalDetalhe item={detail} onEdit={() => { setLocalEdit(detail); setLocalOpen(true); setDetail(null); }} onDup={() => {}} onDel={() => {}} /></Modal>}
     </div>
   );
