@@ -99,6 +99,7 @@ export function normalizeEffectList(list = [], source = "Outro") {
 export function aggregateModifiers(mods = [], scope) {
   const map = {};
   (mods || []).forEach((m) => {
+    if (m?.ativo === false) return;
     parseMechanicalEffects(resolveMechanicalRaw(m)).forEach((parsed) => {
       if (!parsed || parsed.scope !== scope || parsed.isPct) return;
       map[parsed.key] = (map[parsed.key] || 0) + parsed.value;
@@ -110,6 +111,7 @@ export function aggregateModifiers(mods = [], scope) {
 export function aggregateStatusModifiers(mods = []) {
   const status = {};
   (mods || []).forEach((m) => {
+    if (m?.ativo === false) return;
     parseMechanicalEffects(resolveMechanicalRaw(m)).forEach((parsed) => {
       if (!parsed || parsed.scope !== "status" || parsed.isPct) return;
       if (!status[parsed.key]) status[parsed.key] = { base: 0, current: 0, max: 0 };

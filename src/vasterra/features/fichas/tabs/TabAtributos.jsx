@@ -19,6 +19,7 @@ export function TabAtributos({ ficha, onUpdate, arsenal = [] }) {
   const periciaDelta = (nome) => {
     const key = normalizePericiaKey(nome);
     return mergedMods.reduce((sum, m) => {
+      if (m?.ativo === false) return sum;
       const parsedList = parseMechanicalEffects(m.efeitoMecanico || m.efeito || m.valor || "");
       return sum + parsedList.reduce((acc, parsed) => {
         if (!parsed || parsed.scope !== "pericias" || parsed.isPct) return acc;
