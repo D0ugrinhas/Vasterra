@@ -23,16 +23,12 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
   const [genericEditorData, setGenericEditorData] = useState(defaultGenericForm());
   const [editing, setEditing] = useState({ kind: null, id: null });
   const [linkStart, setLinkStart] = useState(null);
-  const [edgePanEnabled, setEdgePanEnabled] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hoverSlot, setHoverSlot] = useState({});
 
   const fullscreenRootRef = useRef(null);
   const canvasWrapRef = useRef(null);
-  const edgeVecRef = useRef({ x: 0, y: 0 });
-  const keyStateRef = useRef({ w: false, a: false, s: false, d: false });
-  const keyVelocityRef = useRef({ x: 0, y: 0 });
-  const rafRef = useRef(null);
+  const dragRef = useRef(null);
   const charEffects = ficha.modificadores?.efeitos || [];
 
   const saveCombate = (next) => onUpdate({ combate: { ...state, ...next } });
@@ -81,10 +77,11 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
 
   const getNodePos = (node) => ({ x: (node.x || 0) * viewport.zoom + viewport.x, y: (node.y || 0) * viewport.zoom + viewport.y });
   const getPortY = (index) => 22 + index * 20;
-  const getPortLabel = (port) => ({ atual: "atual", max: "máx", base: "base", val: "valor", value: "valor", cor: "cor", zero: "zero", a: "A", b: "B", trueValue: "true", falseValue: "false" }[port] || port);
+  const getPortLabel = (port) => ({ atual: "atual", max: "máx", base: "base", val: "valor", value: "valor", cor: "cor", zero: "zero", a: "A", b: "B", trueValue: "true", falseValue: "false", qty: "qtd", faces: "dado", bonus: "bônus", critMin: "crit min", critMax: "crit max", critValue: "valor crit", failValue: "valor falha", crit: "crítico" }[port] || port);
   const getLinkColor = (port, fromNode) => {
     if (port === "cor") return outputs[fromNode?.id || ""]?.cor || fromNode?.cor || "#95a5a6";
     if (port === "zero") return "#f39c12";
+    if (port === "crit") return "#ff5f7a";
     return "#7dd3fc";
   };
 
@@ -110,95 +107,85 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
     setViewport((p) => ({ ...p, zoom: Math.max(0.45, Math.min(2.2, Number((p.zoom + dir).toFixed(2)))) }));
   };
 
-  const tickPan = () => {
-    const edge = edgeVecRef.current;
-    const key = keyStateRef.current;
-    const targetX = (isFullscreen && edgePanEnabled ? edge.x : 0) + (key.a ? 1 : 0) - (key.d ? 1 : 0);
-    const targetY = (isFullscreen && edgePanEnabled ? edge.y : 0) + (key.w ? 1 : 0) - (key.s ? 1 : 0);
-    const vel = keyVelocityRef.current;
-    vel.x += (targetX - vel.x) * 0.12;
-    vel.y += (targetY - vel.y) * 0.12;
-    const speed = 18;
-    if (Math.abs(vel.x) > 0.01 || Math.abs(vel.y) > 0.01) {
-      setViewport((p) => ({ ...p, x: p.x + vel.x * speed, y: p.y + vel.y * speed }));
-    }
-    rafRef.current = requestAnimationFrame(tickPan);
+
+  const onCanvasMouseDown = (e) => {
+    if (e.button !== 1) return;
+    e.preventDefault();
+    dragRef.current = { kind: "pan", startX: e.clientX, startY: e.clientY, viewX: viewport.x, viewY: viewport.y };
+  };
+
+  const onNodeMouseDown = (node, e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest("button,input,select,textarea")) return;
+    e.preventDefault();
+    dragRef.current = { kind: "node", nodeId: node.id, startX: e.clientX, startY: e.clientY, nodeX: node.x || 0, nodeY: node.y || 0 };
   };
 
   useEffect(() => {
-    rafRef.current = requestAnimationFrame(tickPan);
-    return () => cancelAnimationFrame(rafRef.current);
-  });
-
-  useEffect(() => {
-    const onFs = () => setIsFullscreen(document.fullscreenElement === fullscreenRootRef.current);
-    document.addEventListener("fullscreenchange", onFs);
-    return () => document.removeEventListener("fullscreenchange", onFs);
-  }, []);
-
-  useEffect(() => {
-    const onKeyDown = (e) => {
-      const k = e.key.toLowerCase();
-      if (!isFullscreen || !["w", "a", "s", "d"].includes(k)) return;
-      e.preventDefault();
-      keyStateRef.current[k] = true;
+    const onMove = (e) => {
+      const d = dragRef.current;
+      if (!d) return;
+      if (d.kind === "pan") {
+        setViewport((p) => ({ ...p, x: d.viewX + (e.clientX - d.startX), y: d.viewY + (e.clientY - d.startY) }));
+        return;
+      }
+      const dx = (e.clientX - d.startX) / viewport.zoom;
+      const dy = (e.clientY - d.startY) / viewport.zoom;
+      const patch = { x: Math.round(d.nodeX + dx), y: Math.round(d.nodeY + dy) };
+      const node = allNodes.find((x) => x.id === d.nodeId);
+      if (!node) return;
+      if (node.kind === "resource") updateResourceById(node.id, patch);
+      else if (node.kind === "status") updateStatusById(node.id, patch);
+      else updateGenericById(node.id, patch);
     };
-    const onKeyUp = (e) => {
-      const k = e.key.toLowerCase();
-      if (!["w", "a", "s", "d"].includes(k)) return;
-      keyStateRef.current[k] = false;
-    };
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
+    const onUp = () => { dragRef.current = null; };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
     return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
     };
-  }, [isFullscreen]);
-
-  const onCanvasMouseMove = (e) => {
-    if (!isFullscreen || !edgePanEnabled || !canvasWrapRef.current) return;
-    const r = canvasWrapRef.current.getBoundingClientRect();
-    const m = 80;
-    const lx = e.clientX - r.left;
-    const ly = e.clientY - r.top;
-    let vx = 0; let vy = 0;
-    if (lx < m) vx = (m - lx) / m;
-    else if (lx > r.width - m) vx = -((lx - (r.width - m)) / m);
-    if (ly < m) vy = (m - ly) / m;
-    else if (ly > r.height - m) vy = -((ly - (r.height - m)) / m);
-    edgeVecRef.current = { x: Math.max(-1, Math.min(1, vx)), y: Math.max(-1, Math.min(1, vy)) };
-  };
+  }, [viewport.zoom, allNodes]);
 
   const onCanvasEnter = () => { document.body.style.overflow = "hidden"; };
-  const onCanvasLeave = () => { document.body.style.overflow = ""; edgeVecRef.current = { x: 0, y: 0 }; };
+  const onCanvasLeave = () => { document.body.style.overflow = ""; dragRef.current = null; };
+
+  const getCanvasCenterWorld = () => {
+    if (!canvasWrapRef.current) return { x: Math.round((420 - viewport.x) / viewport.zoom), y: Math.round((220 - viewport.y) / viewport.zoom) };
+    const rect = canvasWrapRef.current.getBoundingClientRect();
+    return {
+      x: Math.round((rect.width / 2 - viewport.x - 110 * viewport.zoom) / viewport.zoom),
+      y: Math.round((rect.height / 2 - viewport.y - 60 * viewport.zoom) / viewport.zoom),
+    };
+  };
 
   const openNodeType = (type) => {
     setNodePickerOpen(false);
     setEditing({ kind: null, id: null });
-    if (type === "Recurso") { setResourceEditorData(defaultResourceForm()); setResourceEditorOpen(true); return; }
-    if (type === "Barra de Status") { setStatusEditorData(defaultStatusForm()); setStatusEditorOpen(true); return; }
-    setGenericEditorData(defaultGenericForm(type));
+    const c = getCanvasCenterWorld();
+    if (type === "Recurso") { setResourceEditorData({ ...defaultResourceForm(), ...c }); setResourceEditorOpen(true); return; }
+    if (type === "Barra de Status") { setStatusEditorData({ ...defaultStatusForm(), ...c }); setStatusEditorOpen(true); return; }
+    setGenericEditorData({ ...defaultGenericForm(type), ...c });
     setGenericEditorOpen(true);
   };
 
   const saveResourceEditor = () => {
     const p = { ...resourceEditorData, max: Math.max(0, Number(resourceEditorData.max) || 0), atual: Math.max(0, Math.min(Number(resourceEditorData.atual) || 0, Math.max(0, Number(resourceEditorData.max) || 0))) };
-    if (!editing.id) saveCombate({ recursos: [...(state.recursos || []), { id: uid(), ...p }] });
+    if (!editing.id) { const c = getCanvasCenterWorld(); saveCombate({ recursos: [...(state.recursos || []), { id: uid(), ...c, ...p }] }); }
     else updateResourceById(editing.id, p);
     setResourceEditorOpen(false);
   };
 
   const saveStatusEditor = () => {
     const p = { ...statusEditorData, sigla: String(statusEditorData.sigla || "NOV").toUpperCase(), max: Math.max(1, Number(statusEditorData.max || 1)), val: Math.max(0, Math.min(Number(statusEditorData.val || 0), Math.max(1, Number(statusEditorData.max || 1)))) };
-    if (!editing.id) saveCombate({ statusNodes: [...(state.statusNodes || []), { id: uid(), ...p }] });
+    if (!editing.id) { const c = getCanvasCenterWorld(); saveCombate({ statusNodes: [...(state.statusNodes || []), { id: uid(), ...c, ...p }] }); }
     else updateStatusById(editing.id, p);
     setStatusEditorOpen(false);
   };
 
   const saveGenericEditor = () => {
     const p = { ...genericEditorData };
-    if (!editing.id) saveCombate({ genericNodes: [...(state.genericNodes || []), { id: uid(), ...p }] });
+    if (!editing.id) { const c = getCanvasCenterWorld(); saveCombate({ genericNodes: [...(state.genericNodes || []), { id: uid(), ...c, ...p }] }); }
     else updateGenericById(editing.id, p);
     setGenericEditorOpen(false);
   };
@@ -239,10 +226,10 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
           <div
             ref={canvasWrapRef}
             onWheel={onWheelCanvas}
-            onMouseMove={onCanvasMouseMove}
+            onMouseDown={onCanvasMouseDown}
             onMouseEnter={onCanvasEnter}
             onMouseLeave={onCanvasLeave}
-            style={{ border: "1px solid #2a2a2a", borderRadius: 12, background: "radial-gradient(circle at 20% 20%, #101726 0, #09090a 50%, #060606 100%)", height: isFullscreen ? "100vh" : 340, overflow: "hidden", position: "relative" }}
+            style={{ border: "1px solid #2a2a2a", borderRadius: 12, background: "radial-gradient(circle at 20% 20%, #101726 0, #09090a 50%, #060606 100%)", height: isFullscreen ? "100vh" : 340, overflow: "hidden", position: "relative", cursor: "grab" }}
           >
             {isFullscreen && <div style={{ position: "absolute", top: 10, right: 10, zIndex: 30, display: "flex", gap: 6, alignItems: "center", background: "#05070bcc", border: "1px solid #335", borderRadius: 10, padding: "6px 8px" }}>
               <HoverButton onClick={() => setNodePickerOpen(true)} style={btnStyle({ padding: "5px 8px" })}>+ Nó</HoverButton>
@@ -251,7 +238,6 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
               <HoverButton onClick={() => setRodada(state.rodadaAtual + 1)} style={btnStyle({ padding: "5px 8px" })}>&gt;</HoverButton>
               <HoverButton onClick={proxRodada} style={btnStyle({ padding: "5px 8px" })}>Próx</HoverButton>
               <HoverButton onClick={() => saveCombate({ recursos: (state.recursos || []).map((r) => ({ ...r, atual: Number(outputs[r.id]?.max ?? r.max) })) })} style={btnStyle({ borderColor: "#2ecc7144", color: "#7cf0b3", padding: "5px 8px" })}>Reset</HoverButton>
-              <HoverButton onClick={() => setEdgePanEnabled((v) => !v)} style={btnStyle({ borderColor: "#f39c1255", color: "#f7c96b", padding: "5px 8px" })}>{edgePanEnabled ? "Edge ON" : "Edge OFF"}</HoverButton>
               <HoverButton onClick={toggleFullscreen} style={btnStyle({ borderColor: "#3498db55", color: "#8fc8ff", padding: "5px 8px" })}>🡼</HoverButton>
             </div>}
 
@@ -276,6 +262,8 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                 const stroke = getLinkColor(l.from.port, from);
                 return (
                   <g key={l.id}>
+                    <line x1={x1 - 8} y1={y1} x2={x1} y2={y1} stroke="#000" strokeWidth="4" />
+                    <line x1={x2} y1={y2} x2={x2 + 8} y2={y2} stroke="#000" strokeWidth="4" />
                     <path d={pathD} stroke="#000" fill="none" strokeWidth="6" strokeLinecap="round" />
                     <path d={pathD} stroke={stroke} fill="none" strokeWidth="3" strokeLinecap="round" />
                   </g>
@@ -284,6 +272,8 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
             </svg>
 
             <div style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`, transformOrigin: "top left", width: 2000, height: 1400, position: "relative" }}>
+              <div style={{ position: "absolute", left: 1000, top: 0, width: 1, height: 1400, background: "#ffffff14" }} />
+              <div style={{ position: "absolute", left: 0, top: 700, width: 2000, height: 1, background: "#ffffff14" }} />
               {allNodes.map((n) => {
                 const out = outputs[n.id] || {};
                 const cor = out.cor || n.cor || "#95a5a6";
@@ -292,7 +282,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                 const incomingValue = links.find((l) => l.to.id === n.id && l.to.port === "value");
                 const hasInputLink = (port) => links.some((l) => l.to.id === n.id && l.to.port === port);
                 return (
-                  <div key={n.id} style={{ position: "absolute", left: n.x || 0, top: n.y || 0, width: 220, border: `1px solid ${cor}77`, borderRadius: 12, background: "#000000bb", padding: 8, boxShadow: "0 0 18px #000" }}>
+                  <div key={n.id} onMouseDown={(e) => onNodeMouseDown(n, e)} style={{ position: "absolute", left: n.x || 0, top: n.y || 0, width: 220, border: `1px solid ${cor}77`, borderRadius: 12, background: "#000000bb", padding: 8, boxShadow: "0 0 18px #000", userSelect: "none" }}>
                     <div style={{ position: "absolute", left: -64, top: 14, display: "grid", gap: 4 }}>
                       {inputPorts.map((p, i) => {
                         const linked = links.some((l) => l.to.id === n.id && l.to.port === p);
@@ -371,8 +361,9 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                             <input type="number" disabled={hasInputLink("val")} value={val} min={0} max={max} onChange={(e) => updateStatusById(n.id, { val: Math.max(0, Math.min(max, Number(e.target.value) || 0)) })} style={inpStyle()} />
                             <input type="number" disabled={hasInputLink("max")} value={max} min={1} onChange={(e) => updateStatusById(n.id, { max: Math.max(1, Number(e.target.value) || 1) })} style={inpStyle()} />
                           </div>
-                          <div style={{ height: 8, borderRadius: 4, background: "#111", overflow: "hidden" }}><div style={{ width: `${(val / max) * 100}%`, height: "100%", background: cor }} /></div>
-                          <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10, color: G.muted }}>base: {Number(out.base ?? n.base ?? 0)} · zero output: {Number(out.zero || 0)}{hasInputLink("base") ? " · base via link" : ""}</div>
+                          <div style={{ height: 10, borderRadius: 5, background: "#111", overflow: "hidden", border: "1px solid #000" }}><div style={{ width: `${(val / max) * 100}%`, height: "100%", background: `linear-gradient(90deg, ${cor}, #ffffff33)` }} /></div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginTop: 4, fontFamily: "monospace", fontSize: 10, color: G.muted }}><span>base: {Number(out.base ?? n.base ?? 0)}</span><span style={{ textAlign: "right" }}>{Math.round((val / max) * 100)}%</span></div>
+                          <div style={{ marginTop: 2, fontFamily: "monospace", fontSize: 10, color: G.muted }}>zero output: {Number(out.zero || 0)}{hasInputLink("base") ? " · base via link" : ""}</div>
                         </>
                       );
                     })()}
@@ -381,7 +372,20 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                       <>
                         {n.nodeType === "value" && <input type="number" disabled={!!incomingValue || !!n.sourcePath || hasInputLink("value")} value={Number(n.value || 0)} onChange={(e) => updateGenericById(n.id, { value: Number(e.target.value) || 0 })} style={inpStyle()} />}
                         {n.nodeType === "comment" && <div style={{ padding: 6, borderRadius: 6, background: Number(out.value || 0) > 0 ? "#f1c40f22" : "#111", boxShadow: Number(out.value || 0) > 0 ? "0 0 12px #f1c40f99" : "none", color: G.text, minHeight: 34 }}>{n.text || "Comentário"}</div>}
-                        <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10, color: G.muted }}>out: {String(out.value ?? out.cor ?? 0)}</div>
+                        {n.nodeType === "dice" && <div style={{ display: "grid", gap: 4 }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                            <input type="number" disabled={hasInputLink("qty")} value={Number(n.qty || 1)} onChange={(e) => updateGenericById(n.id, { qty: Math.max(1, Number(e.target.value) || 1) })} style={inpStyle()} />
+                            <button onClick={() => {
+                              const q = Math.max(1, Number(n.qty || 1));
+                              const d = Math.max(2, Number(n.faces || 20));
+                              let total = 0; let natural = 0;
+                              for (let i = 0; i < q; i += 1) { const r = 1 + Math.floor(Math.random() * d); total += r; if (r > natural) natural = r; }
+                              updateGenericById(n.id, { lastRoll: natural, rolledTotal: total });
+                            }} style={btnStyle({ padding: "4px 8px" })}>Rolar</button>
+                          </div>
+                          <div style={{ fontFamily: "monospace", fontSize: 10, color: G.muted }}>d{Number(n.faces || 20)} + {Number(n.bonus || 0)} | nat: {Number(n.lastRoll || 0)} | out: {Number(out.value || 0)} | crit: {Number(out.crit || 0)}</div>
+                        </div>}
+                        <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10, color: G.muted }}>out: {String(out.value ?? out.cor ?? 0)}{out.crit !== undefined ? ` · crit: ${String(out.crit)}` : ""}</div>
                       </>
                     )}
                   </div>
@@ -422,7 +426,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
 
       {statusEditorOpen && <Modal title={editing.id ? "Configurar Barra de Status" : "Nova Barra de Status"} onClose={() => setStatusEditorOpen(false)}><div style={{ display: "grid", gap: 8 }}><input value={statusEditorData.nome || ""} onChange={(e) => setStatusEditorData((p) => ({ ...p, nome: e.target.value }))} placeholder="Nome" style={inpStyle()} /><input value={statusEditorData.sigla || ""} onChange={(e) => setStatusEditorData((p) => ({ ...p, sigla: e.target.value.toUpperCase() }))} placeholder="Sigla" style={inpStyle()} /><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}><input type="number" value={Number(statusEditorData.base || 0)} onChange={(e) => setStatusEditorData((p) => ({ ...p, base: Number(e.target.value) || 0 }))} style={inpStyle()} /><input type="number" value={Number(statusEditorData.max || 1)} onChange={(e) => setStatusEditorData((p) => ({ ...p, max: Math.max(1, Number(e.target.value) || 1) }))} style={inpStyle()} /><input type="number" value={Number(statusEditorData.val || 0)} onChange={(e) => setStatusEditorData((p) => ({ ...p, val: Math.max(0, Number(e.target.value) || 0) }))} style={inpStyle()} /></div><div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><button onClick={() => setStatusEditorOpen(false)} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button><button onClick={saveStatusEditor} style={btnStyle()}>Salvar</button></div></div></Modal>}
 
-      {genericEditorOpen && <Modal title={editing.id ? "Configurar Node Genérico" : "Novo Node Genérico"} onClose={() => setGenericEditorOpen(false)}><div style={{ display: "grid", gap: 8 }}><input value={genericEditorData.label || ""} onChange={(e) => setGenericEditorData((p) => ({ ...p, label: e.target.value }))} placeholder="Rótulo" style={inpStyle()} />{genericEditorData.nodeType === "value" && <><input type="number" value={Number(genericEditorData.value || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, value: Number(e.target.value) || 0 }))} style={inpStyle()} /><select value={genericEditorData.sourcePath || ""} onChange={(e) => setGenericEditorData((p) => ({ ...p, sourcePath: e.target.value }))} style={inpStyle()}><option value="">Puxar valor: nenhum</option>{fichaValueOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></>}{genericEditorData.nodeType === "math" && <select value={genericEditorData.op || "+"} onChange={(e) => setGenericEditorData((p) => ({ ...p, op: e.target.value }))} style={inpStyle()}><option>+</option><option>-</option><option>*</option><option>/</option></select>}{genericEditorData.nodeType === "conditional" && <><select value={genericEditorData.cmp || ">"} onChange={(e) => setGenericEditorData((p) => ({ ...p, cmp: e.target.value }))} style={inpStyle()}><option value=">">{">"}</option><option value="<">{"<"}</option><option value="=">{"="}</option></select><input type="number" value={Number(genericEditorData.trueValue || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, trueValue: Number(e.target.value) || 0 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.falseValue || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, falseValue: Number(e.target.value) || 0 }))} style={inpStyle()} /></>}{genericEditorData.nodeType === "color" && <input type="color" value={genericEditorData.color || "#95a5a6"} onChange={(e) => setGenericEditorData((p) => ({ ...p, color: e.target.value }))} style={{ ...inpStyle(), height: 38 }} />}{genericEditorData.nodeType === "comment" && <textarea value={genericEditorData.text || ""} onChange={(e) => setGenericEditorData((p) => ({ ...p, text: e.target.value }))} rows={3} style={inpStyle()} />}<div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><button onClick={() => setGenericEditorOpen(false)} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button><button onClick={saveGenericEditor} style={btnStyle()}>Salvar</button></div></div></Modal>}
+      {genericEditorOpen && <Modal title={editing.id ? "Configurar Node Genérico" : "Novo Node Genérico"} onClose={() => setGenericEditorOpen(false)}><div style={{ display: "grid", gap: 8 }}><input value={genericEditorData.label || ""} onChange={(e) => setGenericEditorData((p) => ({ ...p, label: e.target.value }))} placeholder="Rótulo" style={inpStyle()} />{genericEditorData.nodeType === "value" && <><input type="number" value={Number(genericEditorData.value || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, value: Number(e.target.value) || 0 }))} style={inpStyle()} /><select value={genericEditorData.sourcePath || ""} onChange={(e) => setGenericEditorData((p) => ({ ...p, sourcePath: e.target.value }))} style={inpStyle()}><option value="">Puxar valor: nenhum</option>{fichaValueOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></>}{genericEditorData.nodeType === "math" && <select value={genericEditorData.op || "+"} onChange={(e) => setGenericEditorData((p) => ({ ...p, op: e.target.value }))} style={inpStyle()}><option>+</option><option>-</option><option>*</option><option>/</option></select>}{genericEditorData.nodeType === "conditional" && <><select value={genericEditorData.cmp || ">"} onChange={(e) => setGenericEditorData((p) => ({ ...p, cmp: e.target.value }))} style={inpStyle()}><option value=">">{">"}</option><option value="<">{"<"}</option><option value="=">{"="}</option></select><input type="number" value={Number(genericEditorData.trueValue || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, trueValue: Number(e.target.value) || 0 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.falseValue || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, falseValue: Number(e.target.value) || 0 }))} style={inpStyle()} /></>}{genericEditorData.nodeType === "color" && <input type="color" value={genericEditorData.color || "#95a5a6"} onChange={(e) => setGenericEditorData((p) => ({ ...p, color: e.target.value }))} style={{ ...inpStyle(), height: 38 }} />}{genericEditorData.nodeType === "comment" && <textarea value={genericEditorData.text || ""} onChange={(e) => setGenericEditorData((p) => ({ ...p, text: e.target.value }))} rows={3} style={inpStyle()} />}{genericEditorData.nodeType === "dice" && <><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><input type="number" value={Number(genericEditorData.qty || 1)} onChange={(e) => setGenericEditorData((p) => ({ ...p, qty: Math.max(1, Number(e.target.value) || 1) }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.faces || 20)} onChange={(e) => setGenericEditorData((p) => ({ ...p, faces: Math.max(2, Number(e.target.value) || 2) }))} style={inpStyle()} /></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><input type="number" value={Number(genericEditorData.critMin || 20)} onChange={(e) => setGenericEditorData((p) => ({ ...p, critMin: Number(e.target.value) || 1 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.critMax || 20)} onChange={(e) => setGenericEditorData((p) => ({ ...p, critMax: Number(e.target.value) || 1 }))} style={inpStyle()} /></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}><input type="number" value={Number(genericEditorData.bonus || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, bonus: Number(e.target.value) || 0 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.critValue || 1)} onChange={(e) => setGenericEditorData((p) => ({ ...p, critValue: Number(e.target.value) || 0 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.failValue || -1)} onChange={(e) => setGenericEditorData((p) => ({ ...p, failValue: Number(e.target.value) || 0 }))} style={inpStyle()} /></div></>}<div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><button onClick={() => setGenericEditorOpen(false)} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button><button onClick={saveGenericEditor} style={btnStyle()}>Salvar</button></div></div></Modal>}
     </div>
   );
 }

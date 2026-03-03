@@ -1,6 +1,6 @@
 import { uid } from "../../../core/factories";
 
-export const NODE_TYPES = ["Recurso", "Barra de Status", "Valor", "Math", "Condicionais", "Color picker", "Comentário"];
+export const NODE_TYPES = ["Recurso", "Barra de Status", "Valor", "Math", "Condicionais", "Color picker", "Comentário", "Dado"];
 export const SHAPES = ["square", "circle", "diamond", "triangle", "hex"];
 
 export const defaultCombatState = () => ({
@@ -23,7 +23,8 @@ export function defaultGenericForm(kind = "Valor") {
   if (kind === "Math") return { nodeType: "math", label: "Math", op: "+", x: 520, y: 220 };
   if (kind === "Condicionais") return { nodeType: "conditional", label: "Cond", cmp: ">", trueValue: 1, falseValue: 0, x: 520, y: 320 };
   if (kind === "Comentário") return { nodeType: "comment", label: "Comentário", text: "", x: 520, y: 420 };
-  return { nodeType: "color", label: "Cor", color: "#95a5a6", x: 520, y: 520 };
+  if (kind === "Dado") return { nodeType: "dice", label: "Dado", qty: 1, faces: 20, bonus: 0, critMin: 20, critMax: 20, critValue: 1, failValue: -1, lastRoll: 0, x: 520, y: 520 };
+  return { nodeType: "color", label: "Cor", color: "#95a5a6", x: 520, y: 620 };
 }
 
 export function getFichaValueByPath(ficha, path) {
@@ -58,6 +59,7 @@ export function getInputPorts(node) {
   if (node.kind === "generic" && node.nodeType === "math") return ["a", "b"];
   if (node.kind === "generic" && node.nodeType === "conditional") return ["a", "b", "trueValue", "falseValue"];
   if (node.kind === "generic" && node.nodeType === "comment") return ["value"];
+  if (node.kind === "generic" && node.nodeType === "dice") return ["qty", "faces", "bonus", "critMin", "critMax", "critValue", "failValue"];
   return [];
 }
 
@@ -66,12 +68,13 @@ export function getOutputPorts(node) {
   if (node.kind === "status") return ["value", "base", "max", "cor", "zero"];
   if (node.kind === "generic" && ["value", "math", "conditional"].includes(node.nodeType)) return ["value"];
   if (node.kind === "generic" && node.nodeType === "color") return ["cor"];
+  if (node.kind === "generic" && node.nodeType === "dice") return ["value", "crit"];
   return [];
 }
 
 export function canLink(fromNode, fromPort, toNode, toPort) {
   if (!getOutputPorts(fromNode).includes(fromPort) || !getInputPorts(toNode).includes(toPort)) return false;
-  const numericOut = ["value", "base", "max", "zero"].includes(fromPort);
+  const numericOut = ["value", "base", "max", "zero", "crit"].includes(fromPort);
   const colorOut = fromPort === "cor";
   if (toPort === "cor") return colorOut;
   return numericOut;
@@ -99,11 +102,11 @@ export function evaluateNodeOutputs(state, ficha) {
         return;
       }
       if (n.kind === "status") {
-        const value = Number(findSourceValue(n.id, "val") ?? n.val ?? 0);
         const base = Number(findSourceValue(n.id, "base") ?? n.base ?? 0);
-        const max = Number(findSourceValue(n.id, "max") ?? n.max ?? 1);
+        const max = Math.max(1, Number(findSourceValue(n.id, "max") ?? n.max ?? 1));
+        const value = Number(findSourceValue(n.id, "val") ?? n.val ?? base);
         outputs[n.id] = {
-          value,
+          value: Math.max(0, Math.min(max, value)),
           base,
           max,
           cor: String(findSourceValue(n.id, "cor") ?? n.cor ?? "#f39c12"),
@@ -139,6 +142,19 @@ export function evaluateNodeOutputs(state, ficha) {
       }
       if (n.nodeType === "comment") {
         outputs[n.id] = { value: Number(findSourceValue(n.id, "value") || 0) };
+        return;
+      }
+      if (n.nodeType === "dice") {
+        const qty = Math.max(1, Math.floor(Number(findSourceValue(n.id, "qty") ?? n.qty ?? 1)));
+        const faces = Math.max(2, Math.floor(Number(findSourceValue(n.id, "faces") ?? n.faces ?? 20)));
+        const bonus = Number(findSourceValue(n.id, "bonus") ?? n.bonus ?? 0);
+        const critMin = Math.floor(Number(findSourceValue(n.id, "critMin") ?? n.critMin ?? 20));
+        const critMax = Math.floor(Number(findSourceValue(n.id, "critMax") ?? n.critMax ?? 20));
+        const critValue = Number(findSourceValue(n.id, "critValue") ?? n.critValue ?? 1);
+        const failValue = Number(findSourceValue(n.id, "failValue") ?? n.failValue ?? -1);
+        const roll = Number(n.lastRoll ?? 0);
+        const crit = roll >= critMin && roll <= critMax ? critValue : (roll === 1 ? failValue : 0);
+        outputs[n.id] = { value: roll + bonus, crit };
       }
     });
   }
