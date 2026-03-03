@@ -43,6 +43,7 @@ export const novaFicha = (nome = "Novo Personagem") => ({
   corpo: {
     pontosTotal: 1000,
     partes: [],
+    links: [],
   },
   combate: {
     rodadaAtual: 0,
