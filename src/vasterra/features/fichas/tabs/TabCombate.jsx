@@ -26,6 +26,9 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hoverSlot, setHoverSlot] = useState({});
   const [minNodes, setMinNodes] = useState({});
+  const [selectedNodes, setSelectedNodes] = useState([]);
+  const [marquee, setMarquee] = useState(null);
+  const [flash, setFlash] = useState({});
 
   const fullscreenRootRef = useRef(null);
   const canvasWrapRef = useRef(null);
@@ -130,17 +133,54 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
   };
 
 
+
+  const snapValue = (v, e) => (e?.altKey ? v : Math.round(v / 16) * 16);
+  const setNodePatchById = (id, patch) => {
+    const node = allNodes.find((x) => x.id === id);
+    if (!node) return;
+    if (node.kind === "resource") updateResourceById(id, patch);
+    else if (node.kind === "status") updateStatusById(id, patch);
+    else updateGenericById(id, patch);
+  };
+  const duplicateNode = (n) => {
+    setFlash((p) => ({ ...p, [n.id]: "dup" }));
+    setTimeout(() => setFlash((p) => ({ ...p, [n.id]: null })), 220);
+    if (n.kind === "resource") saveCombate({ recursos: [...(state.recursos || []), { ...n, id: uid(), x: (n.x || 0) + 24, y: (n.y || 0) + 24, nome: `${n.nome} (cópia)` }] });
+    else if (n.kind === "status") saveCombate({ statusNodes: [...(state.statusNodes || []), { ...n, id: uid(), x: (n.x || 0) + 24, y: (n.y || 0) + 24, nome: `${n.nome} (cópia)` }] });
+    else saveCombate({ genericNodes: [...(state.genericNodes || []), { ...n, id: uid(), x: (n.x || 0) + 24, y: (n.y || 0) + 24, label: `${n.label || n.nodeType} (cópia)` }] });
+  };
+  const deleteNode = (n) => {
+    setFlash((p) => ({ ...p, [n.id]: "del" }));
+    setTimeout(() => {
+      if (n.kind === "resource") saveCombate({ recursos: (state.recursos || []).filter((x) => x.id !== n.id), nodeLinks: links.filter((l) => l.from.id !== n.id && l.to.id !== n.id) });
+      else if (n.kind === "status") saveCombate({ statusNodes: (state.statusNodes || []).filter((x) => x.id !== n.id), nodeLinks: links.filter((l) => l.from.id !== n.id && l.to.id !== n.id) });
+      else saveCombate({ genericNodes: (state.genericNodes || []).filter((x) => x.id !== n.id), nodeLinks: links.filter((l) => l.from.id !== n.id && l.to.id !== n.id) });
+      setSelectedNodes((ids) => ids.filter((id) => id !== n.id));
+    }, 170);
+  };
+
   const onCanvasMouseDown = (e) => {
-    if (e.button !== 1) return;
-    e.preventDefault();
-    dragRef.current = { kind: "pan", startX: e.clientX, startY: e.clientY, viewX: viewport.x, viewY: viewport.y };
+    if (e.button === 1) {
+      e.preventDefault();
+      dragRef.current = { kind: "pan", startX: e.clientX, startY: e.clientY, viewX: viewport.x, viewY: viewport.y };
+      return;
+    }
+    if (e.button === 0 && !e.target.closest("[data-node-card=\"1\"]")) {
+      const m = clientToWorld(e.clientX, e.clientY);
+      dragRef.current = { kind: "marquee", start: m };
+      setMarquee({ x: m.x, y: m.y, w: 0, h: 0 });
+      if (!e.shiftKey) setSelectedNodes([]);
+    }
   };
 
   const onNodeMouseDown = (node, e) => {
     if (e.button !== 0) return;
     if (e.target.closest("button,input,select,textarea")) return;
     e.preventDefault();
-    dragRef.current = { kind: "node", nodeId: node.id, startX: e.clientX, startY: e.clientY, nodeX: node.x || 0, nodeY: node.y || 0 };
+    setSelectedNodes((ids) => (e.shiftKey ? (ids.includes(node.id) ? ids.filter((x) => x !== node.id) : [...ids, node.id]) : (ids.includes(node.id) ? ids : [node.id])));
+    const movingIds = (selectedNodes.includes(node.id) && !e.shiftKey) ? selectedNodes : [node.id];
+    const startNodes = movingIds.map((id) => { const n = allNodes.find((x) => x.id === id); return { id, x: n?.x || 0, y: n?.y || 0 }; });
+    dragRef.current = { kind: "node", ids: movingIds, startX: e.clientX, startY: e.clientY, startNodes };
   };
 
   useEffect(() => {
@@ -154,18 +194,26 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
         setViewport((p) => ({ ...p, x: d.viewX + (e.clientX - d.startX), y: d.viewY + (e.clientY - d.startY) }));
         return;
       }
+      if (d.kind === "marquee") {
+        const m = clientToWorld(e.clientX, e.clientY);
+        const x = Math.min(d.start.x, m.x); const y = Math.min(d.start.y, m.y);
+        const w = Math.abs(m.x - d.start.x); const h = Math.abs(m.y - d.start.y);
+        setMarquee({ x, y, w, h });
+        const ids = allNodes.filter((n) => (n.x || 0) + 220 >= x && (n.x || 0) <= x + w && (n.y || 0) + 120 >= y && (n.y || 0) <= y + h).map((n) => n.id);
+        setSelectedNodes(ids);
+        return;
+      }
       const dx = (e.clientX - d.startX) / viewport.zoom;
       const dy = (e.clientY - d.startY) / viewport.zoom;
-      const patch = { x: Math.round(d.nodeX + dx), y: Math.round(d.nodeY + dy) };
-      const node = allNodes.find((x) => x.id === d.nodeId);
-      if (!node) return;
-      if (node.kind === "resource") updateResourceById(node.id, patch);
-      else if (node.kind === "status") updateStatusById(node.id, patch);
-      else updateGenericById(node.id, patch);
+      (d.startNodes || []).forEach((s) => {
+        const patch = { x: snapValue(s.x + dx, e), y: snapValue(s.y + dy, e) };
+        setNodePatchById(s.id, patch);
+      });
     };
     const onUp = () => {
       dragRef.current = null;
       setLinkDrag(null);
+      setMarquee(null);
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -174,6 +222,22 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
       window.removeEventListener("mouseup", onUp);
     };
   }, [viewport.zoom, allNodes, linkDrag]);
+
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key.toLowerCase() === "n") { setNodePickerOpen(true); return; }
+      if (e.key === "Delete" && selectedNodes.length) {
+        selectedNodes.forEach((id) => { const n = allNodes.find((x) => x.id === id); if (n) deleteNode(n); });
+      }
+      if (e.ctrlKey && e.key.toLowerCase() === "d" && selectedNodes.length) {
+        e.preventDefault();
+        selectedNodes.forEach((id) => { const n = allNodes.find((x) => x.id === id); if (n) duplicateNode(n); });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedNodes, allNodes]);
 
   useEffect(() => {
     const onFs = () => setIsFullscreen(document.fullscreenElement === fullscreenRootRef.current);
@@ -232,7 +296,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
 
   return (
     <>
-      <style>{`@keyframes canvasGlow {0%{background-position:0% 40%}50%{background-position:100% 60%}100%{background-position:0% 40%}} @keyframes nodePop {0%{transform:translateY(0)}50%{transform:translateY(-1px)}100%{transform:translateY(0)}}`}</style>
+      <style>{`@keyframes canvasGlow {0%{background-position:0% 40%}50%{background-position:100% 60%}100%{background-position:0% 40%}} @keyframes nodePop {0%{transform:translateY(0)}50%{transform:translateY(-1px)}100%{transform:translateY(0)}} @keyframes linkPulse {0%{filter:drop-shadow(0 0 0 #7dd3fc)}50%{filter:drop-shadow(0 0 6px #7dd3fc)}100%{filter:drop-shadow(0 0 0 #7dd3fc)}}`}</style>
     <div ref={fullscreenRootRef} style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 12, padding: 12, position: "relative", minHeight: undefined }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <span style={{ fontFamily: "'Cinzel',serif", color: G.gold, letterSpacing: 2 }}>◈ COMBATE</span>
@@ -277,6 +341,8 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
               <HoverButton onClick={toggleFullscreen} style={btnStyle({ borderColor: "#3498db55", color: "#8fc8ff", padding: "5px 8px" })}>🡼</HoverButton>
             </div>}
 
+            {marquee && <div style={{ position: "absolute", left: marquee.x * viewport.zoom + viewport.x, top: marquee.y * viewport.zoom + viewport.y, width: marquee.w * viewport.zoom, height: marquee.h * viewport.zoom, border: "1px dashed #7dd3fc", background: "#7dd3fc22", pointerEvents: "none", zIndex: 40 }} />}
+            <div style={{ position: "absolute", right: 10, bottom: 10, width: 180, height: 120, border: "1px solid #345", background: "#05070bcc", borderRadius: 8, zIndex: 40, overflow: "hidden" }}><div style={{ position: "absolute", inset: 0 }}>{allNodes.map((n) => <div key={`m-${n.id}`} style={{ position: "absolute", left: ((n.x||0)/2000)*180, top: ((n.y||0)/1400)*120, width: 10, height: 6, background: "#9fb3c8aa", borderRadius: 3 }} />)}<div style={{ position: "absolute", left: ((-viewport.x/viewport.zoom)/2000)*180, top: ((-viewport.y/viewport.zoom)/1400)*120, width: (canvasWrapRef.current?.clientWidth||300)/viewport.zoom/2000*180, height: (canvasWrapRef.current?.clientHeight||200)/viewport.zoom/1400*120, border: "1px solid #7dd3fc" }} /></div></div>
             <div style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`, transformOrigin: "top left", width: 2000, height: 1400, position: "relative" }}>
               <svg style={{ position: "absolute", inset: 0, width: 2000, height: 1400, pointerEvents: "none", overflow: "visible" }}>
                 {links.map((l) => {
@@ -291,9 +357,10 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                   const y2 = (to.y || 0) + getPortY(toIndex);
                   const x1 = (from.x || 0) + 222;
                   const x2 = (to.x || 0) - 2;
+                  const lane = ((links.findIndex((x) => x.id === l.id) % 5) - 2) * 8;
                   const c1 = x1 + Math.max(24, Math.abs(x2 - x1) * 0.32);
                   const c2 = x2 - Math.max(24, Math.abs(x2 - x1) * 0.32);
-                  const pathD = `M ${x1} ${y1} C ${c1} ${y1}, ${c2} ${y2}, ${x2} ${y2}`;
+                  const pathD = `M ${x1} ${y1} C ${c1} ${y1 + lane}, ${c2} ${y2 - lane}, ${x2} ${y2}`;
                   const stroke = getLinkColor(l.from.port, from);
                   return (
                     <g key={l.id}>
@@ -330,7 +397,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                 const incomingValue = links.find((l) => l.to.id === n.id && l.to.port === "value");
                 const hasInputLink = (port) => links.some((l) => l.to.id === n.id && l.to.port === port);
                 return (
-                  <div key={n.id} onMouseDown={(e) => onNodeMouseDown(n, e)} style={{ position: "absolute", left: n.x || 0, top: n.y || 0, width: 220, border: `1px solid ${cor}77`, borderRadius: 12, background: "#000000bb", padding: 8, boxShadow: "0 0 18px #000", userSelect: "none", animation: "nodePop 4s ease-in-out infinite", transition: "box-shadow .2s ease, border-color .2s ease" }}>
+                  <div data-node-card="1" key={n.id} onMouseDown={(e) => onNodeMouseDown(n, e)} style={{ position: "absolute", left: n.x || 0, top: n.y || 0, width: 220, border: `1px solid ${selectedNodes.includes(n.id) ? "#7dd3fc" : cor+"77"}`, borderRadius: 12, background: "#000000bb", padding: 8, boxShadow: flash[n.id] === "del" ? "0 0 20px #ff4d6d" : flash[n.id] === "dup" ? "0 0 20px #7cf0b3" : (selectedNodes.includes(n.id) ? "0 0 16px #7dd3fc66" : "0 0 18px #000"), transform: flash[n.id] === "dup" ? "scale(1.03)" : flash[n.id] === "del" ? "scale(0.96) rotate(-1deg)" : "none", userSelect: "none", animation: "nodePop 4s ease-in-out infinite", transition: "all .18s ease" }}>
                     <div style={{ position: "absolute", left: -8, top: 14, display: "grid", gap: 4 }}>
                       {inputPorts.map((p, i) => {
                         const linked = links.some((l) => l.to.id === n.id && l.to.port === p);
@@ -354,22 +421,18 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
 
                     <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 5, alignItems: "center", marginBottom: 6 }}>
                       <div style={{ color: cor, fontFamily: "'Cinzel',serif", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.kind === "resource" ? n.nome : n.kind === "status" ? `${n.nome} (${n.sigla})` : (n.label || n.nodeType)}</div>
-                      <button onClick={() => setMinNodes((p) => ({ ...p, [n.id]: !p[n.id] }))} style={btnStyle({ padding: "2px 4px" })}>{minNodes[n.id] ? "▣" : "▤"}</button>
+                      <button onClick={() => setMinNodes((p) => ({ ...p, [n.id]: !p[n.id] }))} style={btnStyle({ padding: "2px 6px", borderRadius: 999, fontSize: 11 })}>{minNodes[n.id] ? "▣" : "▤"}</button>
                       <button onClick={() => {
-                        if (n.kind === "resource") saveCombate({ recursos: [...(state.recursos || []), { ...n, id: uid(), x: (n.x || 0) + 24, y: (n.y || 0) + 24, nome: `${n.nome} (cópia)` }] });
-                        else if (n.kind === "status") saveCombate({ statusNodes: [...(state.statusNodes || []), { ...n, id: uid(), x: (n.x || 0) + 24, y: (n.y || 0) + 24, nome: `${n.nome} (cópia)` }] });
-                        else saveCombate({ genericNodes: [...(state.genericNodes || []), { ...n, id: uid(), x: (n.x || 0) + 24, y: (n.y || 0) + 24, label: `${n.label || n.nodeType} (cópia)` }] });
-                      }} style={btnStyle({ padding: "2px 4px" })}>⎘</button>
+                        duplicateNode(n)
+                      }} style={btnStyle({ padding: "2px 6px", borderRadius: 999, fontSize: 11 })}>⎘</button>
                       <button onClick={() => {
-                        if (n.kind === "resource") saveCombate({ recursos: (state.recursos || []).filter((x) => x.id !== n.id), nodeLinks: links.filter((l) => l.from.id !== n.id && l.to.id !== n.id) });
-                        else if (n.kind === "status") saveCombate({ statusNodes: (state.statusNodes || []).filter((x) => x.id !== n.id), nodeLinks: links.filter((l) => l.from.id !== n.id && l.to.id !== n.id) });
-                        else saveCombate({ genericNodes: (state.genericNodes || []).filter((x) => x.id !== n.id), nodeLinks: links.filter((l) => l.from.id !== n.id && l.to.id !== n.id) });
-                      }} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c", padding: "2px 4px" })}>✕</button>
+                        deleteNode(n)
+                      }} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c", padding: "2px 6px", borderRadius: 999, fontSize: 11 })}>✕</button>
                     </div>
 
                     {!minNodes[n.id] && <div style={{ display: "grid", gap: 4, marginBottom: 6 }}>
-                      {n.kind === "resource" && <input value={n.nome || ""} onChange={(e) => updateResourceById(n.id, { nome: e.target.value })} style={inpStyle()} />}
-                      {n.kind === "status" && <div style={{ display: "grid", gridTemplateColumns: "1fr 72px", gap: 4 }}><input value={n.nome || ""} onChange={(e) => updateStatusById(n.id, { nome: e.target.value })} style={inpStyle()} /><input value={n.sigla || ""} onChange={(e) => updateStatusById(n.id, { sigla: e.target.value.toUpperCase() })} style={inpStyle()} /></div>}
+                      {n.kind === "resource" && <><input value={n.nome || ""} onChange={(e) => updateResourceById(n.id, { nome: e.target.value })} style={inpStyle()} /><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}><input type="number" value={Number(n.max || 0)} onChange={(e) => updateResourceById(n.id, { max: Math.max(0, Number(e.target.value) || 0) })} style={inpStyle()} /><input type="number" value={Number(n.atual || 0)} onChange={(e) => updateResourceById(n.id, { atual: Math.max(0, Number(e.target.value) || 0) })} style={inpStyle()} /></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}><select value={n.slotShape || "square"} onChange={(e) => updateResourceById(n.id, { slotShape: e.target.value })} style={inpStyle()}>{SHAPES.map((x) => <option key={x} value={x}>{x}</option>)}</select><input type="color" value={n.cor || "#95a5a6"} onChange={(e) => updateResourceById(n.id, { cor: e.target.value })} style={{ ...inpStyle(), height: 32 }} /></div></>}
+                      {n.kind === "status" && <><div style={{ display: "grid", gridTemplateColumns: "1fr 72px", gap: 4 }}><input value={n.nome || ""} onChange={(e) => updateStatusById(n.id, { nome: e.target.value })} style={inpStyle()} /><input value={n.sigla || ""} onChange={(e) => updateStatusById(n.id, { sigla: e.target.value.toUpperCase() })} style={inpStyle()} /></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}><input type="number" value={Number(n.base || 0)} onChange={(e) => updateStatusById(n.id, { base: Number(e.target.value) || 0 })} style={inpStyle()} /><input type="color" value={n.cor || "#f39c12"} onChange={(e) => updateStatusById(n.id, { cor: e.target.value })} style={{ ...inpStyle(), height: 32 }} /></div></>}
                       {n.kind === "generic" && <input value={n.label || ""} onChange={(e) => updateGenericById(n.id, { label: e.target.value })} style={inpStyle()} />}
                     </div>}
 
@@ -468,7 +531,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
           </div>
           {(charEffects || []).map((e) => {
             const isCollapsed = collapsed[e.id] ?? true;
-            return <div key={e.id} style={{ border: "1px solid #2a2a2a", borderRadius: 10, padding: 8, marginBottom: 8, background: "#0a0a0a", display: "grid", gap: 6 }}><div style={{ display: "grid", gridTemplateColumns: "24px 80px 24px 24px 1fr auto auto", gap: 6, alignItems: "center" }}><input type="checkbox" checked={e.ativo !== false} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, ativo: ev.target.checked } : x))} /><select value={e.tipo || "Buff"} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, tipo: ev.target.value } : x))} style={inpStyle()}><option>Buff</option><option>Debuff</option></select><button onClick={() => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, sinalizar: !(x.sinalizar !== false) } : x))} style={btnStyle({ padding: "2px 4px" })}>{e.sinalizar !== false ? "🔔" : "🔕"}</button><button onClick={() => setCollapsed((p) => ({ ...p, [e.id]: !isCollapsed }))} style={btnStyle({ padding: "2px 4px" })}>{isCollapsed ? "▸" : "▾"}</button><input value={e.nome || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, nome: ev.target.value } : x))} style={inpStyle()} /><HoverButton onClick={() => saveEffects([{ ...e, id: uid(), nome: `${e.nome || "Efeito"} (cópia)` }, ...(charEffects || [])])}>⎘</HoverButton><HoverButton onClick={() => saveEffects(charEffects.filter((x) => x.id !== e.id))} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c" })}>✕</HoverButton></div>{isCollapsed ? <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>{e.tipo || "—"} · {e.nome || "Sem nome"} · {e.efeitoMecanico || "—"}</div> : <textarea value={e.descricao || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, descricao: ev.target.value } : x))} rows={2} style={inpStyle({ resize: "vertical" })} />}</div>;
+            return <div key={e.id} style={{ border: "1px solid #2a2a2a", borderRadius: 10, padding: 8, marginBottom: 8, background: "#0a0a0a", display: "grid", gap: 6 }}><div style={{ display: "grid", gridTemplateColumns: "24px 80px 24px 24px 1fr auto auto", gap: 6, alignItems: "center" }}><input type="checkbox" checked={e.ativo !== false} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, ativo: ev.target.checked } : x))} /><select value={e.tipo || "Buff"} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, tipo: ev.target.value } : x))} style={inpStyle()}><option>Buff</option><option>Debuff</option></select><button onClick={() => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, sinalizar: !(x.sinalizar !== false) } : x))} style={btnStyle({ padding: "2px 6px", borderRadius: 999, fontSize: 11 })}>{e.sinalizar !== false ? "🔔" : "🔕"}</button><button onClick={() => setCollapsed((p) => ({ ...p, [e.id]: !isCollapsed }))} style={btnStyle({ padding: "2px 6px", borderRadius: 999, fontSize: 11 })}>{isCollapsed ? "▸" : "▾"}</button><input value={e.nome || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, nome: ev.target.value } : x))} style={inpStyle()} /><HoverButton onClick={() => saveEffects([{ ...e, id: uid(), nome: `${e.nome || "Efeito"} (cópia)` }, ...(charEffects || [])])}>⎘</HoverButton><HoverButton onClick={() => saveEffects(charEffects.filter((x) => x.id !== e.id))} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c" })}>✕</HoverButton></div>{isCollapsed ? <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>{e.tipo || "—"} · {e.nome || "Sem nome"} · {e.efeitoMecanico || "—"}</div> : <textarea value={e.descricao || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, descricao: ev.target.value } : x))} rows={2} style={inpStyle({ resize: "vertical" })} />}</div>;
           })}
         </div>
       )}
