@@ -14,14 +14,6 @@ const SIDE_OFFSET = {
   left: { x: 0, y: CARD_H / 2, vx: -1, vy: 0 },
 };
 
-const ACTIONS = [
-  { id: "regen5", label: "Regenerar +5", patch: (p) => ({ vida: num(p.vida) + 5 }) },
-  { id: "dano5", label: "Tomar dano -5", patch: (p) => ({ vida: Math.max(0, num(p.vida) - 5) }) },
-  { id: "armar", label: "Ativar blindagem", patch: (p) => ({ ossos: num(p.ossos) + 1, pele: num(p.pele) + 1 }) },
-  { id: "fadiga", label: "Aplicar fadiga", patch: (p) => ({ musculos: Math.max(0, num(p.musculos) - 1) }) },
-  { id: "reset", label: "Resetar atributos", patch: () => ({ saude: 0, ossos: 0, pele: 0, musculos: 0, bonus: 0 }) },
-];
-
 const defaultCorpo = () => ({ pontosTotal: 1000, partes: [], links: [] });
 const num = (v, min = 0) => Math.max(min, Number(v) || 0);
 
@@ -53,8 +45,6 @@ function normalizePart(p) {
     y: Number(p?.y) || 120,
     cor: p?.cor || "#4aa3ff",
     icone: p?.icone || "",
-    vidaMax: num(p?.vidaMax, 1) || 20,
-    vida: num(p?.vida, 0) || 20,
     saude: num(p?.saude, 0),
     ossos: num(p?.ossos, 0),
     pele: num(p?.pele, 0),
@@ -105,7 +95,10 @@ function MiniBodyCanvas({ title, state, onChange, selectedId, onSelect, canCreat
     return { x: (clientX - r.left - viewport.x) / viewport.zoom, y: (clientY - r.top - viewport.y) / viewport.zoom };
   };
 
-  const patchPart = (id, patch) => onChange({ ...state, partes: parts.map((p) => (p.id === id ? { ...p, ...patch } : p)) });
+  const patchPart = (id, patch) => {
+    const latest = normalizeCorpo(state);
+    onChange({ ...latest, partes: (latest.partes || []).map((p) => (p.id === id ? { ...p, ...patch } : p)) });
+  };
 
   const centerView = () => {
     if (!wrapRef.current || !parts.length) {
@@ -164,14 +157,17 @@ function MiniBodyCanvas({ title, state, onChange, selectedId, onSelect, canCreat
   };
 
   const onDownCanvas = (e) => {
-    if (e.button !== 1) return;
-    e.preventDefault();
-    dragRef.current = { kind: "pan", sx: e.clientX, sy: e.clientY, vx: viewport.x, vy: viewport.y };
+    if (e.button === 1) {
+      e.preventDefault();
+      dragRef.current = { kind: "pan", sx: e.clientX, sy: e.clientY, vx: viewport.x, vy: viewport.y };
+      return;
+    }
+    if (e.button === 0 && !e.target.closest("[data-node-card='1']")) onSelect?.(null);
   };
 
   const onDownNode = (part, e) => {
     if (e.button !== 0) return;
-    if (e.target.closest("button,input,select,textarea")) return;
+    if (!e.target.closest("[data-drag-handle='1']") && e.target.closest("button,input,select,textarea")) return;
     e.preventDefault();
     onSelect?.(part.id);
     dragRef.current = { kind: "node", id: part.id, sx: e.clientX, sy: e.clientY, x: part.x || 0, y: part.y || 0 };
@@ -203,7 +199,9 @@ function MiniBodyCanvas({ title, state, onChange, selectedId, onSelect, canCreat
       }
       const dx = (e.clientX - d.sx) / viewport.zoom;
       const dy = (e.clientY - d.sy) / viewport.zoom;
-      patchPart(d.id, { x: Math.round(d.x + dx), y: Math.round(d.y + dy) });
+      const nx = Math.round(d.x + dx);
+      const ny = Math.round(d.y + dy);
+      patchPart(d.id, { x: nx, y: ny });
     };
     const onUp = () => {
       dragRef.current = null;
@@ -215,7 +213,7 @@ function MiniBodyCanvas({ title, state, onChange, selectedId, onSelect, canCreat
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [viewport.zoom, linkDrag]);
+  }, [viewport.zoom, linkDrag, state]);
 
   return (
     <div style={{ border: "1px solid #2a3444", borderRadius: 12, background: compact ? "#0a1320" : "#090f19", padding: 8, display: "grid", gap: 8 }}>
@@ -250,7 +248,8 @@ function MiniBodyCanvas({ title, state, onChange, selectedId, onSelect, canCreat
               if (!from || !to) return null;
               const a = portWorld(from, l.from.side);
               const b = portWorld(to, l.to.side);
-              const d = `M ${a.x} ${a.y} C ${a.x + a.vx * 42} ${a.y + a.vy * 42}, ${b.x + b.vx * 42} ${b.y + b.vy * 42}, ${b.x} ${b.y}`;
+              const dist = Math.max(42, Math.min(160, Math.hypot(b.x - a.x, b.y - a.y) * 0.35));
+              const d = `M ${a.x} ${a.y} C ${a.x + a.vx * dist} ${a.y + a.vy * dist}, ${b.x + b.vx * dist} ${b.y + b.vy * dist}, ${b.x} ${b.y}`;
               return <g key={l.id}><path d={d} stroke="#000" strokeWidth="7" fill="none" strokeLinecap="round" /><path d={d} stroke="#f6c46d" strokeWidth="3.2" fill="none" strokeLinecap="round" /></g>;
             })}
             {linkDrag && (() => {
@@ -264,11 +263,12 @@ function MiniBodyCanvas({ title, state, onChange, selectedId, onSelect, canCreat
           </svg>
 
           {parts.map((part) => {
-            const ratio = num(part.vida) / Math.max(1, num(part.vidaMax, 1));
             const hasItem = (part.anexos || []).some((a) => String(a.kind || "").startsWith("item"));
             const hasEffect = (part.anexos || []).some((a) => String(a.kind || "").startsWith("effect"));
+            const saude = num(part.saude);
+            const visibleSaude = Math.min(22, saude);
             return (
-              <div key={part.id} onMouseDown={(e) => onDownNode(part, e)} style={{
+              <div key={part.id} data-node-card="1" onMouseDown={(e) => onDownNode(part, e)} style={{
                 position: "absolute", left: part.x || 0, top: part.y || 0, width: CARD_W, height: CARD_H,
                 border: `1px solid ${selectedId === part.id ? "#9fd7ff" : "#40546d"}`,
                 borderRadius: 12,
@@ -285,19 +285,25 @@ function MiniBodyCanvas({ title, state, onChange, selectedId, onSelect, canCreat
                   );
                 })}
 
+                <div data-drag-handle="1" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", color: "#83a9cc", fontSize: 10, fontFamily: "monospace", cursor: "grab", marginBottom: 4 }}>
+                  <span>⠿ mover</span>
+                  <span>{hasItem ? "🛡" : ""}{hasEffect ? " ✦" : ""}</span>
+                </div>
                 <div style={{ display: "grid", gridTemplateColumns: "22px 1fr auto", gap: 6, alignItems: "center" }}>
                   <div style={{ width: 22, height: 22, borderRadius: 4, border: "1px solid #2f4e6c", background: part.cor || "#4aa3ff", display: "grid", placeItems: "center", fontSize: 12 }}>{part.icone || ""}</div>
                   <input value={part.nome || ""} onChange={(e) => patchPart(part.id, { nome: e.target.value })} style={inpStyle({ padding: "6px 8px" })} />
                   <button onClick={() => deletePart(part.id)} style={btnStyle({ borderColor: "#e74c3c55", color: "#ff7f7f", padding: "2px 6px" })}>✕</button>
                 </div>
-                <div style={{ marginTop: 6, height: 8, borderRadius: 999, background: "#111" }}><div style={{ width: `${Math.max(0, Math.min(100, ratio * 100))}%`, height: "100%", borderRadius: 999, background: "linear-gradient(90deg, #2ecc71, #f1c40f, #e74c3c)" }} /></div>
                 <div style={{ marginTop: 6, fontSize: 10, color: "#b6d2ef", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
                   <span>Pele grossa: {num(part.pele)}</span>
                   <span>Músculos duros: {num(part.musculos)}</span>
                   <span>Ossos fortes: {num(part.ossos)}</span>
                   <span>Bônus: {Number(part.bonus) || 0}</span>
-                  <span>Saúde: {num(part.saude)}</span>
-                  <span>Vida: {num(part.vida)}</span>
+                  <span style={{ gridColumn: "1 / span 2", color: "#7cf2ae" }}>Saúde: {saude}</span>
+                </div>
+                <div style={{ marginTop: 4, display: "flex", gap: 3, flexWrap: "wrap" }}>
+                  {Array.from({ length: visibleSaude }).map((_, i) => <span key={`${part.id}-hp-${i}`} style={{ width: 8, height: 8, borderRadius: 2, background: "#63dd9e", border: "1px solid #1d5" }} />)}
+                  {saude > visibleSaude && <span style={{ color: "#86dcb0", fontSize: 10 }}>+{saude - visibleSaude}</span>}
                 </div>
               </div>
             );
@@ -308,7 +314,7 @@ function MiniBodyCanvas({ title, state, onChange, selectedId, onSelect, canCreat
   );
 }
 
-function PartInspector({ part, title, onPatch, onAddAnexo, onOpenAnexo, onApplyAction, inventoryItems, characterEffects }) {
+function PartInspector({ part, title, onPatch, onAddAnexo, onOpenAnexo, onRemoveAnexo, inventoryItems, characterEffects }) {
   if (!part) return null;
   return (
     <div style={{ border: "1px solid #2a3444", borderRadius: 12, background: "#0a121d", padding: 10, display: "grid", gap: 8 }}>
@@ -318,7 +324,6 @@ function PartInspector({ part, title, onPatch, onAddAnexo, onOpenAnexo, onApplyA
         <input type="color" value={part.cor || "#4aa3ff"} onChange={(e) => onPatch({ cor: e.target.value })} style={{ ...inpStyle(), padding: 2, height: 34 }} />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-        <input type="number" value={num(part.vida)} onChange={(e) => onPatch({ vida: num(e.target.value) })} style={inpStyle()} title="Vida" />
         <input type="number" value={num(part.saude)} onChange={(e) => onPatch({ saude: num(e.target.value) })} style={inpStyle()} title="Saúde" />
         <input type="number" value={num(part.ossos)} onChange={(e) => onPatch({ ossos: num(e.target.value) })} style={inpStyle()} title="Ossos fortes" />
         <input type="number" value={num(part.pele)} onChange={(e) => onPatch({ pele: num(e.target.value) })} style={inpStyle()} title="Pele grossa" />
@@ -351,18 +356,14 @@ function PartInspector({ part, title, onPatch, onAddAnexo, onOpenAnexo, onApplyA
           {(part.anexos || []).map((a) => {
             const m = metaOf(a.kind);
             return (
-              <button key={a.id} onClick={() => onOpenAnexo(a)} style={{ border: `1px solid ${m.tint}66`, background: `${m.tint}1f`, borderRadius: 999, padding: "3px 8px", color: m.tint, fontSize: 11, cursor: "pointer" }}>
-                {m.icon} {a.label}
-              </button>
+              <span key={a.id} style={{ position: "relative", display: "inline-flex" }}>
+                <button onClick={() => onOpenAnexo(a)} style={{ border: `1px solid ${m.tint}66`, background: `${m.tint}1f`, borderRadius: 999, padding: "3px 18px 3px 8px", color: m.tint, fontSize: 11, cursor: "pointer" }}>
+                  {m.icon} {a.label}
+                </button>
+                <button onClick={() => onRemoveAnexo(a.id)} title="Desanexar" style={{ position: "absolute", right: 4, top: 2, border: "none", background: "transparent", color: "#ff9b9b", cursor: "pointer", fontSize: 11 }}>✕</button>
+              </span>
             );
           })}
-        </div>
-      </div>
-
-      <div style={{ borderTop: "1px solid #263446", paddingTop: 8 }}>
-        <div style={{ color: G.muted, fontSize: 11, marginBottom: 6 }}>Ações rápidas</div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {ACTIONS.map((a) => <HoverButton key={a.id} onClick={() => onApplyAction(a.patch)} style={btnStyle({ padding: "3px 8px" })}>{a.label}</HoverButton>)}
         </div>
       </div>
     </div>
@@ -467,12 +468,12 @@ export function TabCorpo({ ficha, onUpdate, onNotify }) {
                 part={selected}
                 title="HUD da parte selecionada"
                 onPatch={(patch) => patchPart(selected.id, patch)}
-                onApplyAction={(patcher) => patchPart(selected.id, patcher(selected))}
-                onAddAnexo={(payload) => addAnexo(selected, payload, false)}
-                onOpenAnexo={(a) => openAnexo(a, selected.nome)}
-                inventoryItems={inventoryItems}
-                characterEffects={characterEffects}
-              />
+                  onAddAnexo={(payload) => addAnexo(selected, payload, false)}
+                  onOpenAnexo={(a) => openAnexo(a, selected.nome)}
+                  onRemoveAnexo={(anexoId) => patchPart(selected.id, { anexos: (selected.anexos || []).filter((a) => a.id !== anexoId) })}
+                  inventoryItems={inventoryItems}
+                  characterEffects={characterEffects}
+                />
 
               <MiniBodyCanvas
                 title={`Subcanvas interno · ${selected.nome}`}
@@ -489,9 +490,9 @@ export function TabCorpo({ ficha, onUpdate, onNotify }) {
                   part={selectedInner}
                   title="HUD da subparte"
                   onPatch={(patch) => patchInnerPart(selectedInner.id, patch)}
-                  onApplyAction={(patcher) => patchInnerPart(selectedInner.id, patcher(selectedInner))}
                   onAddAnexo={(payload) => addAnexo(selectedInner, payload, true)}
                   onOpenAnexo={(a) => openAnexo(a, `${selected.nome} / ${selectedInner.nome}`)}
+                  onRemoveAnexo={(anexoId) => patchInnerPart(selectedInner.id, { anexos: (selectedInner.anexos || []).filter((a) => a.id !== anexoId) })}
                   inventoryItems={inventoryItems}
                   characterEffects={characterEffects}
                 />
