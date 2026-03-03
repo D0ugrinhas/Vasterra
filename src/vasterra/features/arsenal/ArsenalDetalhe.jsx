@@ -10,8 +10,8 @@ export function ArsenalDetalhe({ item, onEdit, onDup, onDel }) {
   return (
     <div style={{ maxWidth: 980 }}>
       <div style={{ display: "flex", gap: 16, marginBottom: 20, alignItems: "center" }}>
-        <div style={{ width: 82, height: 82, background: cor + "11", border: "1px solid " + cor + "33", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 34, flexShrink: 0 }}>
-          <ItemIcon item={item} size={34} />
+        <div style={{ width: 126, height: 126, background: cor + "11", border: "1px solid " + cor + "44", borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 44, flexShrink: 0, boxShadow: `0 0 0 3px ${cor}22, 0 8px 20px ${cor}22` }}>
+          <ItemIcon item={item} size={108} />
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ fontFamily: "'Cinzel',serif", fontSize: 24, color: G.gold2, marginBottom: 6 }}>{item.nome}</div>

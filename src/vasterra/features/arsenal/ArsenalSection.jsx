@@ -79,7 +79,7 @@ export function ArsenalSection({ arsenal, efeitosCaldeirao = [], onArsenal, onNo
             return (
               <div key={it.id} className="arsenal-item-card" onClick={() => setSel(it.id)} style={{ background: active ? cor + "20" : G.bg3, border: "1px solid " + (active ? cor + "88" : G.border), borderRadius: 10, padding: 10, marginBottom: 8, cursor: "pointer" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <ItemIcon item={it} size={20} />
+                  <ItemIcon item={it} size={28} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.nome}</div>
                     <div style={{ fontFamily: "monospace", fontSize: 10, color: G.muted }}>{it.tipo} · {it.subtipo || "—"} · {Number(it.peso || 0)}kg</div>

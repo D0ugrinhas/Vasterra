@@ -5,7 +5,7 @@ import { ARSENAL_RANKS, RANK_COR } from "../../data/gameData";
 import { EffectForgeEditor, makeDefaultEffect } from "./EffectForgeEditor";
 import { ImageViewport } from "../../components/media/ImageAttachModal";
 
-function EffectIcon({ ef, size = 20 }) {
+function EffectIcon({ ef, size = 26 }) {
   if (ef.iconeModo === "url" && ef.iconeUrl) return <ImageViewport src={ef.iconeUrl} alt={ef.nome} size={size} adjust={ef.iconeAjuste} />;
   if (ef.iconeModo === "upload" && ef.iconeData) return <ImageViewport src={ef.iconeData} alt={ef.nome} size={size} adjust={ef.iconeAjuste} />;
   if (ef.iconeModo === "cor") return <span style={{ width: size, height: size, display: "inline-block", borderRadius: 5, background: ef.cor || "#7f8c8d", border: "1px solid #333" }} />;
@@ -84,7 +84,9 @@ export function CaldeiraoSection({ efeitos, onEfeitos, onNotify, onConfirmAction
         {selEffect && (
           <div style={{ maxWidth: 860 }}>
             <div style={{ display: "flex", gap: 12, marginBottom: 14, alignItems: "center" }}>
-              <EffectIcon ef={selEffect} size={30} />
+              <div style={{ width: 96, height: 96, borderRadius: 12, border: "1px solid #302736", background: "#0b090d", display: "grid", placeItems: "center", boxShadow: "0 8px 18px rgba(0,0,0,.35)" }}>
+                <EffectIcon ef={selEffect} size={82} />
+              </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontFamily: "'Cinzel',serif", color: "#e6c6ff", fontSize: 24 }}>{selEffect.nome}</div>
                 <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>{selEffect.tipo} · {selEffect.rank} · {selEffect.efeitoMecanico || "—"}</div>

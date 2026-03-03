@@ -82,9 +82,16 @@ export function StatusBar({ sigla, nome, cor, val, max, onVal, onMax }) {
 
 export function EffectDetailsModal({ effect, onClose }) {
   if (!effect) return null;
+  const effectImgSrc = effect.iconeModo === "upload" ? effect.iconeData : effect.iconeModo === "url" ? effect.iconeUrl : "";
   return (
     <Modal title={`Efeito: ${effect.nome || "Sem nome"}`} onClose={onClose} wide>
       <div style={{ display: "grid", gap: 10 }}>
+        {effectImgSrc && (
+          <div style={{ display: "flex", alignItems: "center", gap: 14, background: "#090909", border: "1px solid #252525", borderRadius: 12, padding: 10 }}>
+            <ImageViewport src={effectImgSrc} alt={effect.nome || "Efeito"} size={108} radius={10} adjust={effect.iconeAjuste} />
+            <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>Prévia ampliada do ícone para inspeção detalhada.</div>
+          </div>
+        )}
         <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>
           {effect.tipo || "—"} · {effect.rank || "Sem rank"} · {effect.efeitoMecanico || effect.efeito || effect.valor || "Sem efeito mecânico"}
         </div>
