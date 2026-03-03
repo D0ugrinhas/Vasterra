@@ -53,17 +53,17 @@ export function toAllNodes(state) {
 
 export function getInputPorts(node) {
   if (node.kind === "resource") return ["max", "atual", "cor"];
-  if (node.kind === "status") return ["max", "val", "cor"];
+  if (node.kind === "status") return ["base", "max", "val", "cor"];
   if (node.kind === "generic" && node.nodeType === "value") return ["value"];
   if (node.kind === "generic" && node.nodeType === "math") return ["a", "b"];
-  if (node.kind === "generic" && node.nodeType === "conditional") return ["a", "b"];
+  if (node.kind === "generic" && node.nodeType === "conditional") return ["a", "b", "trueValue", "falseValue"];
   if (node.kind === "generic" && node.nodeType === "comment") return ["value"];
   return [];
 }
 
 export function getOutputPorts(node) {
   if (node.kind === "resource") return ["value", "max", "cor"];
-  if (node.kind === "status") return ["value", "max", "cor", "zero"];
+  if (node.kind === "status") return ["value", "base", "max", "cor", "zero"];
   if (node.kind === "generic" && ["value", "math", "conditional"].includes(node.nodeType)) return ["value"];
   if (node.kind === "generic" && node.nodeType === "color") return ["cor"];
   return [];
@@ -71,7 +71,7 @@ export function getOutputPorts(node) {
 
 export function canLink(fromNode, fromPort, toNode, toPort) {
   if (!getOutputPorts(fromNode).includes(fromPort) || !getInputPorts(toNode).includes(toPort)) return false;
-  const numericOut = ["value", "max", "zero"].includes(fromPort);
+  const numericOut = ["value", "base", "max", "zero"].includes(fromPort);
   const colorOut = fromPort === "cor";
   if (toPort === "cor") return colorOut;
   return numericOut;
@@ -100,9 +100,11 @@ export function evaluateNodeOutputs(state, ficha) {
       }
       if (n.kind === "status") {
         const value = Number(findSourceValue(n.id, "val") ?? n.val ?? 0);
+        const base = Number(findSourceValue(n.id, "base") ?? n.base ?? 0);
         const max = Number(findSourceValue(n.id, "max") ?? n.max ?? 1);
         outputs[n.id] = {
           value,
+          base,
           max,
           cor: String(findSourceValue(n.id, "cor") ?? n.cor ?? "#f39c12"),
           zero: value <= 0 ? 1 : 0,
@@ -125,8 +127,10 @@ export function evaluateNodeOutputs(state, ficha) {
       if (n.nodeType === "conditional") {
         const a = Number(findSourceValue(n.id, "a") || 0);
         const b = Number(findSourceValue(n.id, "b") || 0);
+        const trueValue = Number(findSourceValue(n.id, "trueValue") ?? n.trueValue ?? 0);
+        const falseValue = Number(findSourceValue(n.id, "falseValue") ?? n.falseValue ?? 0);
         const ok = n.cmp === ">" ? a > b : n.cmp === "<" ? a < b : a === b;
-        outputs[n.id] = { value: ok ? Number(n.trueValue || 0) : Number(n.falseValue || 0) };
+        outputs[n.id] = { value: ok ? trueValue : falseValue };
         return;
       }
       if (n.nodeType === "color") {

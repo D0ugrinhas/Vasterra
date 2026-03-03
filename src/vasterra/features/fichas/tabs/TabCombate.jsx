@@ -27,8 +27,11 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hoverSlot, setHoverSlot] = useState({});
 
+  const fullscreenRootRef = useRef(null);
   const canvasWrapRef = useRef(null);
   const edgeVecRef = useRef({ x: 0, y: 0 });
+  const keyStateRef = useRef({ w: false, a: false, s: false, d: false });
+  const keyVelocityRef = useRef({ x: 0, y: 0 });
   const rafRef = useRef(null);
   const charEffects = ficha.modificadores?.efeitos || [];
 
@@ -77,6 +80,13 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
   };
 
   const getNodePos = (node) => ({ x: (node.x || 0) * viewport.zoom + viewport.x, y: (node.y || 0) * viewport.zoom + viewport.y });
+  const getPortY = (index) => 22 + index * 20;
+  const getPortLabel = (port) => ({ atual: "atual", max: "máx", base: "base", val: "valor", value: "valor", cor: "cor", zero: "zero", a: "A", b: "B", trueValue: "true", falseValue: "false" }[port] || port);
+  const getLinkColor = (port, fromNode) => {
+    if (port === "cor") return outputs[fromNode?.id || ""]?.cor || fromNode?.cor || "#95a5a6";
+    if (port === "zero") return "#f39c12";
+    return "#7dd3fc";
+  };
 
   const beginLink = (from) => setLinkStart(from);
   const endLink = (to) => {
@@ -100,38 +110,50 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
     setViewport((p) => ({ ...p, zoom: Math.max(0.45, Math.min(2.2, Number((p.zoom + dir).toFixed(2)))) }));
   };
 
-  const tickEdgePan = () => {
-    const v = edgeVecRef.current;
-    if (isFullscreen && edgePanEnabled && (v.x || v.y)) {
-      const speedX = v.x * 22;
-      const speedY = v.y * 22;
-      setViewport((p) => ({ ...p, x: p.x + speedX, y: p.y + speedY }));
+  const tickPan = () => {
+    const edge = edgeVecRef.current;
+    const key = keyStateRef.current;
+    const targetX = (isFullscreen && edgePanEnabled ? edge.x : 0) + (key.a ? 1 : 0) - (key.d ? 1 : 0);
+    const targetY = (isFullscreen && edgePanEnabled ? edge.y : 0) + (key.w ? 1 : 0) - (key.s ? 1 : 0);
+    const vel = keyVelocityRef.current;
+    vel.x += (targetX - vel.x) * 0.12;
+    vel.y += (targetY - vel.y) * 0.12;
+    const speed = 18;
+    if (Math.abs(vel.x) > 0.01 || Math.abs(vel.y) > 0.01) {
+      setViewport((p) => ({ ...p, x: p.x + vel.x * speed, y: p.y + vel.y * speed }));
     }
-    rafRef.current = requestAnimationFrame(tickEdgePan);
+    rafRef.current = requestAnimationFrame(tickPan);
   };
 
   useEffect(() => {
-    rafRef.current = requestAnimationFrame(tickEdgePan);
+    rafRef.current = requestAnimationFrame(tickPan);
     return () => cancelAnimationFrame(rafRef.current);
   });
 
   useEffect(() => {
-    const onFs = () => setIsFullscreen(document.fullscreenElement === canvasWrapRef.current);
+    const onFs = () => setIsFullscreen(document.fullscreenElement === fullscreenRootRef.current);
     document.addEventListener("fullscreenchange", onFs);
     return () => document.removeEventListener("fullscreenchange", onFs);
   }, []);
 
   useEffect(() => {
-    const onKey = (e) => {
-      if (!isFullscreen) return;
-      const m = 20;
-      if (e.key.toLowerCase() === "w") setViewport((p) => ({ ...p, y: p.y + m }));
-      if (e.key.toLowerCase() === "s") setViewport((p) => ({ ...p, y: p.y - m }));
-      if (e.key.toLowerCase() === "a") setViewport((p) => ({ ...p, x: p.x + m }));
-      if (e.key.toLowerCase() === "d") setViewport((p) => ({ ...p, x: p.x - m }));
+    const onKeyDown = (e) => {
+      const k = e.key.toLowerCase();
+      if (!isFullscreen || !["w", "a", "s", "d"].includes(k)) return;
+      e.preventDefault();
+      keyStateRef.current[k] = true;
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const onKeyUp = (e) => {
+      const k = e.key.toLowerCase();
+      if (!["w", "a", "s", "d"].includes(k)) return;
+      keyStateRef.current[k] = false;
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
   }, [isFullscreen]);
 
   const onCanvasMouseMove = (e) => {
@@ -182,24 +204,24 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
   };
 
   const toggleFullscreen = async () => {
-    if (!canvasWrapRef.current) return;
-    if (!document.fullscreenElement) await canvasWrapRef.current.requestFullscreen();
+    if (!fullscreenRootRef.current) return;
+    if (!document.fullscreenElement) await fullscreenRootRef.current.requestFullscreen();
     else await document.exitFullscreen();
   };
 
   return (
-    <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 12, padding: 12 }}>
+    <div ref={fullscreenRootRef} style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 12, padding: 12, position: "relative", minHeight: isFullscreen ? "100vh" : undefined }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <span style={{ fontFamily: "'Cinzel',serif", color: G.gold, letterSpacing: 2 }}>◈ COMBATE</span>
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        {!isFullscreen && <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <HoverButton onClick={() => setRodada(state.rodadaAtual - 1)}>&lt;</HoverButton>
           <span style={{ fontFamily: "monospace", color: "#8ec8ff" }}>Rodada {state.rodadaAtual}</span>
           <HoverButton onClick={() => setRodada(state.rodadaAtual + 1)}>&gt;</HoverButton>
           <HoverButton onClick={proxRodada}>Próx</HoverButton>
-        </div>
+        </div>}
       </div>
 
-      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 10, opacity: isFullscreen ? 0.9 : 1 }}>
         {["recursos", "efeitos", "lembretes"].map((aba) => {
           const hasAlert = aba === "lembretes" ? activeLembretes.length > 0 : aba === "efeitos" ? notifyingEffects.length > 0 : false;
           return <button key={aba} onClick={() => setTab(aba)} style={{ ...btnStyle({ padding: "6px 12px" }), borderColor: state.abaAtiva === aba ? "#5dade266" : undefined, color: state.abaAtiva === aba ? "#b6ddff" : undefined, position: "relative" }}>{aba[0].toUpperCase() + aba.slice(1)}{hasAlert && <span style={{ position: "absolute", top: -6, right: -6, color: "#ff4d6d" }}>❗</span>}</button>;
@@ -208,12 +230,11 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
 
       {state.abaAtiva === "recursos" && (
         <div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <HoverButton onClick={() => setNodePickerOpen(true)}>{isFullscreen ? "+ Nó" : "+ Novo Nó"}</HoverButton>
-            <HoverButton onClick={() => saveCombate({ recursos: (state.recursos || []).map((r) => ({ ...r, atual: Number(outputs[r.id]?.max ?? r.max) })) })} style={btnStyle({ borderColor: "#2ecc7144", color: "#7cf0b3" })}>{isFullscreen ? "Reset" : "Resetar Recursos"}</HoverButton>
-            <HoverButton onClick={toggleFullscreen} style={btnStyle({ borderColor: "#3498db55", color: "#8fc8ff" })}>{isFullscreen ? "🡼" : "⛶"}</HoverButton>
-            {isFullscreen && <HoverButton onClick={() => setEdgePanEnabled((v) => !v)} style={btnStyle({ borderColor: "#f39c1255", color: "#f7c96b" })}>{edgePanEnabled ? "Edge ON" : "Edge OFF"}</HoverButton>}
-          </div>
+          {!isFullscreen && <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <HoverButton onClick={() => setNodePickerOpen(true)}>+ Novo Nó</HoverButton>
+            <HoverButton onClick={() => saveCombate({ recursos: (state.recursos || []).map((r) => ({ ...r, atual: Number(outputs[r.id]?.max ?? r.max) })) })} style={btnStyle({ borderColor: "#2ecc7144", color: "#7cf0b3" })}>Resetar Recursos</HoverButton>
+            <HoverButton onClick={toggleFullscreen} style={btnStyle({ borderColor: "#3498db55", color: "#8fc8ff" })}>⛶</HoverButton>
+          </div>}
 
           <div
             ref={canvasWrapRef}
@@ -223,13 +244,42 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
             onMouseLeave={onCanvasLeave}
             style={{ border: "1px solid #2a2a2a", borderRadius: 12, background: "radial-gradient(circle at 20% 20%, #101726 0, #09090a 50%, #060606 100%)", height: isFullscreen ? "100vh" : 340, overflow: "hidden", position: "relative" }}
           >
+            {isFullscreen && <div style={{ position: "absolute", top: 10, right: 10, zIndex: 30, display: "flex", gap: 6, alignItems: "center", background: "#05070bcc", border: "1px solid #335", borderRadius: 10, padding: "6px 8px" }}>
+              <HoverButton onClick={() => setNodePickerOpen(true)} style={btnStyle({ padding: "5px 8px" })}>+ Nó</HoverButton>
+              <HoverButton onClick={() => setRodada(state.rodadaAtual - 1)} style={btnStyle({ padding: "5px 8px" })}>&lt;</HoverButton>
+              <span style={{ fontFamily: "monospace", color: "#8ec8ff", minWidth: 72, textAlign: "center" }}>Rod {state.rodadaAtual}</span>
+              <HoverButton onClick={() => setRodada(state.rodadaAtual + 1)} style={btnStyle({ padding: "5px 8px" })}>&gt;</HoverButton>
+              <HoverButton onClick={proxRodada} style={btnStyle({ padding: "5px 8px" })}>Próx</HoverButton>
+              <HoverButton onClick={() => saveCombate({ recursos: (state.recursos || []).map((r) => ({ ...r, atual: Number(outputs[r.id]?.max ?? r.max) })) })} style={btnStyle({ borderColor: "#2ecc7144", color: "#7cf0b3", padding: "5px 8px" })}>Reset</HoverButton>
+              <HoverButton onClick={() => setEdgePanEnabled((v) => !v)} style={btnStyle({ borderColor: "#f39c1255", color: "#f7c96b", padding: "5px 8px" })}>{edgePanEnabled ? "Edge ON" : "Edge OFF"}</HoverButton>
+              <HoverButton onClick={toggleFullscreen} style={btnStyle({ borderColor: "#3498db55", color: "#8fc8ff", padding: "5px 8px" })}>🡼</HoverButton>
+            </div>}
+
             <svg style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
               {links.map((l) => {
                 const from = allNodes.find((n) => n.id === l.from.id);
                 const to = allNodes.find((n) => n.id === l.to.id);
                 if (!from || !to) return null;
-                const fp = getNodePos(from); const tp = getNodePos(to);
-                return <path key={l.id} d={`M ${fp.x + 220} ${fp.y + 24} C ${fp.x + 280} ${fp.y + 24}, ${tp.x - 40} ${tp.y + 24}, ${tp.x} ${tp.y + 24}`} stroke="#87cefa" fill="none" strokeWidth="2" />;
+                const fp = getNodePos(from);
+                const tp = getNodePos(to);
+                const fromPorts = getOutputPorts(from);
+                const toPorts = getInputPorts(to);
+                const fromIndex = Math.max(0, fromPorts.indexOf(l.from.port));
+                const toIndex = Math.max(0, toPorts.indexOf(l.to.port));
+                const y1 = fp.y + getPortY(fromIndex);
+                const y2 = tp.y + getPortY(toIndex);
+                const x1 = fp.x + 220;
+                const x2 = tp.x;
+                const c1 = x1 + Math.max(48, Math.abs(x2 - x1) * 0.45);
+                const c2 = x2 - Math.max(48, Math.abs(x2 - x1) * 0.45);
+                const pathD = `M ${x1} ${y1} C ${c1} ${y1}, ${c2} ${y2}, ${x2} ${y2}`;
+                const stroke = getLinkColor(l.from.port, from);
+                return (
+                  <g key={l.id}>
+                    <path d={pathD} stroke="#000" fill="none" strokeWidth="6" strokeLinecap="round" />
+                    <path d={pathD} stroke={stroke} fill="none" strokeWidth="3" strokeLinecap="round" />
+                  </g>
+                );
               })}
             </svg>
 
@@ -240,13 +290,30 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                 const inputPorts = getInputPorts(n);
                 const outputPorts = getOutputPorts(n);
                 const incomingValue = links.find((l) => l.to.id === n.id && l.to.port === "value");
+                const hasInputLink = (port) => links.some((l) => l.to.id === n.id && l.to.port === port);
                 return (
                   <div key={n.id} style={{ position: "absolute", left: n.x || 0, top: n.y || 0, width: 220, border: `1px solid ${cor}77`, borderRadius: 12, background: "#000000bb", padding: 8, boxShadow: "0 0 18px #000" }}>
-                    <div style={{ position: "absolute", left: -10, top: 16, display: "grid", gap: 8 }}>
-                      {inputPorts.map((p) => <button key={p} onClick={() => endLink({ id: n.id, port: p })} style={{ width: 12, height: 12, borderRadius: "50%", border: "1px solid #9ad", background: "radial-gradient(circle at 30% 30%, #dff, #245)", cursor: "pointer" }} title={`Input ${p}`} />)}
+                    <div style={{ position: "absolute", left: -64, top: 14, display: "grid", gap: 4 }}>
+                      {inputPorts.map((p, i) => {
+                        const linked = links.some((l) => l.to.id === n.id && l.to.port === p);
+                        return (
+                          <div key={p} style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 5, height: 16 }}>
+                            <small style={{ fontSize: 9, color: linked ? "#a3d9ff" : "#6e88a8", fontFamily: "monospace" }}>{getPortLabel(p)}</small>
+                            <button onClick={() => endLink({ id: n.id, port: p })} style={{ width: 12, height: 12, borderRadius: "50%", border: "1px solid #9ad", background: linked ? "radial-gradient(circle at 30% 30%, #fff, #2f9eff)" : "radial-gradient(circle at 30% 30%, #dff, #245)", cursor: "pointer" }} title={`Input ${p}`} />
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div style={{ position: "absolute", right: -10, top: 16, display: "grid", gap: 8 }}>
-                      {outputPorts.map((p) => <button key={p} onClick={() => beginLink({ id: n.id, port: p })} style={{ width: 12, height: 12, borderRadius: "50%", border: "1px solid #f9c", background: linkStart?.id === n.id && linkStart?.port === p ? "radial-gradient(circle at 30% 30%, #fff, #a0f)" : "radial-gradient(circle at 30% 30%, #ffe, #524)", cursor: "pointer" }} title={`Output ${p}`} />)}
+                    <div style={{ position: "absolute", right: -64, top: 14, display: "grid", gap: 4 }}>
+                      {outputPorts.map((p) => {
+                        const active = linkStart?.id === n.id && linkStart?.port === p;
+                        return (
+                          <div key={p} style={{ display: "flex", alignItems: "center", gap: 5, height: 16 }}>
+                            <button onClick={() => beginLink({ id: n.id, port: p })} style={{ width: 12, height: 12, borderRadius: "50%", border: "1px solid #f9c", background: active ? "radial-gradient(circle at 30% 30%, #fff, #a0f)" : "radial-gradient(circle at 30% 30%, #ffe, #524)", cursor: "pointer" }} title={`Output ${p}`} />
+                            <small style={{ fontSize: 9, color: active ? "#ffd6ff" : "#a58aa8", fontFamily: "monospace" }}>{getPortLabel(p)}</small>
+                          </div>
+                        );
+                      })}
                     </div>
 
                     <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: 5, alignItems: "center", marginBottom: 6 }}>
@@ -269,6 +336,8 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                     </div>
 
                     {n.kind === "resource" && (() => {
+                      const maxLinked = hasInputLink("max");
+                      const atualLinked = hasInputLink("atual");
                       const max = Math.max(0, Number(out.max ?? n.max ?? 0));
                       const atual = Math.max(0, Math.min(max, Number(out.value ?? n.atual ?? 0)));
                       const hover = hoverSlot[n.id];
@@ -280,14 +349,15 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                             {Array.from({ length: max }).map((_, i) => {
                               const on = i < preview;
                               const style = { width: 18, height: 18, border: `1px solid ${cor}`, background: on ? cor : "#151515", opacity: on ? 1 : 0.35, borderRadius: n.slotShape === "circle" ? "50%" : n.slotShape === "triangle" ? 0 : 4, clipPath: n.slotShape === "triangle" ? "polygon(50% 0, 0 100%, 100% 100%)" : undefined };
-                              return <button key={i} onMouseEnter={() => setHoverSlot((p) => ({ ...p, [n.id]: i }))} onMouseLeave={() => setHoverSlot((p) => ({ ...p, [n.id]: null }))} onClick={() => {
+                              return <button key={i} disabled={atualLinked} onMouseEnter={() => setHoverSlot((p) => ({ ...p, [n.id]: i }))} onMouseLeave={() => setHoverSlot((p) => ({ ...p, [n.id]: null }))} onClick={() => {
+                                if (atualLinked) return;
                                 if (atual === 1 && i === 0) updateResourceById(n.id, { atual: 0 });
                                 else if (i === atual - 1) updateResourceById(n.id, { atual: Math.max(0, i) });
                                 else updateResourceById(n.id, { atual: i + 1 });
-                              }} style={style} />;
+                              }} style={{ ...style, cursor: atualLinked ? "not-allowed" : "pointer" }} />;
                             })}
                           </div>
-                          <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10, color: G.muted }}>{atual}/{max} · gasto previsto: {gasto}</div>
+                          <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10, color: G.muted }}>{atual}/{max} · gasto previsto: {gasto}{maxLinked ? " · máx via link" : ""}{atualLinked ? " · atual via link" : ""}</div>
                         </>
                       );
                     })()}
@@ -298,18 +368,18 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                       return (
                         <>
                           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 4 }}>
-                            <input type="number" value={val} min={0} max={max} onChange={(e) => updateStatusById(n.id, { val: Math.max(0, Math.min(max, Number(e.target.value) || 0)) })} style={inpStyle()} />
-                            <input type="number" value={max} min={1} onChange={(e) => updateStatusById(n.id, { max: Math.max(1, Number(e.target.value) || 1) })} style={inpStyle()} />
+                            <input type="number" disabled={hasInputLink("val")} value={val} min={0} max={max} onChange={(e) => updateStatusById(n.id, { val: Math.max(0, Math.min(max, Number(e.target.value) || 0)) })} style={inpStyle()} />
+                            <input type="number" disabled={hasInputLink("max")} value={max} min={1} onChange={(e) => updateStatusById(n.id, { max: Math.max(1, Number(e.target.value) || 1) })} style={inpStyle()} />
                           </div>
                           <div style={{ height: 8, borderRadius: 4, background: "#111", overflow: "hidden" }}><div style={{ width: `${(val / max) * 100}%`, height: "100%", background: cor }} /></div>
-                          <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10, color: G.muted }}>zero output: {Number(out.zero || 0)}</div>
+                          <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10, color: G.muted }}>base: {Number(out.base ?? n.base ?? 0)} · zero output: {Number(out.zero || 0)}{hasInputLink("base") ? " · base via link" : ""}</div>
                         </>
                       );
                     })()}
 
                     {n.kind === "generic" && (
                       <>
-                        {n.nodeType === "value" && <input type="number" disabled={!!incomingValue || !!n.sourcePath} value={Number(n.value || 0)} onChange={(e) => updateGenericById(n.id, { value: Number(e.target.value) || 0 })} style={inpStyle()} />}
+                        {n.nodeType === "value" && <input type="number" disabled={!!incomingValue || !!n.sourcePath || hasInputLink("value")} value={Number(n.value || 0)} onChange={(e) => updateGenericById(n.id, { value: Number(e.target.value) || 0 })} style={inpStyle()} />}
                         {n.nodeType === "comment" && <div style={{ padding: 6, borderRadius: 6, background: Number(out.value || 0) > 0 ? "#f1c40f22" : "#111", boxShadow: Number(out.value || 0) > 0 ? "0 0 12px #f1c40f99" : "none", color: G.text, minHeight: 34 }}>{n.text || "Comentário"}</div>}
                         <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10, color: G.muted }}>out: {String(out.value ?? out.cor ?? 0)}</div>
                       </>
