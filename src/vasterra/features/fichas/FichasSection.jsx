@@ -14,7 +14,7 @@ import { TabCombate } from "./tabs/TabCombate";
 import { TabCorpo } from "./tabs/TabCorpo";
 
 export const FICHA_TABS = [
-  { id: "status",     label: "Status" },
+  { id: "status",     label: "Informações" },
   { id: "combate",    label: "Combate" },
   { id: "corpo",      label: "Corpo" },
   { id: "atributos",  label: "Atributos & Perícias" },

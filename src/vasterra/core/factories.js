@@ -24,6 +24,17 @@ export const novaFicha = (nome = "Novo Personagem") => ({
   aparencia: "",
   historico: "",
   notas: "",
+  informacoes: {
+    peso: "",
+    altura: "",
+    genero: "",
+    rank: "Comum",
+    avatarModo: "fallback",
+    avatarIcone: "?",
+    avatarCor: "#1b2330",
+    avatarUrl: "",
+    avatarData: "",
+  },
   status: {
     VIT:  { val: 20, max: 20 },
     EST:  { val: 15, max: 15 },

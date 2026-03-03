@@ -39,7 +39,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
   const saveCombate = (next) => onUpdate({ combate: { ...state, ...next } });
   const saveEffects = (next) => onUpdate({ modificadores: { ...(ficha.modificadores || {}), efeitos: next } });
   const setTab = (abaAtiva) => saveCombate({ abaAtiva });
-  const setRodada = (rodadaAtual) => saveCombate({ rodadaAtual: Math.max(0, rodadaAtual) });
+  const setRodada = (rodadaAtual) => { const next = Math.max(0, rodadaAtual); saveCombate({ rodadaAtual: next }); applyRoundTick(next); };
   const updateResourceById = (id, patch) => saveCombate({ recursos: state.recursos.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
   const updateStatusById = (id, patch) => saveCombate({ statusNodes: (state.statusNodes || []).map((r) => (r.id === id ? { ...r, ...patch } : r)) });
   const updateGenericById = (id, patch) => saveCombate({ genericNodes: (state.genericNodes || []).map((r) => (r.id === id ? { ...r, ...patch } : r)) });
@@ -56,13 +56,73 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
     return out;
   }, [ficha]);
 
-  const activeLembretes = (state.lembretes || []).filter((l) => (l.tipo === "naRodada" ? l.lembrarNaRodada : (l.criadoNaRodada + l.lembrarNaRodada)) === state.rodadaAtual);
+  const activeLembretes = (state.lembretes || []).filter((l) => (l.tipo === "naRodada" ? Number(l.lembrarNaRodada || 0) : Number(l.criadoNaRodada || 0) + Number(l.lembrarEm || 1)) === state.rodadaAtual);
   const activeEfeitos = (charEffects || []).filter((e) => e.ativo !== false);
   const notifyingEffects = activeEfeitos.filter((e) => e.sinalizar !== false);
 
+  const parseDice = (txt = "") => {
+    const m = String(txt).trim().match(/^(\d+)d(\d+)$/i);
+    if (!m) return null;
+    return { qtd: Math.max(1, Number(m[1]) || 1), faces: Math.max(2, Number(m[2]) || 2) };
+  };
+
+  const rollDice = (expr) => {
+    const d = parseDice(expr);
+    if (!d) return null;
+    let total = 0;
+    for (let i = 0; i < d.qtd; i += 1) total += 1 + Math.floor(Math.random() * d.faces);
+    return total;
+  };
+
+  const parseDurationRounds = (duracao) => {
+    const raw = String(duracao || "").trim();
+    if (!raw) return null;
+    const dice = rollDice(raw);
+    if (Number.isFinite(dice)) return { rounds: Math.max(1, dice), rolled: dice, source: raw };
+    const num = Number(raw.replace(/[^0-9.-]/g, ""));
+    if (Number.isFinite(num) && num > 0) return { rounds: Math.max(1, Math.round(num)), rolled: null, source: raw };
+    const m = raw.match(/(\d+)\s*rod/i);
+    if (m) return { rounds: Math.max(1, Number(m[1]) || 1), rolled: null, source: raw };
+    return null;
+  };
+
+  const reminderRound = (l) => (l.tipo === "naRodada" ? Number(l.lembrarNaRodada || 0) : Number(l.criadoNaRodada || 0) + Number(l.lembrarEm || 1));
+
+  const applyRoundTick = (nextRound) => {
+    const effects = (charEffects || []).map((e) => {
+      if (e.ativo === false) return e;
+      if (!Number.isFinite(Number(e.rodadaFim))) return e;
+      if (nextRound <= Number(e.rodadaFim)) return e;
+      return { ...e, ativo: false };
+    });
+    const remindersNow = (state.lembretes || []).filter((l) => reminderRound(l) === nextRound);
+    remindersNow.forEach((l) => onNotify?.(`Lembrete (Rod ${nextRound}): ${l.texto || "(sem texto)"}`, "info"));
+    saveEffects(effects);
+  };
+
+  const toggleEffectAtivo = (id, ativo) => {
+    const updated = (charEffects || []).map((x) => {
+      if (x.id !== id) return x;
+      if (!ativo) return { ...x, ativo: false };
+      const duration = parseDurationRounds(x.duracao);
+      if (!duration) return { ...x, ativo: true, rodadaInicio: state.rodadaAtual, rodadaFim: null, duracaoRolada: null };
+      if (duration.rolled) onNotify?.(`${x.nome || "Efeito"}: duração rolada ${duration.source} = ${duration.rolled} rodadas.`, "info");
+      return {
+        ...x,
+        ativo: true,
+        rodadaInicio: state.rodadaAtual,
+        rodadaFim: state.rodadaAtual + duration.rounds,
+        duracaoRolada: duration.rolled,
+      };
+    });
+    saveEffects(updated);
+  };
+
   const proxRodada = () => {
+    const nextRound = state.rodadaAtual + 1;
     const recursos = (state.recursos || []).map((r) => ({ ...r, atual: Number(outputs[r.id]?.max ?? r.max) }));
-    saveCombate({ rodadaAtual: state.rodadaAtual + 1, recursos });
+    saveCombate({ rodadaAtual: nextRound, recursos });
+    applyRoundTick(nextRound);
     onNotify?.("Nova rodada: recursos resetados para o máximo.", "info");
   };
 
@@ -565,7 +625,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
             return (
               <div key={e.id} style={{ border: "1px solid #2a2a2a", borderRadius: 10, padding: 8, marginBottom: 8, background: "#0a0a0a", display: "grid", gap: 6 }}>
                 <div style={{ display: "grid", gridTemplateColumns: "24px 80px 24px 24px 1fr auto auto", gap: 6, alignItems: "center" }}>
-                  <input type="checkbox" checked={e.ativo !== false} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, ativo: ev.target.checked } : x))} />
+                  <input type="checkbox" checked={e.ativo !== false} onChange={(ev) => toggleEffectAtivo(e.id, ev.target.checked)} />
                   <select value={e.tipo || "Buff"} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, tipo: ev.target.value } : x))} style={inpStyle()}><option>Buff</option><option>Debuff</option></select>
                   <button onClick={() => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, sinalizar: !(x.sinalizar !== false) } : x))} style={btnStyle({ padding: "2px 6px", borderRadius: 999, fontSize: 11 })}>{e.sinalizar !== false ? "🔔" : "🔕"}</button>
                   <button onClick={() => setCollapsed((p) => ({ ...p, [e.id]: !isCollapsed }))} style={btnStyle({ padding: "2px 6px", borderRadius: 999, fontSize: 11 })}>{isCollapsed ? "▸" : "▾"}</button>
@@ -575,7 +635,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                 </div>
 
                 {isCollapsed ? (
-                  <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>{e.tipo || "—"} · {e.nome || "Sem nome"} · {e.efeitoMecanico || e.efeito || "—"}</div>
+                  <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>{e.tipo || "—"} · {e.nome || "Sem nome"} · {e.efeitoMecanico || e.efeito || "—"}{Number.isFinite(Number(e.rodadaFim)) ? ` · até rodada ${Number(e.rodadaFim)}` : ""}</div>
                 ) : (
                   <div style={{ display: "grid", gap: 6 }}>
                     <textarea value={e.descricao || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, descricao: ev.target.value } : x))} rows={2} style={inpStyle({ resize: "vertical" })} placeholder="Descrição" />
@@ -600,7 +660,29 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
         </div>
       )}
 
-      {state.abaAtiva === "lembretes" && <div><HoverButton onClick={() => saveCombate({ lembretes: [...(state.lembretes || []), { id: uid(), texto: "Novo lembrete", criadoNaRodada: state.rodadaAtual, lembrarNaRodada: state.rodadaAtual + 1, tipo: "emX" }] })}>+ Novo Lembrete</HoverButton></div>}
+      {state.abaAtiva === "lembretes" && (
+        <div style={{ display: "grid", gap: 8 }}>
+          <HoverButton onClick={() => saveCombate({ lembretes: [...(state.lembretes || []), { id: uid(), texto: "Novo lembrete", criadoNaRodada: state.rodadaAtual, lembrarEm: 1, lembrarNaRodada: state.rodadaAtual + 1, tipo: "emX" }] })}>+ Novo Lembrete</HoverButton>
+          {(state.lembretes || []).map((l) => (
+            <div key={l.id} style={{ border: "1px solid #2a2a2a", borderRadius: 10, background: "#0a0a0a", padding: 8, display: "grid", gap: 6 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 130px auto", gap: 6, alignItems: "center" }}>
+                <input value={l.texto || ""} onChange={(e) => saveCombate({ lembretes: (state.lembretes || []).map((x) => x.id === l.id ? { ...x, texto: e.target.value } : x) })} style={inpStyle()} placeholder="Texto do lembrete" />
+                <select value={l.tipo || "emX"} onChange={(e) => saveCombate({ lembretes: (state.lembretes || []).map((x) => x.id === l.id ? { ...x, tipo: e.target.value } : x) })} style={inpStyle()}>
+                  <option value="emX">Em X rodadas</option>
+                  <option value="naRodada">Na rodada</option>
+                </select>
+                {(l.tipo || "emX") === "naRodada" ? (
+                  <input type="number" value={Number(l.lembrarNaRodada || state.rodadaAtual)} onChange={(e) => saveCombate({ lembretes: (state.lembretes || []).map((x) => x.id === l.id ? { ...x, lembrarNaRodada: Number(e.target.value) || 0 } : x) })} style={inpStyle()} />
+                ) : (
+                  <input type="number" min={1} value={Number(l.lembrarEm || 1)} onChange={(e) => saveCombate({ lembretes: (state.lembretes || []).map((x) => x.id === l.id ? { ...x, lembrarEm: Math.max(1, Number(e.target.value) || 1) } : x) })} style={inpStyle()} />
+                )}
+                <HoverButton onClick={() => saveCombate({ lembretes: (state.lembretes || []).filter((x) => x.id !== l.id) })} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c" })}>✕</HoverButton>
+              </div>
+              <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>Dispara na rodada: {reminderRound(l)}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {nodePickerOpen && <Modal title="Novo Nó" onClose={() => setNodePickerOpen(false)}><div style={{ display: "grid", gap: 8 }}>{NODE_TYPES.map((t) => <button key={t} onClick={() => openNodeType(t)} style={btnStyle()}>{t}</button>)}</div></Modal>}
 
