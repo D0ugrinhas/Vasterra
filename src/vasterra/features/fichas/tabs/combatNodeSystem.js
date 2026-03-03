@@ -1,6 +1,6 @@
 import { uid } from "../../../core/factories";
 
-export const NODE_TYPES = ["Recurso", "Barra de Status", "Valor", "Math", "Condicionais", "Color picker", "Comentário", "Dado"];
+export const NODE_TYPES = ["Recurso", "Barra de Status", "Valor", "Math", "Condicionais", "Color picker", "Comentário", "Dado", "Lógico"];
 export const SHAPES = ["square", "circle", "diamond", "triangle", "hex"];
 
 export const defaultCombatState = () => ({
@@ -24,7 +24,8 @@ export function defaultGenericForm(kind = "Valor") {
   if (kind === "Condicionais") return { nodeType: "conditional", label: "Cond", cmp: ">", trueValue: 1, falseValue: 0, x: 520, y: 320 };
   if (kind === "Comentário") return { nodeType: "comment", label: "Comentário", text: "", x: 520, y: 420 };
   if (kind === "Dado") return { nodeType: "dice", label: "Dado", qty: 1, faces: 20, bonus: 0, critMin: 20, critMax: 20, critValue: 1, failValue: -1, lastRoll: 0, x: 520, y: 520 };
-  return { nodeType: "color", label: "Cor", color: "#95a5a6", x: 520, y: 620 };
+  if (kind === "Lógico") return { nodeType: "logic", label: "Lógico", logic: "if", ifTrue: 1, ifFalse: 0, x: 520, y: 620 };
+  return { nodeType: "color", label: "Cor", color: "#95a5a6", x: 520, y: 720 };
 }
 
 export function getFichaValueByPath(ficha, path) {
@@ -60,6 +61,7 @@ export function getInputPorts(node) {
   if (node.kind === "generic" && node.nodeType === "conditional") return ["a", "b", "trueValue", "falseValue"];
   if (node.kind === "generic" && node.nodeType === "comment") return ["value"];
   if (node.kind === "generic" && node.nodeType === "dice") return ["qty", "faces", "bonus", "critMin", "critMax", "critValue", "failValue"];
+  if (node.kind === "generic" && node.nodeType === "logic") return ["a", "b", "ifTrue", "ifFalse"];
   return [];
 }
 
@@ -69,6 +71,7 @@ export function getOutputPorts(node) {
   if (node.kind === "generic" && ["value", "math", "conditional"].includes(node.nodeType)) return ["value"];
   if (node.kind === "generic" && node.nodeType === "color") return ["cor"];
   if (node.kind === "generic" && node.nodeType === "dice") return ["value", "crit"];
+  if (node.kind === "generic" && node.nodeType === "logic") return ["value"];
   return [];
 }
 
@@ -142,6 +145,22 @@ export function evaluateNodeOutputs(state, ficha) {
       }
       if (n.nodeType === "comment") {
         outputs[n.id] = { value: Number(findSourceValue(n.id, "value") || 0) };
+        return;
+      }
+
+      if (n.nodeType === "logic") {
+        const a = Number(findSourceValue(n.id, "a") || 0);
+        const b = Number(findSourceValue(n.id, "b") || 0);
+        const ifTrue = Number(findSourceValue(n.id, "ifTrue") ?? n.ifTrue ?? 1);
+        const ifFalse = Number(findSourceValue(n.id, "ifFalse") ?? n.ifFalse ?? 0);
+        const op = n.logic || "if";
+        const cond = op === "or" ? (a > 0 || b > 0)
+          : op === "xor" ? ((a > 0) !== (b > 0))
+          : op === "and" ? (a > 0 && b > 0)
+          : op === "else" ? !(a > 0)
+          : op === "not" ? !(a > 0)
+          : a > b;
+        outputs[n.id] = { value: cond ? ifTrue : ifFalse };
         return;
       }
       if (n.nodeType === "dice") {
