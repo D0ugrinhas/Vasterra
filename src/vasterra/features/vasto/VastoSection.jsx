@@ -35,6 +35,25 @@ export function VastoSection({ prestigios = {}, onPrestigios, skillTags = [], on
   const saveTree = (nextTree) => onPrestigios({ ...prestigios, [skill]: normalizePrestigioTree(nextTree, skill) });
   const updateNode = (id, patch) => saveTree({ ...tree, nodes: tree.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)) });
   const removeNode = (id) => saveTree({ ...tree, nodes: tree.nodes.filter((n) => n.id !== id), links: tree.links.filter((l) => l.from !== id && l.to !== id), centralNodeId: tree.centralNodeId === id ? "" : tree.centralNodeId });
+  const moveNode = (id, pos) => updateNode(id, pos);
+
+  const createLink = (from, to) => {
+    if (!from || !to || from === to) return;
+    if (tree.links.some((l) => (l.from === from && l.to === to) || (l.from === to && l.to === from))) return;
+    saveTree({ ...tree, links: [...tree.links, { id: uid(), from, to }] });
+    setLinkFrom(null);
+  };
+
+  const deleteLink = (id) => saveTree({ ...tree, links: tree.links.filter((l) => l.id !== id) });
+
+  const toggleRequiredNode = (requiredId) => {
+    if (!selectedNode || !requiredId || requiredId === selectedNode.id) return;
+    const current = selectedNode.requires?.requiredNodeIds || [];
+    const requiredNodeIds = current.includes(requiredId)
+      ? current.filter((id) => id !== requiredId)
+      : [...current, requiredId];
+    updateNode(selectedNode.id, { requires: { ...(selectedNode.requires || {}), requiredNodeIds } });
+  };
 
   const addNode = () => {
     const n = { ...defaultPrestigioNode(), x: 600 + (tree.nodes.length * 47) % 1200, y: 500 + (tree.nodes.length * 31) % 900 };
@@ -157,9 +176,16 @@ export function VastoSection({ prestigios = {}, onPrestigios, skillTags = [], on
 
   return (
     <div style={{ padding: 16, display: "grid", gap: 10 }}>
+      <style>{`
+        @keyframes vastoNebulaFlow {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+      `}</style>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <HoverButton onClick={() => setScreen("home")} style={btnStyle({ padding: "4px 10px" })}>← Voltar</HoverButton>
-        <span style={{ fontFamily: "'Cinzel',serif", color: G.gold }}>Criador de Prestígios</span>
+        <span style={{ fontFamily: "'Cinzel',serif", color: G.gold, padding: "2px 10px", borderRadius: 999, background: "linear-gradient(90deg,#ffffff10,#7d4dff22,#ffffff10)", backgroundSize: "200% 200%", animation: "vastoNebulaFlow 7s ease-in-out infinite" }}>Criador de Prestígios</span>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "290px 1fr 360px", gap: 10, minHeight: "calc(100vh - 120px)" }}>
         <AstralHudCard>
@@ -180,7 +206,19 @@ export function VastoSection({ prestigios = {}, onPrestigios, skillTags = [], on
               <label style={{ border: "1px solid #3498db55", color: "#8fc8ff", borderRadius: 8, padding: "6px 10px", cursor: "pointer" }}>Importar<input type="file" accept="application/json" style={{ display: "none" }} onChange={(e) => importPrestigios(e.target.files?.[0])} /></label>
             </div>
           </div>
-          <PrestigioTreeCanvas tree={tree} onChange={saveTree} selectedNodeId={selectedNodeId} onSelectNode={setSelectedNodeId} linkMode={linkMode} linkFrom={linkFrom} onLinkFrom={setLinkFrom} skillName={skill} />
+          <PrestigioTreeCanvas
+            tree={tree}
+            editable
+            selectedNodeId={selectedNodeId}
+            onSelectNode={setSelectedNodeId}
+            onMoveNode={moveNode}
+            linkMode={linkMode}
+            linkFrom={linkFrom}
+            onLinkFrom={setLinkFrom}
+            onCreateLink={createLink}
+            onDeleteLink={deleteLink}
+            skillName={skill}
+          />
         </AstralHudCard>
 
         <AstralHudCard>
@@ -189,7 +227,33 @@ export function VastoSection({ prestigios = {}, onPrestigios, skillTags = [], on
               <div style={{ fontFamily: "'Cinzel',serif", color: G.gold2 }}>Editar Estrela Selecionada</div>
               <input value={selectedNode.nome || ""} onChange={(e) => updateNode(selectedNode.id, { nome: e.target.value })} style={inpStyle()} placeholder="Nome" />
               <textarea rows={2} value={selectedNode.descricao || ""} onChange={(e) => updateNode(selectedNode.id, { descricao: e.target.value })} style={inpStyle()} placeholder="Descrição" />
+              <textarea rows={2} value={selectedNode.efeitoNarrativo || ""} onChange={(e) => updateNode(selectedNode.id, { efeitoNarrativo: e.target.value })} style={inpStyle()} placeholder="Efeito narrativo" />
               <input type="number" min={0} value={selectedNode.requires?.minSkillLevel || 0} onChange={(e) => updateNode(selectedNode.id, { requires: { ...(selectedNode.requires || {}), minSkillLevel: Math.max(0, Number(e.target.value) || 0) } })} style={inpStyle()} placeholder="Nível mínimo" />
+              <div style={{ border: "1px solid #294164", borderRadius: 8, padding: 8, display: "grid", gap: 6 }}>
+                <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#b8d6ff", fontSize: 12, fontFamily: "monospace" }}>
+                  <input type="checkbox" checked={tree.centralNodeId === selectedNode.id} onChange={(e) => saveTree({ ...tree, centralNodeId: e.target.checked ? selectedNode.id : "" })} />
+                  Estrela central
+                </label>
+                <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#b8d6ff", fontSize: 12, fontFamily: "monospace" }}>
+                  <input type="checkbox" checked={!!selectedNode.isChoiceGate} onChange={(e) => updateNode(selectedNode.id, { isChoiceGate: e.target.checked })} />
+                  Estrela de escolha (trava ramos alternativos)
+                </label>
+              </div>
+              <div style={{ borderTop: "1px solid #233652", paddingTop: 6, display: "grid", gap: 6 }}>
+                <div style={{ fontSize: 11, color: "#9eb8de" }}>Estrelas necessárias</div>
+                <div style={{ maxHeight: 110, overflowY: "auto", display: "grid", gap: 4 }}>
+                  {tree.nodes.filter((n) => n.id !== selectedNode.id).map((n) => (
+                    <label key={n.id} style={{ display: "flex", alignItems: "center", gap: 6, color: "#b8d6ff", fontFamily: "monospace", fontSize: 11 }}>
+                      <input
+                        type="checkbox"
+                        checked={(selectedNode.requires?.requiredNodeIds || []).includes(n.id)}
+                        onChange={() => toggleRequiredNode(n.id)}
+                      />
+                      {n.nome}
+                    </label>
+                  ))}
+                </div>
+              </div>
               <div style={{ borderTop: "1px solid #233652", paddingTop: 6 }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: 11, color: "#9eb8de" }}>Condições extras</span><HoverButton onClick={addExtraCondition} style={btnStyle({ padding: "3px 8px" })}>+ condição</HoverButton></div>
                 <div style={{ display: "grid", gap: 6, marginTop: 6 }}>
