@@ -1,12 +1,13 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { HoverButton } from "../../../components/primitives/Interactive";
 import { uid, novaSkill } from "../../../core/factories";
 import { btnStyle, G, inpStyle } from "../../../ui/theme";
 import { SkillEditor } from "../../biblioteca/SkillEditor";
 import { resolveSkillCode } from "./skillCodeResolver";
+import { ARSENAL_RANKS } from "../../../data/gameData";
 
 function skillBadge(scope) {
-  return scope === "local" ? { text: "LOCAL", color: "#9b59b6" } : { text: "BIBLIOTECA", color: "#3498db" };
+  return scope === "local" ? { text: "LOCAL", color: "#b07cff" } : { text: "BIBLIOTECA", color: "#69c2ff" };
 }
 
 function normalizeAssignedSkills(ficha) {
@@ -22,39 +23,138 @@ function normalizeAssignedSkills(ficha) {
   });
 }
 
-function SkillAssignedCard({ entry, onEdit, onRemove, ficha }) {
+function tagNames(skill, tagsById) {
+  return (skill?.tagIds || []).map((id) => tagsById[id]?.nome || "").filter(Boolean);
+}
+
+function SkillFichaDetalhe({ entry, tagsById, ficha, onEdit, onUnassign, onCloneLocal }) {
   const [showResolved, setShowResolved] = useState(false);
-  const badge = skillBadge(entry.scope);
-  const preview = useMemo(() => resolveSkillCode(entry.skill?.descricaoCode || "", ficha), [entry.skill?.descricaoCode, ficha]);
+  const badge = skillBadge(entry?.scope);
+  const skill = entry?.skill || {};
+  const preview = useMemo(() => resolveSkillCode(skill.descricaoCode || "", ficha), [skill.descricaoCode, ficha]);
+
+  if (!entry) {
+    return <div style={{ color: G.muted, fontFamily: "monospace" }}>Nenhuma skill selecionada.</div>;
+  }
 
   return (
-    <div style={{ border: "1px solid #30445f", borderRadius: 10, padding: 10, background: "linear-gradient(180deg,#0f1a2d,#0a1322)", display: "grid", gap: 6 }}>
+    <div style={{ display: "grid", gap: 10 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <div>
-          <div style={{ color: "#d4e7ff", fontFamily: "'Cinzel',serif" }}>{entry.skill?.nome || "Skill sem nome"}</div>
-          <div style={{ fontFamily: "monospace", fontSize: 10, color: badge.color }}>{badge.text}</div>
+          <div style={{ fontFamily: "'Cinzel Decorative',serif", color: G.gold, fontSize: 20 }}>{skill.nome || "Skill sem nome"}</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", fontFamily: "monospace", fontSize: 11 }}>
+            <span style={{ color: badge.color }}>{badge.text}</span>
+            <span style={{ color: "#89b4dd" }}>{skill.rank || "Sem rank"}</span>
+            <span style={{ color: "#89b4dd" }}>{skill.essenciaAtribuida || "Nenhuma"}</span>
+          </div>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
-          <HoverButton onClick={onEdit} style={btnStyle({ padding: "4px 8px" })}>Editar</HoverButton>
-          <HoverButton onClick={onRemove} style={btnStyle({ borderColor: "#e74c3c66", color: "#ff9087", padding: "4px 8px" })}>Desatribuir</HoverButton>
+          <HoverButton onClick={onEdit} style={btnStyle({ padding: "4px 10px" })}>Editar</HoverButton>
+          <HoverButton onClick={onCloneLocal} style={btnStyle({ borderColor: "#6e60d166", color: "#cabfff", padding: "4px 10px" })}>Clonar local</HoverButton>
+          <HoverButton onClick={onUnassign} style={btnStyle({ borderColor: "#e74c3c66", color: "#ff9087", padding: "4px 10px" })}>Desatribuir</HoverButton>
         </div>
       </div>
 
-      <div style={{ color: "#8fb5dd", fontSize: 11, fontFamily: "monospace" }}>{entry.skill?.descricao || "Sem descrição"}</div>
+      <div style={{ border: "1px solid #344761", borderRadius: 12, background: "linear-gradient(180deg,#0f1a2d,#0b1322)", padding: 10 }}>
+        <div style={{ color: "#d8e9ff", fontFamily: "monospace", fontSize: 12, marginBottom: 6 }}>Tags</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {tagNames(skill, tagsById).map((name) => <span key={name} style={{ padding: "3px 9px", borderRadius: 999, border: "1px solid #3f5d83", color: "#b9d8ff", fontFamily: "monospace", fontSize: 11 }}>{name}</span>)}
+          {tagNames(skill, tagsById).length === 0 && <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Sem tags</span>}
+        </div>
+      </div>
 
-      <div style={{ border: "1px solid #273b59", borderRadius: 8, background: "#0a1220", position: "relative" }}>
-        <button
-          onClick={() => setShowResolved((v) => !v)}
-          title="Alternar visão do código"
-          style={{ position: "absolute", top: 6, right: 6, border: "1px solid #446089", borderRadius: 999, background: "#0f1a2f", color: "#9ec6ff", width: 24, height: 24, cursor: "pointer" }}
-        >
-          👁
-        </button>
-        <pre style={{ margin: 0, padding: "10px 36px 10px 10px", whiteSpace: "pre-wrap", color: "#a6d3ff", fontSize: 11, fontFamily: "monospace" }}>
+      <div style={{ border: "1px solid #344761", borderRadius: 12, background: "linear-gradient(180deg,#0f1a2d,#0b1322)", padding: 10, color: "#a6c8ed", fontFamily: "monospace", whiteSpace: "pre-wrap", minHeight: 80 }}>
+        {skill.descricao || "Sem descrição."}
+      </div>
+
+      <div style={{ border: "1px solid #344761", borderRadius: 12, background: "#0b1424", position: "relative" }}>
+        <button onClick={() => setShowResolved((v) => !v)} title="Alternar código/resolvido" style={{ position: "absolute", right: 8, top: 8, border: "1px solid #47658f", background: "#10213a", color: "#9ec6ff", borderRadius: 999, width: 24, height: 24, cursor: "pointer" }}>👁</button>
+        <pre style={{ margin: 0, padding: "12px 38px 12px 12px", color: "#90c7ff", fontFamily: "monospace", whiteSpace: "pre-wrap", minHeight: 130 }}>
           {showResolved
             ? `${preview.resolved.join("\n")}${preview.resolved.length ? "\n\n" : ""}${preview.resolvedCode || "// sem descrição code"}`
-            : (entry.skill?.descricaoCode || "// sem descrição code")}
+            : (skill.descricaoCode || "// sem descrição code")}
         </pre>
+      </div>
+    </div>
+  );
+}
+
+function AssignModal({ open, onClose, pool = [], onPick, tagsById }) {
+  const [query, setQuery] = useState("");
+  const [fRank, setFRank] = useState("");
+  const [fEssencia, setFEssencia] = useState("");
+  const [fTag, setFTag] = useState("");
+  const [cursor, setCursor] = useState(0);
+
+  const filtered = useMemo(() => pool.filter((s) => {
+    const tg = tagNames(s, tagsById).join(" ").toLowerCase();
+    const full = `${s.nome || ""} ${s.descricao || ""} ${s.dono || ""} ${s.alcance || ""} ${tg}`.toLowerCase();
+    if (query && !full.includes(query.toLowerCase())) return false;
+    if (fRank && s.rank !== fRank) return false;
+    if (fEssencia && (s.essenciaAtribuida || "Nenhuma") !== fEssencia) return false;
+    if (fTag && !tg.includes(fTag.toLowerCase())) return false;
+    return true;
+  }), [pool, query, fRank, fEssencia, fTag, tagsById]);
+
+  const suggestions = filtered.slice(0, 8);
+
+  useEffect(() => {
+    setCursor((c) => Math.min(c, Math.max(0, suggestions.length - 1)));
+  }, [suggestions.length]);
+
+  if (!open) return null;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.62)", zIndex: 80, display: "grid", placeItems: "center" }}>
+      <div style={{ width: "min(980px, 92vw)", maxHeight: "86vh", overflow: "auto", border: "1px solid #3c5472", borderRadius: 12, background: "linear-gradient(180deg,#0c1628,#09111f)", padding: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div style={{ fontFamily: "'Cinzel Decorative',serif", color: G.gold, letterSpacing: 2 }}>Atribuir Skill da Biblioteca</div>
+          <HoverButton onClick={onClose} style={btnStyle({ borderColor: "#55657c", color: "#a5b5cc", padding: "4px 10px" })}>Fechar</HoverButton>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 140px 140px", gap: 6, marginBottom: 8 }}>
+          <div style={{ position: "relative" }}>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (!suggestions.length) return;
+                if (e.key === "ArrowDown") { e.preventDefault(); setCursor((c) => (c + 1) % suggestions.length); }
+                if (e.key === "ArrowUp") { e.preventDefault(); setCursor((c) => (c - 1 + suggestions.length) % suggestions.length); }
+                if (e.key === "Enter") { e.preventDefault(); onPick(suggestions[cursor]); }
+              }}
+              placeholder="Pesquisar com autocomplete (↑ ↓ Enter)..."
+              style={inpStyle()}
+              autoFocus
+            />
+            {!!suggestions.length && (
+              <div style={{ position: "absolute", left: 0, right: 0, top: "calc(100% + 2px)", border: "1px solid #3a4f69", borderRadius: 8, background: "#08101d", zIndex: 2, maxHeight: 220, overflowY: "auto" }}>
+                {suggestions.map((s, idx) => (
+                  <button key={s.id} onClick={() => onPick(s)} style={{ width: "100%", textAlign: "left", padding: "6px 8px", border: "none", borderBottom: "1px solid #1a2a42", background: idx === cursor ? "#14304f" : "transparent", color: "#cde4ff", cursor: "pointer" }}>
+                    <div style={{ fontFamily: "'Cinzel',serif", fontSize: 13 }}>{s.nome}</div>
+                    <div style={{ fontFamily: "monospace", fontSize: 10, color: "#86add7" }}>{s.rank || "-"} · {s.essenciaAtribuida || "Nenhuma"}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <select value={fRank} onChange={(e) => setFRank(e.target.value)} style={inpStyle()}><option value="">Rank</option>{ARSENAL_RANKS.map((r) => <option key={r}>{r}</option>)}</select>
+          <input value={fEssencia} onChange={(e) => setFEssencia(e.target.value)} placeholder="Essência" style={inpStyle()} />
+          <input value={fTag} onChange={(e) => setFTag(e.target.value)} placeholder="Tag" style={inpStyle()} />
+        </div>
+
+        <div style={{ display: "grid", gap: 6 }}>
+          {filtered.map((s) => (
+            <div key={s.id} style={{ border: "1px solid #334863", borderRadius: 8, padding: 8, background: "#0d1728", display: "grid", gap: 4 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ color: "#d5e8ff", fontFamily: "'Cinzel',serif" }}>{s.nome}</div>
+                <HoverButton onClick={() => onPick(s)} style={btnStyle({ padding: "4px 9px", borderColor: "#4f7dbc66", color: "#9ecfff" })}>Atribuir</HoverButton>
+              </div>
+              <div style={{ color: "#8fb5dd", fontSize: 11, fontFamily: "monospace" }}>{s.descricao || "Sem descrição"}</div>
+            </div>
+          ))}
+          {filtered.length === 0 && <div style={{ color: G.muted, fontFamily: "monospace" }}>Nenhuma skill encontrada.</div>}
+        </div>
       </div>
     </div>
   );
@@ -62,46 +162,58 @@ function SkillAssignedCard({ entry, onEdit, onRemove, ficha }) {
 
 export function TabSkills({ ficha, onUpdate, bibliotecaSkills = [], skillTags = [], onNotify }) {
   const [query, setQuery] = useState("");
+  const [fRank, setFRank] = useState("");
+  const [fTag, setFTag] = useState("");
   const [editorOpen, setEditorOpen] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
 
+  const tagsById = useMemo(() => Object.fromEntries((skillTags || []).map((t) => [t.id, t])), [skillTags]);
   const assigned = normalizeAssignedSkills(ficha);
   const assignedIds = new Set(assigned.map((s) => s.sourceSkillId).filter(Boolean));
 
-  const filteredBiblioteca = useMemo(() => (bibliotecaSkills || []).filter((s) => {
-    const pool = `${s.nome || ""} ${s.descricao || ""}`.toLowerCase();
-    return !query || pool.includes(query.toLowerCase());
-  }), [bibliotecaSkills, query]);
+  const filteredAssigned = useMemo(() => assigned.filter((entry) => {
+    const s = entry.skill || {};
+    const tgs = tagNames(s, tagsById).join(" ").toLowerCase();
+    const full = `${s.nome || ""} ${s.descricao || ""} ${s.dono || ""} ${s.alcance || ""} ${s.rank || ""} ${s.essenciaAtribuida || ""} ${tgs}`.toLowerCase();
+    if (query && !full.includes(query.toLowerCase())) return false;
+    if (fRank && s.rank !== fRank) return false;
+    if (fTag && !tgs.includes(fTag.toLowerCase())) return false;
+    return true;
+  }), [assigned, query, fRank, fTag, tagsById]);
 
-  const filteredAssigned = useMemo(() => assigned.filter((s) => {
-    const sk = s.skill || {};
-    const pool = `${sk.nome || ""} ${sk.descricao || ""}`.toLowerCase();
-    return !query || pool.includes(query.toLowerCase());
-  }), [assigned, query]);
+  const assignablePool = useMemo(() => (bibliotecaSkills || []).filter((s) => !assignedIds.has(s.id)), [bibliotecaSkills, assignedIds]);
+
+  useEffect(() => {
+    if (!selectedId && filteredAssigned[0]) setSelectedId(filteredAssigned[0].id);
+    if (selectedId && !assigned.some((s) => s.id === selectedId)) setSelectedId(filteredAssigned[0]?.id || null);
+  }, [selectedId, assigned, filteredAssigned]);
+
+  const selected = assigned.find((s) => s.id === selectedId) || filteredAssigned[0] || null;
 
   const persist = (next) => onUpdate({ skills: next });
 
   const assignFromLibrary = (skill) => {
     if (!skill?.id || assignedIds.has(skill.id)) return;
-    persist([
-      ...assigned,
-      {
-        id: uid(),
-        scope: "biblioteca",
-        sourceSkillId: skill.id,
-        skill: { ...skill, id: uid(), atualizado: Date.now() },
-      },
-    ]);
+    const entry = { id: uid(), scope: "biblioteca", sourceSkillId: skill.id, skill: { ...skill, id: uid(), atualizado: Date.now() } };
+    persist([...assigned, entry]);
+    setSelectedId(entry.id);
+    setAssignOpen(false);
     onNotify?.(`Skill atribuída: ${skill.nome}`, "success");
   };
-
-  const unassign = (id) => persist(assigned.filter((s) => s.id !== id));
 
   const openNewLocal = () => {
     const local = { id: uid(), scope: "local", sourceSkillId: "", skill: { ...novaSkill(), nome: "Nova Skill Local" } };
     persist([...assigned, local]);
     setEditingId(local.id);
+    setSelectedId(local.id);
     setEditorOpen(true);
+  };
+
+  const unassign = (id) => {
+    persist(assigned.filter((s) => s.id !== id));
+    onNotify?.("Skill desatribuída.", "info");
   };
 
   const editingEntry = assigned.find((s) => s.id === editingId) || null;
@@ -113,51 +225,74 @@ export function TabSkills({ ficha, onUpdate, bibliotecaSkills = [], skillTags = 
     setEditingId(null);
   };
 
+  const cloneAsLocal = () => {
+    if (!selected) return;
+    const clone = {
+      id: uid(),
+      scope: "local",
+      sourceSkillId: "",
+      skill: { ...selected.skill, id: uid(), nome: `${selected.skill?.nome || "Skill"} (local)` },
+    };
+    persist([...assigned, clone]);
+    setSelectedId(clone.id);
+    onNotify?.("Skill clonada localmente.", "success");
+  };
+
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-      <div style={{ border: "1px solid " + G.border, borderRadius: 10, background: G.bg2, padding: 10, display: "grid", gap: 8 }}>
-        <div style={{ fontFamily: "'Cinzel',serif", color: G.gold, letterSpacing: 2 }}>Atribuidor da Biblioteca</div>
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Pesquisar skills..." style={inpStyle()} />
-        <div style={{ maxHeight: "62vh", overflowY: "auto", display: "grid", gap: 6 }}>
-          {filteredBiblioteca.map((s) => {
-            const already = assignedIds.has(s.id);
+    <div style={{ display: "grid", gridTemplateColumns: "430px 1fr", gap: 12, minHeight: "68vh" }}>
+      <style>{`
+        .ficha-skill-card { transition: all .18s ease; }
+        .ficha-skill-card:hover { transform: translateY(-1px); border-color: #5d83b3; }
+        .ficha-skill-card.active { box-shadow: 0 0 16px #69a9ff33; border-color: #77a7dd; }
+      `}</style>
+      <div style={{ border: "1px solid #2f435f", borderRadius: 12, background: "radial-gradient(circle at top left,#16253c,#0b1220 52%,#070b14)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ padding: 10, borderBottom: "1px solid #2d3d57" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <div style={{ fontFamily: "'Cinzel Decorative',serif", color: G.gold, letterSpacing: 2 }}>Mini Biblioteca</div>
+            <HoverButton onClick={() => setAssignOpen(true)} style={btnStyle({ borderColor: "#4f7dbc66", color: "#9ecfff", padding: "4px 10px" })}>Atribuir</HoverButton>
+          </div>
+          <div style={{ color: "#8fb5dd", fontFamily: "monospace", fontSize: 10, marginBottom: 8 }}>A ficha começa sem skills. Crie localmente ou atribua da biblioteca.</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 110px", gap: 6 }}>
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Pesquisar atribuídas..." style={inpStyle()} />
+            <select value={fRank} onChange={(e) => setFRank(e.target.value)} style={inpStyle()}><option value="">Rank</option>{ARSENAL_RANKS.map((r) => <option key={r}>{r}</option>)}</select>
+            <input value={fTag} onChange={(e) => setFTag(e.target.value)} placeholder="Tag" style={inpStyle()} />
+          </div>
+          <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ color: "#9bbad9", fontFamily: "monospace", fontSize: 11 }}>{filteredAssigned.length} skill(s)</span>
+            <HoverButton onClick={openNewLocal} style={btnStyle({ padding: "4px 10px" })}>+ Criar local</HoverButton>
+          </div>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: 8, display: "grid", gap: 6 }}>
+          {filteredAssigned.map((entry) => {
+            const badge = skillBadge(entry.scope);
+            const active = selected?.id === entry.id;
             return (
-              <div key={s.id} style={{ border: "1px solid #30445f", borderRadius: 8, padding: 8, display: "grid", gap: 5, background: "#0c1524" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
-                  <div style={{ color: "#d5e7ff", fontFamily: "'Cinzel',serif", fontSize: 13 }}>{s.nome}</div>
-                  <HoverButton
-                    disabled={already}
-                    onClick={() => assignFromLibrary(s)}
-                    style={btnStyle({ padding: "4px 8px", borderColor: already ? "#3d4756" : "#3f78aa", color: already ? "#607085" : "#9ed0ff" })}
-                  >
-                    {already ? "Atribuída" : "Atribuir"}
-                  </HoverButton>
+              <button key={entry.id} className={`ficha-skill-card ${active ? "active" : ""}`} onClick={() => setSelectedId(entry.id)} style={{ border: "1px solid #365171", borderRadius: 10, background: "#0d1728", padding: 8, textAlign: "left", cursor: "pointer" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <div style={{ color: "#d5e7ff", fontFamily: "'Cinzel',serif", fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{entry.skill?.nome || "Skill"}</div>
+                  <span style={{ color: badge.color, fontFamily: "monospace", fontSize: 10 }}>{badge.text}</span>
                 </div>
-                <div style={{ color: "#8fb5dd", fontFamily: "monospace", fontSize: 11 }}>{s.descricao || "Sem descrição"}</div>
-              </div>
+                <div style={{ color: "#8fb5dd", fontFamily: "monospace", fontSize: 10 }}>{entry.skill?.rank || "-"} · {entry.skill?.essenciaAtribuida || "Nenhuma"}</div>
+              </button>
             );
           })}
+          {filteredAssigned.length === 0 && <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 12 }}>Nenhuma skill atribuída para os filtros atuais.</div>}
         </div>
       </div>
 
-      <div style={{ border: "1px solid " + G.border, borderRadius: 10, background: G.bg2, padding: 10, display: "grid", gap: 8 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontFamily: "'Cinzel',serif", color: G.gold, letterSpacing: 2 }}>Skills da Ficha</div>
-          <HoverButton onClick={openNewLocal}>+ Skill Local</HoverButton>
-        </div>
-        <div style={{ maxHeight: "62vh", overflowY: "auto", display: "grid", gap: 8 }}>
-          {filteredAssigned.map((entry) => (
-            <SkillAssignedCard
-              key={entry.id}
-              entry={entry}
-              ficha={ficha}
-              onEdit={() => { setEditingId(entry.id); setEditorOpen(true); }}
-              onRemove={() => unassign(entry.id)}
-            />
-          ))}
-          {filteredAssigned.length === 0 && <div style={{ color: G.muted, fontFamily: "monospace" }}>Nenhuma skill atribuída para o filtro atual.</div>}
-        </div>
+      <div style={{ border: "1px solid #2f435f", borderRadius: 12, background: "radial-gradient(circle at top left,#132338,#0a1220 52%,#070b14)", padding: 12 }}>
+        <SkillFichaDetalhe
+          entry={selected}
+          tagsById={tagsById}
+          ficha={ficha}
+          onEdit={() => { if (!selected) return; setEditingId(selected.id); setEditorOpen(true); }}
+          onUnassign={() => selected && unassign(selected.id)}
+          onCloneLocal={cloneAsLocal}
+        />
       </div>
+
+      <AssignModal open={assignOpen} onClose={() => setAssignOpen(false)} pool={assignablePool} onPick={assignFromLibrary} tagsById={tagsById} />
 
       {editorOpen && editingEntry && (
         <SkillEditor
