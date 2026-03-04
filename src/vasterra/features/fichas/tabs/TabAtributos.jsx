@@ -16,6 +16,7 @@ function PrestigioModal({ open, onClose, skillName, tree, ficha, unlockedIds, on
   const normalized = normalizePrestigioTree(tree, skillName);
   const effective = getEffectivePrestigio({ tree: normalized, ficha, unlockedIds, skillName });
   const detailNode = normalized.nodes.find((n) => n.id === detailNodeId) || null;
+  const canPrestigeDetailNode = detailNode ? canActivatePrestigioNode({ node: detailNode, unlockedIds, tree: normalized, ficha, skillName }) : false;
 
   return (
     <Modal title={`Prestígio · ${skillName}`} onClose={onClose} wide>
@@ -51,10 +52,17 @@ function PrestigioModal({ open, onClose, skillName, tree, ficha, unlockedIds, on
           <div style={{ display: "grid", gap: 8, maxHeight: "58vh", overflow: "auto" }}>
             <div style={{ color: "#a5c7ef", fontSize: 11 }}>{detailNode.descricao || "Sem descrição"}</div>
             <div style={{ color: "#f4e2a8", fontStyle: "italic", fontSize: 12 }}>{detailNode.efeitoNarrativo || "Sem efeito narrativo"}</div>
+            <div style={{ border: "1px solid #2c4367", borderRadius: 8, padding: 8, background: "#081224" }}>
+              <div style={{ fontFamily: "'Cinzel',serif", color: "#a8d3ff", fontSize: 12, marginBottom: 4 }}>✧ Requisitos para Desbloquear</div>
+              <div style={{ fontSize: 10, color: "#d0e2ff" }}>Nível mínimo da perícia: {detailNode.requires?.minSkillLevel || 0}</div>
+              {(detailNode.requires?.requiredNodeIds || []).length > 0 && <div style={{ fontSize: 10, color: "#d0e2ff" }}>Estrelas Necessárias: {(detailNode.requires?.requiredNodeIds || []).join(", ")}</div>}
+              {(detailNode.requires?.attributes || []).map((a, idx) => <div key={idx} style={{ fontSize: 10, color: "#d0e2ff" }}>Atributo: {a.attr} ≥ {a.min}</div>)}
+              {(detailNode.requires?.extra || []).map((c) => <div key={c.id} style={{ fontSize: 10, color: "#d0e2ff" }}>Extra ({c.type}): {c.type === "narrativo" ? (c.text || "narrativo") : `${c.key || ""}${Number.isFinite(Number(c.min)) ? ` ≥ ${Number(c.min || 0)}` : ""}`}</div>)}
+            </div>
             <button
-              disabled={!canActivatePrestigioNode({ node: detailNode, unlockedIds, tree: normalized, ficha, skillName })}
+              disabled={!canPrestigeDetailNode}
               onClick={() => {
-                if (!canActivatePrestigioNode({ node: detailNode, unlockedIds, tree: normalized, ficha, skillName })) return;
+                if (!canPrestigeDetailNode) return;
                 setFlash(true);
                 setPulseNodeId(detailNode.id);
                 setFlashCanvas(true);
@@ -62,16 +70,17 @@ function PrestigioModal({ open, onClose, skillName, tree, ficha, unlockedIds, on
                 setTimeout(() => setFlash(false), 420);
                 setTimeout(() => setPulseNodeId(null), 520);
                 setTimeout(() => setFlashCanvas(false), 520);
+                setTimeout(() => setDetailNodeId(null), 500);
               }}
               style={{
                 ...btnStyle({ borderColor: "#a87410", color: "#fff7df" }),
                 background: flash ? "radial-gradient(circle, #fff2bf, #b97e0e)" : "linear-gradient(180deg, #8f5f0b, #5f3d06)",
                 transform: flash ? "scale(1.04)" : "scale(1)",
-                opacity: canActivatePrestigioNode({ node: detailNode, unlockedIds, tree: normalized, ficha, skillName }) ? 1 : 0.45,
+                opacity: canPrestigeDetailNode ? 1 : 0.45,
                 transition: "all .28s ease",
               }}
             >Prestigiar</button>
-            {!canActivatePrestigioNode({ node: detailNode, unlockedIds, tree: normalized, ficha, skillName }) && <div style={{ fontSize: 10, color: "#ffb1a8" }}>Requisitos não cumpridos para prestigiar esta estrela.</div>}
+            {!canPrestigeDetailNode && <div style={{ fontSize: 10, color: "#ffb1a8" }}>Requisitos não cumpridos para prestigiar esta estrela.</div>}
           </div>
         </Modal>
       )}

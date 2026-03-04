@@ -30,6 +30,7 @@ export function PrestigioTreeCanvas({
   const [viewport, setViewport] = useState({ x: 0, y: 0 });
   const [pointerWorld, setPointerWorld] = useState({ x: 0, y: 0 });
   const wrapRef = useRef(null);
+  const bgCanvasRef = useRef(null);
   const centeredRef = useRef(false);
   const unlockedSet = new Set(unlockedIds || []);
 
@@ -60,26 +61,71 @@ export function PrestigioTreeCanvas({
 
   const toWorld = (local) => ({ x: local.x - viewport.x, y: local.y - viewport.y });
 
-  const bgLayers = useMemo(() => {
-    const mk = (count, gap, pulseBase) => {
-      const stars = [];
-      for (let i = 0; i < count; i += 1) {
-        const row = Math.floor(i / 20);
-        const col = i % 20;
-        const jitterX = ((i * 37) % gap) - gap / 2;
-        const jitterY = ((i * 53) % gap) - gap / 2;
-        stars.push({
-          x: col * gap + 30 + jitterX,
-          y: row * gap + 30 + jitterY,
-          size: 1 + (i % 3),
-          alpha: 0.15 + (i % 7) * 0.08,
-          pulse: `${pulseBase + (i % 9)}s`,
-        });
+  const bgStars = useMemo(() => {
+    const mk = (count, sizeMin, sizeVar, alphaMin, alphaVar, speedMin, speedVar) =>
+      Array.from({ length: count }).map((_, i) => ({
+        x: (i * 73) % worldWidth,
+        y: worldHeight - ((i * 91) % worldHeight),
+        size: sizeMin + (i % sizeVar),
+        alpha: alphaMin + ((i * 17) % 100) / 100 * alphaVar,
+        speed: speedMin + (i % speedVar) * 0.03,
+        pulse: 0.6 + ((i * 29) % 100) / 100,
+      }));
+    return [
+      ...mk(360, 1, 2, 0.12, 0.26, 0.2, 7),
+      ...mk(220, 1, 3, 0.15, 0.34, 0.28, 9),
+      ...mk(120, 2, 2, 0.18, 0.42, 0.35, 11),
+    ];
+  }, [worldWidth, worldHeight]);
+
+  useEffect(() => {
+    const c = bgCanvasRef.current;
+    const w = wrapRef.current;
+    if (!c || !w) return;
+    const ctx = c.getContext("2d");
+    if (!ctx) return;
+
+    let raf = 0;
+    let running = true;
+    const draw = (t) => {
+      if (!running) return;
+      const rect = w.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const cw = Math.max(1, Math.floor(rect.width));
+      const ch = Math.max(1, Math.floor(rect.height));
+      if (c.width !== Math.floor(cw * dpr) || c.height !== Math.floor(ch * dpr)) {
+        c.width = Math.floor(cw * dpr);
+        c.height = Math.floor(ch * dpr);
+        c.style.width = `${cw}px`;
+        c.style.height = `${ch}px`;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       }
-      return { stars };
+
+      ctx.clearRect(0, 0, cw, ch);
+      const tt = t * 0.001;
+      for (let i = 0; i < bgStars.length; i += 1) {
+        const s = bgStars[i];
+        const yBase = (s.y - tt * 38 * s.speed) % worldHeight;
+        const worldY = yBase < 0 ? yBase + worldHeight : yBase;
+        const sx = s.x + viewport.x;
+        const sy = worldY + viewport.y;
+        if (sx < -20 || sx > cw + 20 || sy < -20 || sy > ch + 20) continue;
+        const pulse = 0.6 + Math.abs(Math.sin(tt * s.pulse + i * 0.1)) * 0.7;
+        const alpha = Math.min(1, s.alpha * pulse);
+        ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, s.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      raf = requestAnimationFrame(draw);
     };
-    return [mk(900, 46, 6), mk(520, 62, 8), mk(320, 78, 10)];
-  }, []);
+
+    raf = requestAnimationFrame(draw);
+    return () => {
+      running = false;
+      cancelAnimationFrame(raf);
+    };
+  }, [bgStars, viewport.x, viewport.y, worldHeight]);
 
   return (
     <div
@@ -109,31 +155,18 @@ export function PrestigioTreeCanvas({
         position: "relative",
         overflow: "hidden",
         background: "radial-gradient(circle at 20% 10%, #231a58 0%, #0f1430 30%, #060913 70%, #020307 100%)",
-        boxShadow: "inset 0 0 120px #7d4dff22, inset 0 0 60px #ffffff10, 0 0 30px #000",
+        boxShadow: flashCanvas ? "inset 0 0 140px #ffd86e33, inset 0 0 70px #ffffff22, 0 0 34px #000" : "inset 0 0 120px #7d4dff22, inset 0 0 60px #ffffff10, 0 0 30px #000",
         cursor: dragPan ? "grabbing" : "default",
         transform: flashCanvas ? "scale(1.01)" : "scale(1)",
         transition: "transform .34s ease, box-shadow .34s ease",
       }}
     >
       <style>{`
-        @keyframes v-astralUp { from { transform: translateY(0); } to { transform: translateY(-220px); } }
-        @keyframes v-astralPulse { 0%,100% { opacity:.22; filter:brightness(1);} 50% { opacity:.35; filter:brightness(1.35);} }
         @keyframes v-starCorePulse { 0%,100%{transform:scale(1)}50%{transform:scale(1.12)} }
-        @keyframes v-linkPulse { 0%,100% { opacity:.18; } 50% { opacity:.42; } }
-        @keyframes v-upFloat { from { transform: translateY(0); } to { transform: translateY(-220px); } }
+        @keyframes v-linkPulse { 0%,100% { opacity:.12; } 50% { opacity:.4; } }
       `}</style>
 
-      <div style={{ position: "absolute", left: viewport.x, top: viewport.y, width: worldWidth, height: worldHeight, overflow: "hidden", pointerEvents: "none" }}>
-        {bgLayers.map((layer, idx) => (
-          <div key={idx} style={{ position: "absolute", inset: 0 }}>
-            {layer.stars.map((s, i) => {
-              const x = (s.x * 7 + i * 11) % worldWidth;
-              const y = Math.max(0, worldHeight - ((s.y * 9 + i * 13) % worldHeight));
-              return <span key={i} style={{ position: "absolute", left: x, top: y, width: s.size, height: s.size, borderRadius: "50%", background: "#ffffff", opacity: Math.min(0.9, s.alpha), boxShadow: `0 0 ${6 + s.size * 2}px #ffffff, 0 0 ${12 + s.size * 2}px #ffffff88`, animation: `v-upFloat ${40 + idx * 24 + (i % 10)}s linear infinite, v-astralPulse ${s.pulse} ease-in-out infinite`, animationDelay: `-${(i % 12) * 1.1}s` }} />;
-            })}
-          </div>
-        ))}
-      </div>
+      <canvas ref={bgCanvasRef} style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />
 
       <div style={{ position: "absolute", left: viewport.x, top: viewport.y, width: worldWidth, height: worldHeight }}>
         <svg style={{ position: "absolute", inset: 0, width: worldWidth, height: worldHeight }}>
@@ -150,8 +183,8 @@ export function PrestigioTreeCanvas({
                 onMouseLeave={() => setHoverLinkId(null)}
                 style={{ cursor: editable ? "pointer" : "default" }}
               >
-                <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={lit ? "#ffd86e" : "#d8e1ef"} strokeWidth={hoverLinkId === l.id ? "2.8" : "1.7"} opacity={lit ? 0.95 : 0.55} />
-                <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={lit ? "#ffd86e" : "#d8e1ef"} strokeWidth={hoverLinkId === l.id ? "10" : "6"} opacity={lit ? 0.2 : 0.08} style={{ animation: "v-linkPulse 1.6s ease-in-out infinite" }} />
+                <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={lit ? "#ffd86e" : "#d8e1ef"} strokeWidth={hoverLinkId === l.id ? "2.8" : "1.7"} opacity={lit ? 0.95 : 0.45} />
+                <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={lit ? "#ffd86e" : "#d8e1ef"} strokeWidth={hoverLinkId === l.id ? "10" : "6"} opacity={lit ? 0.2 : 0.05} style={{ animation: "v-linkPulse 1.6s ease-in-out infinite" }} />
               </g>
             );
           })}
