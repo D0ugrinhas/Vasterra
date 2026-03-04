@@ -266,7 +266,7 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
             {iconModeUI === "image" && (
               <div style={{ display: "grid", gap: 6 }}>
                 <button onClick={() => setImageModalOpen(true)} style={btnStyle({ width: "100%" })}>Anexar imagem</button>
-                {(d.iconeData || d.iconeUrl) && <ImageViewport src={d.iconeData || d.iconeUrl} alt={d.nome || "Ícone"} size={46} adjust={d.iconeAjuste} />}
+                {(d.iconeData || d.iconeUrl) && <ImageViewport src={d.iconeData || d.iconeUrl} alt={d.nome || "Ícone"} size={34} adjust={d.iconeAjuste} />}
               </div>
             )}
           </div>
@@ -300,6 +300,11 @@ export function ItemEditor({ item, onSave, onClose, effectsLibrary = [], onCreat
               <button onClick={() => selectedEffectId && up("efeitos", [...(d.efeitos || []), instantiateEffectFromTemplate(selectedEffect, { origemEffectId: selectedEffect.id, ativo: true, origem: "Item", origemDetalhe: d.nome || "Item" })])} disabled={!selectedEffectId} style={btnStyle({ padding: "3px 8px", fontSize: 11 })}>Anexar</button>
               <button onClick={() => setPreviewOpen(true)} disabled={!selectedEffectId} style={btnStyle({ padding: "3px 8px", fontSize: 11, borderColor: "#3498db44", color: "#73bfff" })}>🔍</button>
             </div>
+          </div>
+
+          <div style={{ background: G.bg3, border: "1px solid " + G.border, borderRadius: 10, padding: 10 }}>
+            <div style={{ fontFamily: "'Cinzel',serif", color: G.gold, marginBottom: 6 }}>Efeito</div>
+            <textarea value={d.efeito || ""} onChange={(e) => up("efeito", e.target.value)} rows={5} placeholder="Efeito do item (texto livre)" style={inpStyle({ resize: "vertical" })} />
           </div>
 
           <EffectListEditor title="Bônus" list={d.bonus} onChange={(next) => up("bonus", next)} />

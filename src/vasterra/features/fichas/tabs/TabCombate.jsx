@@ -30,6 +30,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
   const [marquee, setMarquee] = useState(null);
   const [flash, setFlash] = useState({});
   const [reduceMotion, setReduceMotion] = useState(false);
+  const [isCanvasHot, setIsCanvasHot] = useState(false);
 
   const fullscreenRootRef = useRef(null);
   const canvasWrapRef = useRef(null);
@@ -152,7 +153,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
   };
 
   const getPortY = (index) => 22 + index * 20;
-  const getPortLabel = (port) => ({ atual: "atual", max: "máx", base: "base", val: "valor", value: "valor", sum: "soma", cor: "cor", zero: "zero", a: "A", b: "B", c: "C", trueValue: "true", falseValue: "false", qty: "qtd", faces: "dado", bonus: "bônus", critMin: "crit min", critMax: "crit max", critValue: "valor crit", failValue: "valor falha", crit: "crítico", ifTrue: "if true", ifFalse: "if false" }[port] || port);
+  const getPortLabel = (port) => ({ atual: "atual", max: "máx", val: "valor", value: "valor", sum: "soma", cor: "cor", zero: "zero", a: "A", b: "B", c: "C", trueValue: "true", falseValue: "false", qty: "qtd", faces: "dado", bonus: "bônus", critMin: "crit min", critMax: "crit max", critValue: "valor crit", failValue: "valor falha", crit: "crítico", ifTrue: "if true", ifFalse: "if false" }[port] || port);
   const getLinkColor = (port, fromNode) => {
     if (port === "cor") return outputs[fromNode?.id || ""]?.cor || fromNode?.cor || "#95a5a6";
     if (port === "zero") return "#f39c12";
@@ -315,7 +316,12 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
 
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key.toLowerCase() === "n") { setNodePickerOpen(true); return; }
+      if (e.key.toLowerCase() === "n") {
+        if (!isCanvasHot) return;
+        if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+        setNodePickerOpen(true);
+        return;
+      }
       if (e.key === "Delete" && selectedNodes.length) {
         selectedNodes.forEach((id) => { const n = allNodes.find((x) => x.id === id); if (n) deleteNode(n); });
       }
@@ -334,7 +340,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedNodes, allNodes, state]);
+  }, [selectedNodes, allNodes, state, isCanvasHot]);
 
   useEffect(() => {
     const onFs = () => setIsFullscreen(document.fullscreenElement === fullscreenRootRef.current);
@@ -350,8 +356,8 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
     return () => media.removeEventListener?.("change", sync);
   }, []);
 
-  const onCanvasEnter = () => { document.body.style.overflow = "hidden"; };
-  const onCanvasLeave = () => { document.body.style.overflow = ""; dragRef.current = null; };
+  const onCanvasEnter = () => { document.body.style.overflow = "hidden"; setIsCanvasHot(true); };
+  const onCanvasLeave = () => { document.body.style.overflow = ""; dragRef.current = null; setIsCanvasHot(false); };
 
   const getCanvasCenterWorld = () => {
     if (!canvasWrapRef.current) return { x: Math.round((420 - viewport.x) / viewport.zoom), y: Math.round((220 - viewport.y) / viewport.zoom) };
@@ -380,7 +386,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
   };
 
   const saveStatusEditor = () => {
-    const p = { ...statusEditorData, sigla: String(statusEditorData.sigla || "NOV").toUpperCase(), max: Math.max(1, Number(statusEditorData.max || 1)), val: Math.max(0, Math.min(Number(statusEditorData.val || 0), Math.max(1, Number(statusEditorData.max || 1)))) };
+    const p = { ...statusEditorData, sigla: String(statusEditorData.sigla || "NOV").toUpperCase(), cor2: statusEditorData.cor2 || "#f1c40f", max: Math.max(1, Number(statusEditorData.max || 1)), val: Math.max(0, Math.min(Number(statusEditorData.val || 0), Math.max(1, Number(statusEditorData.max || 1)))) };
     if (!editing.id) { const c = getCanvasCenterWorld(); saveCombate({ statusNodes: [...(state.statusNodes || []), { id: uid(), ...c, ...p }] }); }
     else updateStatusById(editing.id, p);
     setStatusEditorOpen(false);
@@ -534,7 +540,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
 
                     {!minNodes[n.id] && <div style={{ display: "grid", gap: 4, marginBottom: 6 }}>
                       {n.kind === "resource" && <><input value={n.nome || ""} onChange={(e) => updateResourceById(n.id, { nome: e.target.value })} style={inpStyle()} /><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}><input type="number" value={Number(n.max || 0)} onChange={(e) => updateResourceById(n.id, { max: Math.max(0, Number(e.target.value) || 0) })} style={inpStyle()} /><input type="number" value={Number(n.atual || 0)} onChange={(e) => updateResourceById(n.id, { atual: Math.max(0, Number(e.target.value) || 0) })} style={inpStyle()} /></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}><select value={n.slotShape || "square"} onChange={(e) => updateResourceById(n.id, { slotShape: e.target.value })} style={inpStyle()}>{SHAPES.map((x) => <option key={x} value={x}>{x}</option>)}</select><input type="color" value={n.cor || "#95a5a6"} onChange={(e) => updateResourceById(n.id, { cor: e.target.value })} style={{ ...inpStyle(), height: 32 }} /></div></>}
-                      {n.kind === "status" && <><div style={{ display: "grid", gridTemplateColumns: "1fr 72px", gap: 4 }}><input value={n.nome || ""} onChange={(e) => updateStatusById(n.id, { nome: e.target.value })} style={inpStyle()} /><input value={n.sigla || ""} onChange={(e) => updateStatusById(n.id, { sigla: e.target.value.toUpperCase() })} style={inpStyle()} /></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}><input type="number" value={Number(n.base || 0)} onChange={(e) => updateStatusById(n.id, { base: Number(e.target.value) || 0 })} style={inpStyle()} /><input type="color" value={n.cor || "#f39c12"} onChange={(e) => updateStatusById(n.id, { cor: e.target.value })} style={{ ...inpStyle(), height: 32 }} /></div></>}
+                      {n.kind === "status" && <><div style={{ display: "grid", gridTemplateColumns: "1fr 72px", gap: 4 }}><input value={n.nome || ""} onChange={(e) => updateStatusById(n.id, { nome: e.target.value })} style={inpStyle()} /><input value={n.sigla || ""} onChange={(e) => updateStatusById(n.id, { sigla: e.target.value.toUpperCase() })} style={inpStyle()} /></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}><input type="color" value={n.cor || "#f39c12"} onChange={(e) => updateStatusById(n.id, { cor: e.target.value })} style={{ ...inpStyle(), height: 32 }} /><input type="color" value={n.cor2 || "#f1c40f"} onChange={(e) => updateStatusById(n.id, { cor2: e.target.value })} style={{ ...inpStyle(), height: 32 }} /></div></>}
                       {n.kind === "generic" && <input value={n.label || ""} onChange={(e) => updateGenericById(n.id, { label: e.target.value })} style={inpStyle()} />}
                     </div>}
 
@@ -565,18 +571,18 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                       );
                     })()}
 
-                    {n.kind === "status" && !minNodes[n.id] && (() => {
+                    {n.kind === "status" && (() => {
                       const max = Math.max(1, Number(out.max ?? n.max ?? 1));
                       const val = Math.max(0, Math.min(max, Number(out.value ?? n.val ?? 0)));
                       return (
                         <>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 4 }}>
+                          {!minNodes[n.id] && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 4 }}>
                             <input type="number" disabled={hasInputLink("val")} value={val} min={0} max={max} onChange={(e) => updateStatusById(n.id, { val: Math.max(0, Math.min(max, Number(e.target.value) || 0)) })} style={inpStyle()} />
                             <input type="number" disabled={hasInputLink("max")} value={max} min={1} onChange={(e) => updateStatusById(n.id, { max: Math.max(1, Number(e.target.value) || 1) })} style={inpStyle()} />
-                          </div>
-                          <div style={{ height: 10, borderRadius: 5, background: "#111", overflow: "hidden", border: "1px solid #000" }}><div style={{ width: `${(val / max) * 100}%`, height: "100%", background: `linear-gradient(90deg, ${cor}, #ffffff33)` }} /></div>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginTop: 4, fontFamily: "monospace", fontSize: 10, color: G.muted }}><span>base: {Number(out.base ?? n.base ?? 0)}</span><span style={{ textAlign: "right" }}>{Math.round((val / max) * 100)}%</span></div>
-                          <div style={{ marginTop: 2, fontFamily: "monospace", fontSize: 10, color: G.muted }}>zero output: {Number(out.zero || 0)}{hasInputLink("base") ? " · base via link" : ""}</div>
+                          </div>}
+                          <div style={{ height: 10, borderRadius: 5, background: "#111", overflow: "hidden", border: "1px solid #000" }}><div style={{ width: `${(val / max) * 100}%`, height: "100%", background: `linear-gradient(90deg, ${cor}, ${out.cor2 || n.cor2 || "#f1c40f"})` }} /></div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginTop: 4, fontFamily: "monospace", fontSize: 10, color: G.muted }}><span>valor: {val}/{max}</span><span style={{ textAlign: "right" }}>{Math.round((val / max) * 100)}%</span></div>
+                          <div style={{ marginTop: 2, fontFamily: "monospace", fontSize: 10, color: G.muted }}>zero output: {Number(out.zero || 0)}</div>
                         </>
                       );
                     })()}
@@ -696,11 +702,11 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
         </div>
       )}
 
-      {nodePickerOpen && <Modal title="Novo Nó" onClose={() => setNodePickerOpen(false)}><div style={{ display: "grid", gap: 8 }}>{NODE_TYPES.map((t) => <button key={t} onClick={() => openNodeType(t)} style={btnStyle()}>{t}</button>)}</div></Modal>}
+      {nodePickerOpen && <Modal title="Novo Nó" onClose={() => setNodePickerOpen(false)}><div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(120px, 1fr))", gap: 8 }}>{NODE_TYPES.map((t) => <button key={t} onClick={() => openNodeType(t)} style={btnStyle()}>{t}</button>)}</div></Modal>}
 
       {resourceEditorOpen && <Modal title={editing.id ? "Configurar Recurso" : "Novo Recurso"} onClose={() => setResourceEditorOpen(false)}><div style={{ display: "grid", gap: 8 }}><input value={resourceEditorData.nome || ""} onChange={(e) => setResourceEditorData((p) => ({ ...p, nome: e.target.value }))} placeholder="Nome" style={inpStyle()} /><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><input type="color" value={resourceEditorData.cor || "#95a5a6"} onChange={(e) => setResourceEditorData((p) => ({ ...p, cor: e.target.value }))} style={{ ...inpStyle(), height: 38 }} /><input value={resourceEditorData.descricao || ""} onChange={(e) => setResourceEditorData((p) => ({ ...p, descricao: e.target.value }))} placeholder="Descrição" style={inpStyle()} /></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><input type="number" min={0} value={Number(resourceEditorData.max || 0)} onChange={(e) => setResourceEditorData((p) => ({ ...p, max: Math.max(0, Number(e.target.value) || 0) }))} style={inpStyle()} /><input type="number" min={0} value={Number(resourceEditorData.atual || 0)} onChange={(e) => setResourceEditorData((p) => ({ ...p, atual: Math.max(0, Number(e.target.value) || 0) }))} style={inpStyle()} /></div><select value={resourceEditorData.slotShape || "square"} onChange={(e) => setResourceEditorData((p) => ({ ...p, slotShape: e.target.value }))} style={inpStyle()}>{SHAPES.map((x) => <option key={x} value={x}>{x}</option>)}</select><div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><button onClick={() => setResourceEditorOpen(false)} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button><button onClick={saveResourceEditor} style={btnStyle()}>Salvar</button></div></div></Modal>}
 
-      {statusEditorOpen && <Modal title={editing.id ? "Configurar Barra de Status" : "Nova Barra de Status"} onClose={() => setStatusEditorOpen(false)}><div style={{ display: "grid", gap: 8 }}><input value={statusEditorData.nome || ""} onChange={(e) => setStatusEditorData((p) => ({ ...p, nome: e.target.value }))} placeholder="Nome" style={inpStyle()} /><input value={statusEditorData.sigla || ""} onChange={(e) => setStatusEditorData((p) => ({ ...p, sigla: e.target.value.toUpperCase() }))} placeholder="Sigla" style={inpStyle()} /><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}><input type="number" value={Number(statusEditorData.base || 0)} onChange={(e) => setStatusEditorData((p) => ({ ...p, base: Number(e.target.value) || 0 }))} style={inpStyle()} /><input type="number" value={Number(statusEditorData.max || 1)} onChange={(e) => setStatusEditorData((p) => ({ ...p, max: Math.max(1, Number(e.target.value) || 1) }))} style={inpStyle()} /><input type="number" value={Number(statusEditorData.val || 0)} onChange={(e) => setStatusEditorData((p) => ({ ...p, val: Math.max(0, Number(e.target.value) || 0) }))} style={inpStyle()} /></div><div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><button onClick={() => setStatusEditorOpen(false)} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button><button onClick={saveStatusEditor} style={btnStyle()}>Salvar</button></div></div></Modal>}
+      {statusEditorOpen && <Modal title={editing.id ? "Configurar Barra de Status" : "Nova Barra de Status"} onClose={() => setStatusEditorOpen(false)}><div style={{ display: "grid", gap: 8 }}><input value={statusEditorData.nome || ""} onChange={(e) => setStatusEditorData((p) => ({ ...p, nome: e.target.value }))} placeholder="Nome" style={inpStyle()} /><input value={statusEditorData.sigla || ""} onChange={(e) => setStatusEditorData((p) => ({ ...p, sigla: e.target.value.toUpperCase() }))} placeholder="Sigla" style={inpStyle()} /><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><input type="number" value={Number(statusEditorData.max || 1)} onChange={(e) => setStatusEditorData((p) => ({ ...p, max: Math.max(1, Number(e.target.value) || 1) }))} style={inpStyle()} /><input type="number" value={Number(statusEditorData.val || 0)} onChange={(e) => setStatusEditorData((p) => ({ ...p, val: Math.max(0, Number(e.target.value) || 0) }))} style={inpStyle()} /></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><input type="color" value={statusEditorData.cor || "#f39c12"} onChange={(e) => setStatusEditorData((p) => ({ ...p, cor: e.target.value }))} style={{ ...inpStyle(), height: 38 }} /><input type="color" value={statusEditorData.cor2 || "#f1c40f"} onChange={(e) => setStatusEditorData((p) => ({ ...p, cor2: e.target.value }))} style={{ ...inpStyle(), height: 38 }} /></div><div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><button onClick={() => setStatusEditorOpen(false)} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button><button onClick={saveStatusEditor} style={btnStyle()}>Salvar</button></div></div></Modal>}
 
       {genericEditorOpen && <Modal title={editing.id ? "Configurar Node Genérico" : "Novo Node Genérico"} onClose={() => setGenericEditorOpen(false)}><div style={{ display: "grid", gap: 8 }}><input value={genericEditorData.label || ""} onChange={(e) => setGenericEditorData((p) => ({ ...p, label: e.target.value }))} placeholder="Rótulo" style={inpStyle()} />{genericEditorData.nodeType === "value" && <><input type="number" value={Number(genericEditorData.value || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, value: Number(e.target.value) || 0 }))} style={inpStyle()} /><select value={genericEditorData.sourcePath || ""} onChange={(e) => setGenericEditorData((p) => ({ ...p, sourcePath: e.target.value }))} style={inpStyle()}><option value="">Puxar valor: nenhum</option>{fichaValueOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></>}{genericEditorData.nodeType === "math" && <select value={genericEditorData.op || "+"} onChange={(e) => setGenericEditorData((p) => ({ ...p, op: e.target.value }))} style={inpStyle()}><option>+</option><option>-</option><option>*</option><option>/</option></select>}{genericEditorData.nodeType === "conditional" && <><select value={genericEditorData.cmp || ">"} onChange={(e) => setGenericEditorData((p) => ({ ...p, cmp: e.target.value }))} style={inpStyle()}><option value=">">{">"}</option><option value="<">{"<"}</option><option value="=">{"="}</option></select><input type="number" value={Number(genericEditorData.trueValue || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, trueValue: Number(e.target.value) || 0 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.falseValue || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, falseValue: Number(e.target.value) || 0 }))} style={inpStyle()} /></>}{genericEditorData.nodeType === "color" && <input type="color" value={genericEditorData.color || "#95a5a6"} onChange={(e) => setGenericEditorData((p) => ({ ...p, color: e.target.value }))} style={{ ...inpStyle(), height: 38 }} />}{genericEditorData.nodeType === "comment" && <textarea value={genericEditorData.text || ""} onChange={(e) => setGenericEditorData((p) => ({ ...p, text: e.target.value }))} rows={3} style={inpStyle()} />}{genericEditorData.nodeType === "receiver" && <><input value={genericEditorData.receiverKey || "DET"} onChange={(e) => setGenericEditorData((p) => ({ ...p, receiverKey: String(e.target.value || "").toUpperCase() }))} placeholder="Chave (ex: DET)" style={inpStyle()} /><input value={genericEditorData.equation || "0"} onChange={(e) => setGenericEditorData((p) => ({ ...p, equation: e.target.value }))} placeholder="Equação base (ex: +2+1-3)" style={inpStyle()} /><div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>Recebe sinais dos efeitos pela chave e soma com entradas A/B/C + equação.</div></>}{genericEditorData.nodeType === "logic" && <><select value={genericEditorData.logic || "if"} onChange={(e) => setGenericEditorData((p) => ({ ...p, logic: e.target.value }))} style={inpStyle()}><option value="if">if</option><option value="or">or</option><option value="xor">xor</option><option value="and">and</option><option value="not">not</option><option value="else">else</option></select><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><input type="number" value={Number(genericEditorData.ifTrue || 1)} onChange={(e) => setGenericEditorData((p) => ({ ...p, ifTrue: Number(e.target.value) || 0 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.ifFalse || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, ifFalse: Number(e.target.value) || 0 }))} style={inpStyle()} /></div></>}{genericEditorData.nodeType === "dice" && <><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><input type="number" value={Number(genericEditorData.qty || 1)} onChange={(e) => setGenericEditorData((p) => ({ ...p, qty: Math.max(1, Number(e.target.value) || 1) }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.faces || 20)} onChange={(e) => setGenericEditorData((p) => ({ ...p, faces: Math.max(2, Number(e.target.value) || 2) }))} style={inpStyle()} /></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><input type="number" value={Number(genericEditorData.critMin || 20)} onChange={(e) => setGenericEditorData((p) => ({ ...p, critMin: Number(e.target.value) || 1 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.critMax || 20)} onChange={(e) => setGenericEditorData((p) => ({ ...p, critMax: Number(e.target.value) || 1 }))} style={inpStyle()} /></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}><input type="number" value={Number(genericEditorData.bonus || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, bonus: Number(e.target.value) || 0 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.critValue || 1)} onChange={(e) => setGenericEditorData((p) => ({ ...p, critValue: Number(e.target.value) || 0 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.failValue || -1)} onChange={(e) => setGenericEditorData((p) => ({ ...p, failValue: Number(e.target.value) || 0 }))} style={inpStyle()} /></div></>}<div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><button onClick={() => setGenericEditorOpen(false)} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button><button onClick={saveGenericEditor} style={btnStyle()}>Salvar</button></div></div></Modal>}
     </div>

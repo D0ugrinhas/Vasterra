@@ -97,11 +97,13 @@ export function parseMechanicalEffects(raw = "") {
     if (typeof raw.valor === "string") return parseMechanicalEffects(raw.valor);
     if (typeof raw.expr === "string") return parseMechanicalEffects(raw.expr);
   }
-  return String(raw || "")
+  const cleaned = String(raw || "").replace(/"[^"]*"/g, " ");
+  return cleaned
     .split(",")
     .map((part) => parseMechanicalEffect(part.trim()))
     .filter(Boolean);
 }
+
 
 export function normalizeEffectList(list = [], source = "Outro") {
   return (list || []).flatMap((it) => {

@@ -17,9 +17,9 @@ export const defaultCombatState = () => ({
 });
 
 export function defaultResourceForm() { return { nome: "NOVO", cor: "#95a5a6", max: 1, atual: 1, descricao: "", slotShape: "square", x: 120, y: 120 }; }
-export function defaultStatusForm() { return { nome: "Novo Status", sigla: "NOV", cor: "#f39c12", base: 10, max: 10, val: 10, x: 120, y: 240 }; }
+export function defaultStatusForm() { return { nome: "Novo Status", sigla: "NOV", cor: "#f39c12", cor2: "#f1c40f", max: 10, val: 10, x: 120, y: 240 }; }
 export function defaultGenericForm(kind = "Valor") {
-  if (kind === "Valor") return { nodeType: "value", label: "Valor", value: 0, sourcePath: "", x: 520, y: 120 };
+  if (kind === "Valor") return { nodeType: "value", label: "Valor", value: 0, expr: "", sourcePath: "", x: 520, y: 120 };
   if (kind === "Math") return { nodeType: "math", label: "Math", op: "+", x: 520, y: 220 };
   if (kind === "Condicionais") return { nodeType: "conditional", label: "Cond", cmp: ">", trueValue: 1, falseValue: 0, x: 520, y: 320 };
   if (kind === "Comentário") return { nodeType: "comment", label: "Comentário", text: "", x: 520, y: 420 };
@@ -56,7 +56,7 @@ export function toAllNodes(state) {
 
 export function getInputPorts(node) {
   if (node.kind === "resource") return ["max", "atual", "cor"];
-  if (node.kind === "status") return ["base", "max", "val", "cor"];
+  if (node.kind === "status") return ["max", "val", "cor", "cor2"];
   if (node.kind === "generic" && node.nodeType === "value") return ["value"];
   if (node.kind === "generic" && node.nodeType === "math") return ["a", "b"];
   if (node.kind === "generic" && node.nodeType === "conditional") return ["a", "b", "trueValue", "falseValue"];
@@ -120,21 +120,23 @@ export function evaluateNodeOutputs(state, ficha, receiverSignals = {}) {
         return;
       }
       if (n.kind === "status") {
-        const base = Number(findSourceValue(n.id, "base") ?? n.base ?? 0);
         const max = Math.max(1, Number(findSourceValue(n.id, "max") ?? n.max ?? 1));
-        const value = Number(findSourceValue(n.id, "val") ?? n.val ?? base);
+        const value = Number(findSourceValue(n.id, "val") ?? n.val ?? 0);
         outputs[n.id] = {
           value: Math.max(0, Math.min(max, value)),
-          base,
+          base: 0,
           max,
           cor: String(findSourceValue(n.id, "cor") ?? n.cor ?? "#f39c12"),
+          cor2: String(findSourceValue(n.id, "cor2") ?? n.cor2 ?? "#f1c40f"),
           zero: value <= 0 ? 1 : 0,
         };
         return;
       }
       if (n.nodeType === "value") {
         const linked = findSourceValue(n.id, "value");
-        const v = linked ?? (n.sourcePath ? getFichaValueByPath(ficha, n.sourcePath) : Number(n.value || 0));
+        const expr = String(n.expr || "").trim();
+        const exprVal = expr ? Number(Function(`"use strict"; return (${expr.replace(/[^0-9+\-*/().\s]/g, "") || "0"});`)()) : null;
+        const v = linked ?? (n.sourcePath ? getFichaValueByPath(ficha, n.sourcePath) : (Number.isFinite(exprVal) ? exprVal : Number(n.value || 0)));
         outputs[n.id] = { value: Number(v || 0) };
         return;
       }

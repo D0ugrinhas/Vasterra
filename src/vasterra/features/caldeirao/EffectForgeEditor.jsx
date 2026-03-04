@@ -9,7 +9,6 @@ const allEssencias = [...ESSENCIAS_VIRTUDES, ...ESSENCIAS_PECADOS];
 const RESIST_RESULTADOS = ["Evitar", "Reduzir pela metade", "Efeito Contrário", "Outro"];
 const ALVOS_OPCOES = ["Portador", "Alvo", "Área", "Condição", "Todos"];
 const allPericias = PERICIAS_GRUPOS.flatMap((g) => g.list);
-const BODY_PART_OPTIONS = ["saude", "ossos", "musculos", "pele"];
 
 const newConditional = () => ({ id: uid(), ativo: true, condicao: "", efeito: "" });
 
@@ -62,9 +61,6 @@ const newEffect = () => ({
 export function EffectForgeEditor({ effect, onSave, onClose }) {
   const [d, setD] = useState(() => effect ? { ...effect, condicionais: (effect.condicionais || []).map(normalizeConditional) } : newEffect());
   const [imageModalOpen, setImageModalOpen] = useState(false);
-  const [novoMecanico, setNovoMecanico] = useState("");
-  const [bodyBonusPart, setBodyBonusPart] = useState("saude");
-  const [bodyBonusValue, setBodyBonusValue] = useState(1);
   const initialSnapshot = useMemo(() => JSON.stringify(effect ? { ...effect, condicionais: (effect.condicionais || []).map(normalizeConditional) } : newEffect()), [effect]);
   const up = (k, v) => setD((p) => ({ ...p, [k]: v }));
   const safeClose = () => {
@@ -74,22 +70,7 @@ export function EffectForgeEditor({ effect, onSave, onClose }) {
   };
 
   const iconModeUI = (d.iconeModo === "url" || d.iconeModo === "upload") ? "image" : (d.iconeModo || "emoji");
-  const efeitosMecanicos = Array.isArray(d.efeitosMecanicos)
-    ? d.efeitosMecanicos
-    : String(d.efeitoMecanico || "").split(",").map((x) => x.trim()).filter(Boolean);
-
-  const syncMecanicos = (nextList) => {
-    const clean = (nextList || []).map((x) => String(x || "").trim()).filter(Boolean);
-    up("efeitosMecanicos", clean);
-    up("efeitoMecanico", clean.join(", "));
-  };
-
-  const addMecanico = () => {
-    const val = String(novoMecanico || "").trim();
-    if (!val) return;
-    syncMecanicos([...efeitosMecanicos, val]);
-    setNovoMecanico("");
-  };
+  const mecanicoText = String(Array.isArray(d.efeitosMecanicos) ? d.efeitosMecanicos.join(", ") : (d.efeitoMecanico || ""));
 
   return (
     <Modal title={effect ? "Editar Efeito (Caldeirão)" : "Criar Efeito (Caldeirão)"} onClose={safeClose} wide>
@@ -118,30 +99,7 @@ export function EffectForgeEditor({ effect, onSave, onClose }) {
               {allEssencias.map((es) => <option key={es.nome} value={es.nome}>{es.nome}</option>)}
             </select>
             <select value={d.rank} onChange={(e) => up("rank", e.target.value)} style={inpStyle()}>{ARSENAL_RANKS.map((r) => <option key={r}>{r}</option>)}</select>
-            <input value={efeitosMecanicos.join(", ")} onChange={(e) => syncMecanicos(String(e.target.value || "").split(","))} placeholder="Efeito mecânico (lista)" style={inpStyle()} />
-          </div>
-
-          <div style={{ background: G.bg3, border: "1px solid " + G.border, borderRadius: 8, padding: 8 }}>
-            <div style={{ fontFamily: "'Cinzel',serif", color: G.gold, marginBottom: 6 }}>Efeito mecânico (tags)</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 6, marginBottom: 6 }}>
-              <input value={novoMecanico} onChange={(e) => setNovoMecanico(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addMecanico(); } }} placeholder="Ex: +2FOR, -1AGILIDADE, +2DET" style={inpStyle()} />
-              <button onClick={addMecanico} style={btnStyle({ padding: "4px 10px" })}>+ Tag</button>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "120px 90px auto", gap: 6, marginBottom: 6 }}>
-              <select value={bodyBonusPart} onChange={(e) => setBodyBonusPart(e.target.value)} style={inpStyle()}>
-                {BODY_PART_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-              <input type="number" value={Number(bodyBonusValue || 0)} onChange={(e) => setBodyBonusValue(Number(e.target.value) || 0)} style={inpStyle()} />
-              <button onClick={() => syncMecanicos([...efeitosMecanicos, `${bodyBonusValue >= 0 ? "+" : ""}${Number(bodyBonusValue || 0)}${String(bodyBonusPart || "").toUpperCase()}`])} style={btnStyle({ padding: "4px 10px" })}>+ Parte do corpo</button>
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {efeitosMecanicos.map((tag, idx) => (
-                <button key={`${tag}-${idx}`} onClick={() => syncMecanicos(efeitosMecanicos.filter((_, i) => i !== idx))} style={btnStyle({ padding: "3px 8px", borderRadius: 999, borderColor: "#2f4f66", color: "#8fd2ff" })}>
-                  {tag} ✕
-                </button>
-              ))}
-              {efeitosMecanicos.length === 0 && <span style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>Sem tags.</span>}
-            </div>
+            <textarea value={mecanicoText} onChange={(e) => { up("efeitoMecanico", e.target.value); up("efeitosMecanicos", []); }} rows={7} placeholder="Efeito mecânico (texto livre, múltiplos efeitos separados por vírgula; texto entre aspas será ignorado no parser)" style={inpStyle({ resize: "vertical", minHeight: 140 })} />
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -190,13 +148,15 @@ export function EffectForgeEditor({ effect, onSave, onClose }) {
             {iconModeUI === "image" && (
               <div style={{ display: "grid", gap: 6 }}>
                 <button onClick={() => setImageModalOpen(true)} style={btnStyle({ width: "100%" })}>Anexar imagem</button>
-                {(d.iconeData || d.iconeUrl) && <ImageViewport src={d.iconeData || d.iconeUrl} alt={d.nome || "Ícone"} size={46} adjust={d.iconeAjuste} />}
+                {(d.iconeData || d.iconeUrl) && <ImageViewport src={d.iconeData || d.iconeUrl} alt={d.nome || "Ícone"} size={34} adjust={d.iconeAjuste} />}
               </div>
             )}
             {(d.iconeModo || "emoji") === "cor" && <input type="color" value={d.cor || "#7f8c8d"} onChange={(e) => up("cor", e.target.value)} style={{ ...inpStyle(), height: 38 }} />}
           </div>
 
           <div style={{ background: G.bg3, border: "1px solid " + G.border, borderRadius: 8, padding: 8 }}>
+            <div style={{ fontFamily: "'Cinzel',serif", color: G.gold, marginBottom: 6 }}>Efeito</div>
+            <textarea value={d.efeito || ""} onChange={(e) => up("efeito", e.target.value)} rows={4} placeholder="Texto livre do efeito (narrativo/técnico)" style={inpStyle({ resize: "vertical", marginBottom: 8 })} />
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
               <span style={{ fontFamily: "'Cinzel',serif", color: G.gold }}>Efeitos condicionais</span>
               <button onClick={() => up("condicionais", [...(d.condicionais || []), newConditional()])} style={btnStyle({ padding: "3px 8px", fontSize: 11 })}>+ condição</button>
