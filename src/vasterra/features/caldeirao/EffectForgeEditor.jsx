@@ -70,7 +70,11 @@ export function EffectForgeEditor({ effect, onSave, onClose }) {
   };
 
   const iconModeUI = (d.iconeModo === "url" || d.iconeModo === "upload") ? "image" : (d.iconeModo || "emoji");
-  const mecanicoText = String(Array.isArray(d.efeitosMecanicos) ? d.efeitosMecanicos.join(", ") : (d.efeitoMecanico || ""));
+  const mecanicoText = String(
+    Array.isArray(d.efeitosMecanicos) && d.efeitosMecanicos.length
+      ? d.efeitosMecanicos.join(", ")
+      : (d.efeitoMecanico || "")
+  );
 
   return (
     <Modal title={effect ? "Editar Efeito (Caldeirão)" : "Criar Efeito (Caldeirão)"} onClose={safeClose} wide>
