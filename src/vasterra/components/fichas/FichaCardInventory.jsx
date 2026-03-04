@@ -4,6 +4,13 @@ import { resolverNomeRaca } from "../../data/gameData";
 
 const CARD_COLUMNS = "repeat(8, minmax(150px, 1fr))";
 
+const resolveAvatarSrc = (ficha) => {
+  const info = ficha?.informacoes || {};
+  if (info.avatarModo === "url") return info.avatarUrl || "";
+  if (info.avatarModo === "upload" || info.avatarModo === "image") return info.avatarData || info.avatarUrl || "";
+  return "";
+};
+
 const CardTag = ({ children }) => (
   <span
     style={{
@@ -145,7 +152,13 @@ export function FichaCardInventory({
                       fontFamily: "'Cinzel', serif",
                     }}
                   >
-                    ?
+                    {resolveAvatarSrc(ficha) ? (
+                      <img
+                        src={resolveAvatarSrc(ficha)}
+                        alt={`Avatar de ${ficha.nome}`}
+                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                      />
+                    ) : "?"}
                   </div>
                   <div style={{ padding: 8, borderTop: "1px solid #1f1f1f" }}>
                     <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold2, marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ficha.nome}</div>

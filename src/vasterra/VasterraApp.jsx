@@ -13,7 +13,7 @@ import { novaFicha, novoItem, uid } from "./core/factories";
 
 
 const SETTINGS_KEY = "vasterra:settings";
-const defaultSettings = { storageNamespace: "vasterra" };
+const defaultSettings = { storageNamespace: "vasterra", controls: { createNodeHotkey: "a" } };
 
 const scopedKey = (ns, key) => `${(ns || "vasterra").trim()}:${key}`;
 
@@ -73,6 +73,7 @@ export default function VasterraApp() {
   const [effectEditorData, setEffectEditorData] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState(defaultSettings);
+  const [settingsTab, setSettingsTab] = useState("dados");
 
   useEffect(() => {
     (async () => {
@@ -221,7 +222,7 @@ export default function VasterraApp() {
           <button onClick={(ev) => { ev.stopPropagation(); setSettingsOpen(true); }} style={{ position: "absolute", top: 14, right: 14, width: 30, height: 30, borderRadius: 8, border: "1px solid #c8a96e33", background: "#0b0b0baa", color: "#c8a96e", cursor: "pointer", transition: "all .2s" }} title="Opções">⚙</button>
         </div>
       )}
-      {section === "fichas" && <div className="v-fade"><FichasSection fichas={fichas} onFichas={setFichas} arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} onOpenCaldeirao={openEffectForge} /></div>}
+      {section === "fichas" && <div className="v-fade"><FichasSection fichas={fichas} onFichas={setFichas} arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} onOpenCaldeirao={openEffectForge} createNodeHotkey={settings.controls?.createNodeHotkey || "a"} /></div>}
       {section === "arsenal" && <div className="v-fade"><ArsenalSection arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onEfeitosCaldeirao={setEfeitosCaldeirao} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} onOpenCaldeirao={openEffectForge} onEditCaldeirao={openEffectForge} /></div>}
       {section === "caldeirao" && <div className="v-fade"><CaldeiraoSection efeitos={efeitosCaldeirao} onEfeitos={setEfeitosCaldeirao} onNotify={pushToast} onConfirmAction={confirmAction} /></div>}
 
@@ -231,21 +232,49 @@ export default function VasterraApp() {
       {settingsOpen && (
         <Modal title="Opções" onClose={() => setSettingsOpen(false)} wide>
           <div style={{ display: "grid", gap: 10 }}>
-            <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>
-              Dica: no navegador não há acesso direto a diretórios do sistema por segurança.
-              Em vez disso, use “espaço de dados” (namespace) + backup/importação JSON.
+            <div style={{ display: "flex", gap: 6, borderBottom: "1px solid #252525", paddingBottom: 8 }}>
+              <HoverButton onClick={() => setSettingsTab("dados")} style={{ borderColor: settingsTab === "dados" ? "#5dade266" : undefined, color: settingsTab === "dados" ? "#b6ddff" : undefined }}>Dados</HoverButton>
+              <HoverButton onClick={() => setSettingsTab("controles")} style={{ borderColor: settingsTab === "controles" ? "#5dade266" : undefined, color: settingsTab === "controles" ? "#b6ddff" : undefined }}>Configurar Controles</HoverButton>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
-              <input value={settings.storageNamespace || "vasterra"} onChange={(e) => setSettings((p) => ({ ...p, storageNamespace: e.target.value }))} placeholder="Namespace de dados" style={{ background: "#0a0a0a", border: "1px solid #333", color: G.text, borderRadius: 8, padding: "8px 10px" }} />
-              <HoverButton onClick={() => applyNamespace(settings.storageNamespace)}>Aplicar</HoverButton>
-            </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <HoverButton onClick={exportBackup}>Exportar backup (.json)</HoverButton>
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid #3498db44", borderRadius: 8, padding: "6px 10px", color: "#73bfff", cursor: "pointer" }}>
-                Importar backup
-                <input type="file" accept="application/json" onChange={(e) => importBackup(e.target.files?.[0])} style={{ display: "none" }} />
-              </label>
-            </div>
+
+            {settingsTab === "dados" && (
+              <>
+                <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>
+                  Dica: no navegador não há acesso direto a diretórios do sistema por segurança.
+                  Em vez disso, use “espaço de dados” (namespace) + backup/importação JSON.
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
+                  <input value={settings.storageNamespace || "vasterra"} onChange={(e) => setSettings((p) => ({ ...p, storageNamespace: e.target.value }))} placeholder="Namespace de dados" style={{ background: "#0a0a0a", border: "1px solid #333", color: G.text, borderRadius: 8, padding: "8px 10px" }} />
+                  <HoverButton onClick={() => applyNamespace(settings.storageNamespace)}>Aplicar</HoverButton>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <HoverButton onClick={exportBackup}>Exportar backup (.json)</HoverButton>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid #3498db44", borderRadius: 8, padding: "6px 10px", color: "#73bfff", cursor: "pointer" }}>
+                    Importar backup
+                    <input type="file" accept="application/json" onChange={(e) => importBackup(e.target.files?.[0])} style={{ display: "none" }} />
+                  </label>
+                </div>
+              </>
+            )}
+
+            {settingsTab === "controles" && (
+              <div style={{ display: "grid", gap: 8 }}>
+                <label style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>Atalho para criar nós no canvas de combate</label>
+                <input
+                  value={settings.controls?.createNodeHotkey || "a"}
+                  maxLength={1}
+                  onChange={(e) => {
+                    const val = String(e.target.value || "a").slice(-1).toLowerCase().replace(/[^a-z0-9]/g, "") || "a";
+                    setSettings((p) => ({ ...p, controls: { ...(p.controls || {}), createNodeHotkey: val } }));
+                  }}
+                  placeholder="Ex: a"
+                  style={{ background: "#0a0a0a", border: "1px solid #333", color: G.text, borderRadius: 8, padding: "8px 10px", width: 120, textTransform: "uppercase" }}
+                />
+                <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>
+                  Atalho atual: {String(settings.controls?.createNodeHotkey || "a").toUpperCase()}.
+                </div>
+              </div>
+            )}
           </div>
         </Modal>
       )}

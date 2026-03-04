@@ -22,8 +22,8 @@ const defaultInfo = {
 function AvatarPreview({ info }) {
   const i = { ...defaultInfo, ...(info || {}) };
   const base = {
-    width: 86,
-    height: 86,
+    width: 110,
+    height: 110,
     borderRadius: 12,
     border: "1px solid #2d4057",
     background: i.avatarCor || "#1b2330",
@@ -41,7 +41,7 @@ function AvatarPreview({ info }) {
       : i.avatarModo === "image"
         ? (i.avatarData || i.avatarUrl)
         : "";
-  if (avatarSrc) return <ImageViewport src={avatarSrc} alt="Avatar" size={86} radius={12} adjust={i.avatarAjuste} />;
+  if (avatarSrc) return <ImageViewport src={avatarSrc} alt="Avatar" size={110} radius={12} adjust={i.avatarAjuste} />;
   if (i.avatarModo === "icon") return <div style={base}>{i.avatarIcone || "?"}</div>;
   return <div style={base}>?</div>;
 }
@@ -99,7 +99,7 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 14, display: "grid", gap: 10 }}>
           <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3 }}>Ficha técnica do personagem</div>
-          <div style={{ display: "grid", gridTemplateColumns: "96px 1fr", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 10 }}>
             <AvatarPreview info={info} />
             <div style={{ display: "grid", gap: 6 }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>

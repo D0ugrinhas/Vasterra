@@ -23,7 +23,7 @@ export const FICHA_TABS = [
   { id: "inventario", label: "Inventário" },
 ];
 
-export function FichasSection({ fichas, onFichas, arsenal, efeitosCaldeirao = [], onArsenal, onNotify, onConfirmAction, onOpenCaldeirao }) {
+export function FichasSection({ fichas, onFichas, arsenal, efeitosCaldeirao = [], onArsenal, onNotify, onConfirmAction, onOpenCaldeirao, createNodeHotkey = "a" }) {
   const [sel, setSel] = useState(null);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState("status");
@@ -237,7 +237,7 @@ export function FichasSection({ fichas, onFichas, arsenal, efeitosCaldeirao = []
 
           <div className="v-fade" style={{ flex: 1, overflow: "auto", padding: 16 }}>
             {tab === "status" && <TabStatus ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} />}
-            {tab === "combate" && <TabCombate ficha={ficha} onUpdate={updateFicha} efeitosCaldeirao={efeitosCaldeirao} onOpenCaldeirao={onOpenCaldeirao} onNotify={onNotify} />}
+            {tab === "combate" && <TabCombate ficha={ficha} onUpdate={updateFicha} efeitosCaldeirao={efeitosCaldeirao} onOpenCaldeirao={onOpenCaldeirao} onNotify={onNotify} createNodeHotkey={createNodeHotkey} />}
             {tab === "corpo" && <TabCorpo ficha={ficha} onUpdate={updateFicha} onNotify={onNotify} />}
             {tab === "atributos" && <TabAtributos ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onOpenCaldeirao={onOpenCaldeirao} inventarioNomes={(ficha.inventario || []).map((e) => e.item?.nome).filter(Boolean)} />}
             {tab === "identidade" && <TabIdentidade ficha={ficha} onUpdate={updateFicha} />}

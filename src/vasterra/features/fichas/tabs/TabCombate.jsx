@@ -10,7 +10,7 @@ import {
   getFichaValueByPath, toAllNodes, getInputPorts, getOutputPorts, canLink, evaluateNodeOutputs,
 } from "./combatNodeSystem";
 
-export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCaldeirao, onNotify }) {
+export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCaldeirao, onNotify, createNodeHotkey = "a" }) {
   const state = useMemo(() => ({ ...defaultCombatState(), ...(ficha.combate || {}) }), [ficha.combate]);
   const [collapsed, setCollapsed] = useState({});
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
@@ -35,6 +35,8 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
   const fullscreenRootRef = useRef(null);
   const canvasWrapRef = useRef(null);
   const dragRef = useRef(null);
+  const selectedNodesRef = useRef([]);
+  const [clipboardNodes, setClipboardNodes] = useState([]);
   const charEffects = ficha.modificadores?.efeitos || [];
 
   const saveCombate = (next) => onUpdate({ combate: { ...state, ...next } });
@@ -243,8 +245,9 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
     if (e.button !== 0) return;
     if (e.target.closest("button,input,select,textarea")) return;
     e.preventDefault();
+    const baseSelection = selectedNodesRef.current;
     setSelectedNodes((ids) => (e.shiftKey ? (ids.includes(node.id) ? ids.filter((x) => x !== node.id) : [...ids, node.id]) : (ids.includes(node.id) ? ids : [node.id])));
-    const movingIds = (selectedNodes.includes(node.id) && !e.shiftKey) ? selectedNodes : [node.id];
+    const movingIds = (baseSelection.includes(node.id) && !e.shiftKey) ? baseSelection : [node.id];
     const startNodes = movingIds.map((id) => { const n = allNodes.find((x) => x.id === id); return { id, x: n?.x || 0, y: n?.y || 0 }; });
     dragRef.current = { kind: "node", ids: movingIds, startX: e.clientX, startY: e.clientY, startNodes };
   };
@@ -266,7 +269,12 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
         const w = Math.abs(m.x - d.start.x); const h = Math.abs(m.y - d.start.y);
         setMarquee({ x, y, w, h });
         const ids = allNodes.filter((n) => (n.x || 0) + 220 >= x && (n.x || 0) <= x + w && (n.y || 0) + 120 >= y && (n.y || 0) <= y + h).map((n) => n.id);
-        setSelectedNodes(ids);
+        if (e.shiftKey) {
+          const merged = Array.from(new Set([...(selectedNodesRef.current || []), ...ids]));
+          setSelectedNodes(merged);
+        } else {
+          setSelectedNodes(ids);
+        }
         return;
       }
       const dx = (e.clientX - d.startX) / viewport.zoom;
@@ -314,20 +322,72 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
     saveCombate({ recursos: res, statusNodes: sts, genericNodes: gen });
   };
 
+  const deleteSelectedNodes = () => {
+    if (!selectedNodesRef.current.length) return;
+    const selectedSet = new Set(selectedNodesRef.current);
+    saveCombate({
+      recursos: (state.recursos || []).filter((x) => !selectedSet.has(x.id)),
+      statusNodes: (state.statusNodes || []).filter((x) => !selectedSet.has(x.id)),
+      genericNodes: (state.genericNodes || []).filter((x) => !selectedSet.has(x.id)),
+      nodeLinks: links.filter((l) => !selectedSet.has(l.from.id) && !selectedSet.has(l.to.id)),
+    });
+    setSelectedNodes([]);
+  };
+
+  const copySelectedNodes = () => {
+    const selectedSet = new Set(selectedNodesRef.current);
+    const pack = allNodes.filter((n) => selectedSet.has(n.id)).map((n) => ({ ...n }));
+    setClipboardNodes(pack);
+  };
+
+  const pasteClipboardNodes = () => {
+    if (!clipboardNodes.length) return;
+    const minX = Math.min(...clipboardNodes.map((n) => n.x || 0));
+    const minY = Math.min(...clipboardNodes.map((n) => n.y || 0));
+    const center = getCanvasCenterWorld();
+    const deltaX = center.x - minX;
+    const deltaY = center.y - minY;
+    const added = clipboardNodes.map((n) => {
+      const id = uid();
+      return {
+        ...n,
+        id,
+        x: Math.round((n.x || 0) + deltaX),
+        y: Math.round((n.y || 0) + deltaY),
+      };
+    });
+    saveCombate({
+      recursos: [...(state.recursos || []), ...added.filter((n) => n.kind === "resource")],
+      statusNodes: [...(state.statusNodes || []), ...added.filter((n) => n.kind === "status")],
+      genericNodes: [...(state.genericNodes || []), ...added.filter((n) => n.kind === "generic")],
+    });
+    setSelectedNodes(added.map((n) => n.id));
+  };
+
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key.toLowerCase() === "n") {
+      if (e.key.toLowerCase() === String(createNodeHotkey || "a").toLowerCase()) {
         if (!isCanvasHot) return;
         if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+        e.preventDefault();
         setNodePickerOpen(true);
         return;
       }
       if (e.key === "Delete" && selectedNodes.length) {
-        selectedNodes.forEach((id) => { const n = allNodes.find((x) => x.id === id); if (n) deleteNode(n); });
+        e.preventDefault();
+        deleteSelectedNodes();
       }
       if (e.ctrlKey && e.key.toLowerCase() === "d" && selectedNodes.length) {
         e.preventDefault();
         selectedNodes.forEach((id) => { const n = allNodes.find((x) => x.id === id); if (n) duplicateNode(n); });
+      }
+      if (e.ctrlKey && e.key.toLowerCase() === "c" && selectedNodes.length) {
+        e.preventDefault();
+        copySelectedNodes();
+      }
+      if (e.ctrlKey && e.key.toLowerCase() === "v" && clipboardNodes.length) {
+        e.preventDefault();
+        pasteClipboardNodes();
       }
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key) && selectedNodes.length) {
         e.preventDefault();
@@ -340,7 +400,11 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedNodes, allNodes, state, isCanvasHot]);
+  }, [selectedNodes, allNodes, state, isCanvasHot, clipboardNodes, createNodeHotkey]);
+
+  useEffect(() => {
+    selectedNodesRef.current = selectedNodes;
+  }, [selectedNodes]);
 
   useEffect(() => {
     const onFs = () => setIsFullscreen(document.fullscreenElement === fullscreenRootRef.current);
@@ -429,7 +493,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
       {state.abaAtiva === "recursos" && (
         <div>
           {!isFullscreen && <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <HoverButton onClick={() => setNodePickerOpen(true)}>+ Novo Nó</HoverButton>
+            <HoverButton onClick={() => setNodePickerOpen(true)}>{`+ Novo Nó (${String(createNodeHotkey || "a").toUpperCase()})`}</HoverButton>
             <HoverButton onClick={() => saveCombate({ recursos: (state.recursos || []).map((r) => ({ ...r, atual: Number(outputs[r.id]?.max ?? r.max) })) })} style={btnStyle({ borderColor: "#2ecc7144", color: "#7cf0b3" })}>Resetar Recursos</HoverButton>
             <HoverButton onClick={toggleFullscreen} style={btnStyle({ borderColor: "#3498db55", color: "#8fc8ff" })}>⛶</HoverButton>
           </div>}
@@ -443,7 +507,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
             style={{ border: "1px solid #2a2a2a", borderRadius: 12, background: "radial-gradient(circle at 20% 20%, #14203a 0, #0b101d 45%, #07090f 100%)", backgroundSize: "120% 120%", animation: reduceMotion ? "none" : "canvasGlow 9s ease-in-out infinite", height: isFullscreen ? "100vh" : 340, overflow: "hidden", position: "relative", cursor: "grab", transition: "all .2s ease" }}
           >
             {isFullscreen && <div style={{ position: "absolute", top: 10, right: 10, zIndex: 30, display: "flex", gap: 6, alignItems: "center", background: "#05070bcc", border: "1px solid #335", borderRadius: 10, padding: "6px 8px" }}>
-              <HoverButton onClick={() => setNodePickerOpen(true)} style={btnStyle({ padding: "5px 8px" })}>+ Nó</HoverButton>
+              <HoverButton onClick={() => setNodePickerOpen(true)} style={btnStyle({ padding: "5px 8px" })}>{`+ Nó (${String(createNodeHotkey || "a").toUpperCase()})`}</HoverButton>
               <HoverButton onClick={() => setRodada(state.rodadaAtual - 1)} style={btnStyle({ padding: "5px 8px" })}>&lt;</HoverButton>
               <span style={{ fontFamily: "monospace", color: "#8ec8ff", minWidth: 72, textAlign: "center" }}>Rod {state.rodadaAtual}</span>
               <HoverButton onClick={() => setRodada(state.rodadaAtual + 1)} style={btnStyle({ padding: "5px 8px" })}>&gt;</HoverButton>
@@ -453,6 +517,9 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
             </div>}
 
             {marquee && <div style={{ position: "absolute", left: marquee.x * viewport.zoom + viewport.x, top: marquee.y * viewport.zoom + viewport.y, width: marquee.w * viewport.zoom, height: marquee.h * viewport.zoom, border: "1px dashed #7dd3fc", background: "#7dd3fc22", pointerEvents: "none", zIndex: 40 }} />}
+            <div style={{ position: "absolute", left: 10, bottom: 10, fontFamily: "monospace", fontSize: 10, color: "#8ea2bd", zIndex: 41, background: "#05070bb8", border: "1px solid #2a3f5f", borderRadius: 8, padding: "4px 8px" }}>
+              {`Atalhos: ${String(createNodeHotkey || "a").toUpperCase()} novo nó · Ctrl+C/Ctrl+V copiar/colar · Delete apagar`}
+            </div>
             <div style={{ position: "absolute", right: 10, bottom: 10, width: 180, height: 120, border: "1px solid #345", background: "#05070bcc", borderRadius: 8, zIndex: 40, overflow: "hidden" }}><div style={{ position: "absolute", inset: 0 }}>{allNodes.map((n) => <div key={`m-${n.id}`} style={{ position: "absolute", left: ((n.x||0)/2000)*180, top: ((n.y||0)/1400)*120, width: 10, height: 6, background: "#9fb3c8aa", borderRadius: 3 }} />)}<div style={{ position: "absolute", left: ((-viewport.x/viewport.zoom)/2000)*180, top: ((-viewport.y/viewport.zoom)/1400)*120, width: (canvasWrapRef.current?.clientWidth||300)/viewport.zoom/2000*180, height: (canvasWrapRef.current?.clientHeight||200)/viewport.zoom/1400*120, border: "1px solid #7dd3fc" }} /></div></div>
             <div style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`, transformOrigin: "top left", width: 2000, height: 1400, position: "relative" }}>
               <svg style={{ position: "absolute", inset: 0, width: 2000, height: 1400, pointerEvents: "none", overflow: "visible" }}>
