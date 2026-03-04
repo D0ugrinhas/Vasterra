@@ -6,26 +6,14 @@ import { novaSkill, uid } from "../../core/factories";
 import { ESSENCIAS_PECADOS, ESSENCIAS_VIRTUDES, ALL_PERICIAS, ARSENAL_RANKS } from "../../data/gameData";
 import { ImageAttachModal, ImageViewport } from "../../components/media/ImageAttachModal";
 
-const CUSTO_CORES = {
-  ACO: "#22ee5f",
-  MOV: "#227de6",
-  REA: "#d31515",
-  ESF: "#290404",
-  VIT: "#f1250e",
-  EST: "#f9f100",
-  MAN: "#0077ff",
-  SAN: "#ff4dc4",
-  CONS: "#1abc9c",
-};
-
 const ROLAGEM_TIPOS = ["Padrão", "Perícia", "Ação", "Instrução"];
 const ACOES = ["Ataque", "Esquiva", "Bloqueio", "Contra-ataque"];
 const ESSENCIAS = ["Nenhuma", ...ESSENCIAS_VIRTUDES.map((e) => e.nome), ...ESSENCIAS_PECADOS.map((e) => e.nome)];
+const OPERADORES = ["e", "ou", "/"];
 
 function TagPicker({ tags, selectedIds, onToggle, onClose }) {
   const [search, setSearch] = useState("");
   const filtered = useMemo(() => (tags || []).filter((t) => t.nome.toLowerCase().includes(search.toLowerCase())), [tags, search]);
-
   return (
     <Modal title="Selecionar Tags" onClose={onClose}>
       <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pesquisar tag..." style={{ ...inpStyle(), marginBottom: 8 }} />
@@ -43,6 +31,38 @@ function TagPicker({ tags, selectedIds, onToggle, onClose }) {
   );
 }
 
+function CustoConfigModal({ form, setForm, onClose }) {
+  const [draft, setDraft] = useState({ nome: "", cor: "#7aa9d8" });
+  return (
+    <Modal title="Configurar autocomplete de Custos" onClose={onClose}>
+      <div style={{ display: "grid", gap: 8 }}>
+        <div style={{ color: "#91b2d0", fontFamily: "monospace", fontSize: 11 }}>Defina nomes/cores do autocomplete para esta skill.</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 80px auto", gap: 6 }}>
+          <input value={draft.nome} onChange={(e) => setDraft((p) => ({ ...p, nome: e.target.value.toUpperCase() }))} placeholder="Nome (ex: ACO)" style={inpStyle()} />
+          <input type="color" value={draft.cor} onChange={(e) => setDraft((p) => ({ ...p, cor: e.target.value }))} style={{ ...inpStyle({ padding: 2 }), height: 36 }} />
+          <HoverButton onClick={() => {
+            if (!draft.nome.trim()) return;
+            setForm((p) => ({ ...p, custoCatalogo: [...(p.custoCatalogo || []), { id: uid(), nome: draft.nome.trim().toUpperCase(), cor: draft.cor }] }));
+            setDraft({ nome: "", cor: "#7aa9d8" });
+          }}>Adicionar</HoverButton>
+        </div>
+        <div style={{ maxHeight: "44vh", overflowY: "auto", display: "grid", gap: 6 }}>
+          {(form.custoCatalogo || []).map((it) => (
+            <div key={it.id} style={{ display: "grid", gridTemplateColumns: "20px 1fr auto", gap: 8, alignItems: "center", border: "1px solid #2e3e51", borderRadius: 10, padding: 8, background: "#09111b" }}>
+              <span style={{ width: 16, height: 16, borderRadius: 99, background: it.cor }} />
+              <input value={it.nome} onChange={(e) => setForm((p) => ({ ...p, custoCatalogo: p.custoCatalogo.map((x) => x.id === it.id ? { ...x, nome: e.target.value.toUpperCase() } : x) }))} style={inpStyle()} />
+              <div style={{ display: "flex", gap: 6 }}>
+                <input type="color" value={it.cor || "#7aa9d8"} onChange={(e) => setForm((p) => ({ ...p, custoCatalogo: p.custoCatalogo.map((x) => x.id === it.id ? { ...x, cor: e.target.value } : x) }))} style={{ ...inpStyle({ padding: 2 }), width: 38, height: 32 }} />
+                <HoverButton onClick={() => setForm((p) => ({ ...p, custoCatalogo: p.custoCatalogo.filter((x) => x.id !== it.id) }))} style={btnStyle({ borderColor: "#e74c3c66", color: "#ff9087", padding: "4px 8px" })}>x</HoverButton>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function renderRolagemResumo(form) {
   if (form.rolagemTipo === "Perícia") return `Rolagem de ${form.rolagemPericia || "Perícia"}`;
   if (form.rolagemTipo === "Ação") return `Rolagem de ${form.rolagemAcao || "Ação"}`;
@@ -54,8 +74,15 @@ export function SkillEditor({ skill, tags = [], onSave, onClose }) {
   const [form, setForm] = useState({ ...novaSkill(), ...(skill || {}) });
   const [pickerOpen, setPickerOpen] = useState(false);
   const [imgOpen, setImgOpen] = useState(false);
+  const [cfgOpen, setCfgOpen] = useState(false);
+  const [custoQtd, setCustoQtd] = useState(1);
+  const [custoCod, setCustoCod] = useState("");
+  const [custoOp, setCustoOp] = useState("e");
 
   const iconSrc = form.iconeModo === "url" ? form.iconeUrl : form.iconeModo === "upload" ? form.iconeData : "";
+  const custoSugestoes = useMemo(() => (form.custoCatalogo || []).filter((c) => (c.nome || "").toLowerCase().includes(custoCod.toLowerCase())).slice(0, 8), [form.custoCatalogo, custoCod]);
+
+  const custoCor = (codigo) => (form.custoCatalogo || []).find((x) => x.nome.toUpperCase() === String(codigo || "").toUpperCase())?.cor || "#3b4756";
 
   const save = () => onSave({ ...form, atualizado: Date.now() });
 
@@ -78,7 +105,6 @@ export function SkillEditor({ skill, tags = [], onSave, onClose }) {
               <input type="color" value={form.cor || "#4a6088"} onChange={(e) => setForm((p) => ({ ...p, cor: e.target.value }))} style={{ ...inpStyle({ padding: 2 }), height: 36 }} />
               <HoverButton onClick={() => setImgOpen(true)} style={btnStyle({ borderColor: "#4f7dbc66", color: "#b4d9ff" })}>Anexar imagem</HoverButton>
             </div>
-            <div style={{ fontFamily: "monospace", fontSize: 11, color: "#8aa2bd" }}>Use o anexo para URL/upload + ajuste fino (zoom/offset/filtro), reaproveitando o sistema nativo de imagem.</div>
           </div>
         </div>
 
@@ -90,28 +116,38 @@ export function SkillEditor({ skill, tags = [], onSave, onClose }) {
 
         <div className="bib-editor-card" style={{ display: "grid", gap: 8 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontFamily: "monospace", color: "#8db3dc", fontSize: 12 }}>Custo da Skill</span>
+            <span style={{ fontFamily: "monospace", color: "#8db3dc", fontSize: 12 }}>Custos da Skill (livre + autocomplete)</span>
             <div style={{ display: "flex", gap: 6 }}>
-              <HoverButton onClick={() => setForm((p) => ({ ...p, custos: [] }))} style={btnStyle({ padding: "4px 8px", borderColor: "#3b4f64", color: "#94b6d5" })}>N/A (sem custo)</HoverButton>
-              <HoverButton onClick={() => setForm((p) => ({ ...p, custos: [...(p.custos || []), { id: uid(), tipo: "ACO", valor: 1 }] }))} style={btnStyle({ padding: "4px 8px" })}>+ custo</HoverButton>
+              <HoverButton onClick={() => setCfgOpen(true)} style={btnStyle({ padding: "4px 8px", borderColor: "#4f7dbc66", color: "#9ecfff" })}>⚙ Configurar</HoverButton>
+              <HoverButton onClick={() => setForm((p) => ({ ...p, custos: [] }))} style={btnStyle({ padding: "4px 8px", borderColor: "#3b4f64", color: "#94b6d5" })}>N/A</HoverButton>
             </div>
           </div>
-          <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Exemplos: 1ACO e 5EST · 1ACO e 1MOV e 5MAN · 5EST · N/A.</div>
-          <div style={{ display: "grid", gap: 6 }}>
-            {(form.custos || []).map((c) => (
-              <div key={c.id} style={{ display: "grid", gridTemplateColumns: "120px 1fr auto", gap: 6 }}>
-                <select value={c.tipo} onChange={(e) => setForm((p) => ({ ...p, custos: p.custos.map((x) => (x.id === c.id ? { ...x, tipo: e.target.value } : x)) }))} style={inpStyle()}>
-                  {Object.keys(CUSTO_CORES).map((k) => <option key={k}>{k}</option>)}
-                </select>
-                <input type="number" min={0} value={Number(c.valor || 0)} onChange={(e) => setForm((p) => ({ ...p, custos: p.custos.map((x) => (x.id === c.id ? { ...x, valor: Math.max(0, Number(e.target.value) || 0) } : x)) }))} style={inpStyle()} />
-                <HoverButton onClick={() => setForm((p) => ({ ...p, custos: p.custos.filter((x) => x.id !== c.id) }))} style={btnStyle({ borderColor: "#a8453b66", color: "#ff9a90", padding: "4px 8px" })}>x</HoverButton>
-              </div>
-            ))}
-            {(form.custos || []).length === 0 && <div style={{ color: "#99a7b5", fontSize: 12 }}>Sem custo (N/A)</div>}
+          <div style={{ display: "grid", gridTemplateColumns: "80px 1fr 80px auto", gap: 6, alignItems: "start" }}>
+            <input type="number" min={0} value={Number(custoQtd || 0)} onChange={(e) => setCustoQtd(Math.max(0, Number(e.target.value) || 0))} style={inpStyle()} />
+            <div style={{ position: "relative" }}>
+              <input value={custoCod} onChange={(e) => setCustoCod(e.target.value.toUpperCase())} placeholder="Código (ex: ACO ou qualquer texto)" style={inpStyle()} />
+              {custoCod && custoSugestoes.length > 0 && (
+                <div style={{ position: "absolute", zIndex: 20, left: 0, right: 0, top: "calc(100% + 2px)", border: "1px solid #334a63", borderRadius: 8, background: "#081019", maxHeight: 140, overflowY: "auto" }}>
+                  {custoSugestoes.map((s) => <button type="button" key={s.id} onClick={() => setCustoCod(s.nome.toUpperCase())} style={{ width: "100%", textAlign: "left", border: "none", borderBottom: "1px solid #1b2a3a", background: "transparent", color: "#c8def5", padding: "6px 8px", cursor: "pointer" }}>{s.nome}</button>)}
+                </div>
+              )}
+            </div>
+            <select value={custoOp} onChange={(e) => setCustoOp(e.target.value)} style={inpStyle()}>{OPERADORES.map((op) => <option key={op}>{op}</option>)}</select>
+            <HoverButton onClick={() => {
+              if (!String(custoCod || "").trim()) return;
+              setForm((p) => ({ ...p, custos: [...(p.custos || []), { id: uid(), quantidade: Number(custoQtd || 0), codigo: String(custoCod || "").trim().toUpperCase(), operador: custoOp }] }));
+              setCustoCod("");
+            }}>+ Inserir</HoverButton>
           </div>
+          <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Suporta: “1ACO ou 1REA”, “1ACO/1REA e 5EST”, etc. Cada item pode usar operador <b>e</b>, <b>ou</b> ou <b>/</b>.</div>
+
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {(form.custos || []).map((c) => (
-              <span key={`preview-${c.id}`} style={{ padding: "4px 10px", borderRadius: 999, background: CUSTO_CORES[c.tipo] || "#666", color: c.tipo === "EST" ? "#151515" : "#fff", fontFamily: "monospace", fontSize: 11 }}>{Number(c.valor || 0)}{c.tipo}</span>
+            {(form.custos || []).map((c, idx) => (
+              <div key={c.id} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <span style={{ padding: "4px 10px", borderRadius: 999, background: custoCor(c.codigo), color: "#fff", fontFamily: "monospace", fontSize: 11 }}>{Number(c.quantidade || 0)}{c.codigo}</span>
+                {idx < form.custos.length - 1 && <span style={{ color: "#9fc0df", fontFamily: "monospace", fontSize: 11 }}>{c.operador || "e"}</span>}
+                <button onClick={() => setForm((p) => ({ ...p, custos: p.custos.filter((x) => x.id !== c.id) }))} style={{ border: "1px solid #5b2a2a", background: "#2a0f0f", color: "#ff9b93", borderRadius: 999, width: 20, height: 20, cursor: "pointer" }}>×</button>
+              </div>
             ))}
             {(form.custos || []).length === 0 && <span style={{ padding: "4px 10px", borderRadius: 999, background: "#2a2a2a", color: "#fff", fontFamily: "monospace", fontSize: 11 }}>N/A</span>}
           </div>
@@ -153,6 +189,7 @@ export function SkillEditor({ skill, tags = [], onSave, onClose }) {
       </div>
 
       {pickerOpen && <TagPicker tags={tags} selectedIds={form.tagIds || []} onToggle={(id) => setForm((p) => ({ ...p, tagIds: (p.tagIds || []).includes(id) ? p.tagIds.filter((x) => x !== id) : [...(p.tagIds || []), id] }))} onClose={() => setPickerOpen(false)} />}
+      {cfgOpen && <CustoConfigModal form={form} setForm={setForm} onClose={() => setCfgOpen(false)} />}
       <ImageAttachModal
         open={imgOpen}
         title="Anexar imagem da Skill"

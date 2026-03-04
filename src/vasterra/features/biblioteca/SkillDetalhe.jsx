@@ -4,17 +4,6 @@ import { HoverButton } from "../../components/primitives/Interactive";
 import { RANK_COR } from "../../data/gameData";
 import { ImageViewport } from "../../components/media/ImageAttachModal";
 
-const CUSTO_CORES = {
-  ACO: "#22ee5f",
-  MOV: "#227de6",
-  REA: "#d31515",
-  ESF: "#290404",
-  VIT: "#f1250e",
-  EST: "#f9f100",
-  MAN: "#0077ff",
-  SAN: "#ff4dc4",
-  CONS: "#1abc9c",
-};
 
 function SkillTag({ tag }) {
   return (
@@ -28,6 +17,11 @@ function SkillTag({ tag }) {
       </span>
     </span>
   );
+}
+
+
+function custoCor(skill, codigo) {
+  return (skill.custoCatalogo || []).find((x) => String(x.nome || "").toUpperCase() === String(codigo || "").toUpperCase())?.cor || "#3b4756";
 }
 
 function rolagemLabel(skill) {
@@ -70,7 +64,12 @@ export function SkillDetalhe({ skill, tagsById = {}, onEdit, onDup, onDel }) {
           <div style={{ fontFamily: "monospace", color: "#8fb3d8", marginBottom: 4 }}>Mecânica</div>
           <div style={{ fontSize: 13 }}>Rolagem: <b>{rolagemLabel(skill)}</b></div>
           <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {(skill.custos || []).map((c) => <span key={c.id} style={{ padding: "4px 10px", borderRadius: 999, background: CUSTO_CORES[c.tipo] || "#666", color: c.tipo === "EST" ? "#151515" : "#fff", fontFamily: "monospace", fontSize: 11 }}>{Number(c.valor || 0)}{c.tipo}</span>)}
+            {(skill.custos || []).map((c, idx) => (
+              <span key={c.id} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <span style={{ padding: "4px 10px", borderRadius: 999, background: custoCor(skill, c.codigo), color: "#fff", fontFamily: "monospace", fontSize: 11 }}>{Number(c.quantidade || 0)}{c.codigo}</span>
+                {idx < (skill.custos || []).length - 1 && <span style={{ color: "#9ec1df", fontFamily: "monospace", fontSize: 11 }}>{c.operador || "e"}</span>}
+              </span>
+            ))}
             {(skill.custos || []).length === 0 && <span style={{ padding: "4px 10px", borderRadius: 999, background: "#2a2a2a", color: "#fff", fontFamily: "monospace", fontSize: 11 }}>N/A</span>}
           </div>
           <div style={{ fontSize: 13, marginTop: 8 }}>Essência: <b>{skill.essenciaAtribuida || "Nenhuma"}</b></div>

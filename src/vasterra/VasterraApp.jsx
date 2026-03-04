@@ -63,12 +63,17 @@ function normalizeSkillTag(tag = {}) {
 
 function normalizeSkill(skill = {}) {
   const base = novaSkill();
+  const custos = Array.isArray(skill.custos)
+    ? skill.custos.map((c) => ({ id: c.id || uid(), quantidade: Number(c.quantidade ?? c.valor ?? 0) || 0, codigo: String(c.codigo || c.tipo || ""), operador: c.operador || "e" }))
+    : (skill.custoValor ? [{ id: uid(), quantidade: 0, codigo: String(skill.custoValor), operador: "e" }] : base.custos);
+
   return {
     ...base,
     ...skill,
     id: skill.id || base.id || uid(),
     tagIds: Array.isArray(skill.tagIds) ? skill.tagIds : base.tagIds,
-    custos: Array.isArray(skill.custos) ? skill.custos : (skill.custoValor ? [{ id: uid(), tipo: "LEGACY", valor: skill.custoValor }] : base.custos),
+    custos,
+    custoCatalogo: Array.isArray(skill.custoCatalogo) && skill.custoCatalogo.length ? skill.custoCatalogo.map((c) => ({ ...c, id: c.id || uid() })) : base.custoCatalogo,
     geracao: Number(skill.geracao || base.geracao) || 1,
     essenciaAtribuida: skill.essenciaAtribuida || "Nenhuma",
     dono: typeof skill.dono === "string" ? skill.dono : (skill.donoValor || ""),
