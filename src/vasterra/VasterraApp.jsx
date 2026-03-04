@@ -68,6 +68,14 @@ function normalizeSkill(skill = {}) {
     ...skill,
     id: skill.id || base.id || uid(),
     tagIds: Array.isArray(skill.tagIds) ? skill.tagIds : base.tagIds,
+    custos: Array.isArray(skill.custos) ? skill.custos : (skill.custoValor ? [{ id: uid(), tipo: "LEGACY", valor: skill.custoValor }] : base.custos),
+    geracao: Number(skill.geracao || base.geracao) || 1,
+    essenciaAtribuida: skill.essenciaAtribuida || "Nenhuma",
+    dono: typeof skill.dono === "string" ? skill.dono : (skill.donoValor || ""),
+    rolagemTipo: skill.rolagemTipo || "Padrão",
+    rolagemPericia: skill.rolagemPericia || "",
+    rolagemAcao: skill.rolagemAcao || "Ataque",
+    rolagemInstrucao: skill.rolagemInstrucao || "",
   };
 }
 function normalizeEffect(effect = {}) {
