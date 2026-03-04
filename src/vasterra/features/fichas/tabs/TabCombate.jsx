@@ -207,7 +207,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
 
 
 
-  const snapValue = (v, e) => (e?.altKey ? v : Math.round(v / 16) * 16);
+  const snapValue = (v, e) => (e?.altKey ? Math.round(v / 16) * 16 : Number(v.toFixed(2)));
   const duplicateNode = (n) => {
     setFlash((p) => ({ ...p, [n.id]: "dup" }));
     setTimeout(() => setFlash((p) => ({ ...p, [n.id]: null })), 220);
@@ -591,7 +591,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
                       <>
                         {minNodes[n.id] && n.nodeType === "dice" && <button onClick={() => { const q = Math.max(1, Number(n.qty || 1)); const d = Math.max(2, Number(n.faces || 20)); let natural = 0; for (let i = 0; i < q; i += 1) { const r = 1 + Math.floor(Math.random() * d); if (r > natural) natural = r; } updateGenericById(n.id, { lastRoll: natural }); }} style={btnStyle({ padding: "4px 8px" })}>Rolar</button>}
                         {!minNodes[n.id] && <>
-                        {n.nodeType === "value" && <input type="number" disabled={!!incomingValue || !!n.sourcePath || hasInputLink("value")} value={Number(n.value || 0)} onChange={(e) => updateGenericById(n.id, { value: Number(e.target.value) || 0 })} style={inpStyle()} />}
+                        {n.nodeType === "value" && <><input type="number" disabled={!!incomingValue || !!n.sourcePath || hasInputLink("value")} value={Number(n.value || 0)} onChange={(e) => updateGenericById(n.id, { value: Number(e.target.value) || 0 })} style={inpStyle()} /><input value={n.expr || ""} onChange={(e) => updateGenericById(n.id, { expr: e.target.value })} placeholder="Expr: 10+2*3" style={inpStyle()} /></>}
                         {n.nodeType === "comment" && <div style={{ padding: 6, borderRadius: 6, background: Number(out.value || 0) > 0 ? "#f1c40f22" : "#111", boxShadow: Number(out.value || 0) > 0 ? "0 0 12px #f1c40f99" : "none", color: G.text, minHeight: 34 }}>{n.text || "Comentário"}</div>}
                         {n.nodeType === "math" && <select value={n.op || "+"} onChange={(e) => updateGenericById(n.id, { op: e.target.value })} style={inpStyle()}><option>+</option><option>-</option><option>*</option><option>/</option></select>}
                         {n.nodeType === "conditional" && <><select value={n.cmp || ">"} onChange={(e) => updateGenericById(n.id, { cmp: e.target.value })} style={inpStyle()}><option value=">">{">"}</option><option value="<">{"<"}</option><option value="=">{"="}</option></select><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}><input type="number" value={Number(n.trueValue || 0)} onChange={(e) => updateGenericById(n.id, { trueValue: Number(e.target.value) || 0 })} style={inpStyle()} /><input type="number" value={Number(n.falseValue || 0)} onChange={(e) => updateGenericById(n.id, { falseValue: Number(e.target.value) || 0 })} style={inpStyle()} /></div></>}
@@ -644,7 +644,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
               <div key={e.id} style={{ border: "1px solid #2a2a2a", borderRadius: 10, padding: 8, marginBottom: 8, background: "#0a0a0a", display: "grid", gap: 6 }}>
                 <div style={{ display: "grid", gridTemplateColumns: "24px 80px 24px 24px 1fr auto auto", gap: 6, alignItems: "center" }}>
                   <input type="checkbox" checked={e.ativo !== false} onChange={(ev) => toggleEffectAtivo(e.id, ev.target.checked)} />
-                  <select value={e.tipo || "Buff"} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, tipo: ev.target.value } : x))} style={inpStyle()}><option>Buff</option><option>Debuff</option></select>
+                  <select value={e.tipo || "Buff"} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, tipo: ev.target.value } : x))} style={inpStyle()}><option>Buff</option><option>Debuff</option><option>Efeito</option></select>
                   <button onClick={() => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, sinalizar: !(x.sinalizar !== false) } : x))} style={btnStyle({ padding: "2px 6px", borderRadius: 999, fontSize: 11 })}>{e.sinalizar !== false ? "🔔" : "🔕"}</button>
                   <button onClick={() => setCollapsed((p) => ({ ...p, [e.id]: !isCollapsed }))} style={btnStyle({ padding: "2px 6px", borderRadius: 999, fontSize: 11 })}>{isCollapsed ? "▸" : "▾"}</button>
                   <input value={e.nome || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, nome: ev.target.value } : x))} style={inpStyle()} />

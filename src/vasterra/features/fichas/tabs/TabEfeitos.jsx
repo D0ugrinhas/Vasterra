@@ -22,7 +22,7 @@ export function TabEfeitos({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
     const tpl = (efeitosCaldeirao || []).find((x) => x.id === selectedLibraryId);
     if (!tpl) return;
     setEfeitosLocais([
-      { id: uid(), tipo: tpl.tipo || "Buff", nome: tpl.nome || "Efeito", efeito: tpl.efeitoMecanico || "", origem: "Efeito", origemDetalhe: tpl.nome || "Caldeirão" },
+      { id: uid(), tipo: tpl.tipo || "Efeito", nome: tpl.nome || "Efeito", efeito: tpl.efeitoMecanico || "", origem: "Efeito", origemDetalhe: tpl.nome || "Caldeirão" },
       ...efeitosLocais,
     ]);
   };
@@ -71,12 +71,12 @@ export function TabEfeitos({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCalde
       <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3 }}>◈ EFEITOS ANEXADOS AO PERSONAGEM</div>
-          <button onClick={() => setEfeitosLocais([{ id: uid(), tipo: "Buff", nome: "", efeito: "", origem: "Efeito", origemDetalhe: "" }, ...efeitosLocais])} style={btnStyle({ padding: "4px 8px" })}>+ Manual</button>
+          <button onClick={() => setEfeitosLocais([{ id: uid(), tipo: "Efeito", nome: "", efeito: "", origem: "Efeito", origemDetalhe: "" }, ...efeitosLocais])} style={btnStyle({ padding: "4px 8px" })}>+ Manual</button>
         </div>
         <div style={{ display: "grid", gap: 8 }}>
           {efeitosLocais.map((m) => (
             <div key={m.id} style={{ border: "1px solid #222", borderRadius: 8, padding: 8, background: "#0b0b0b", display: "grid", gridTemplateColumns: "90px 1fr 1fr 120px 1fr auto auto", gap: 6 }}>
-              <select value={m.tipo} onChange={(e) => updateLocal(m.id, { tipo: e.target.value })} style={inpStyle()}><option>Buff</option><option>Debuff</option></select>
+              <select value={m.tipo} onChange={(e) => updateLocal(m.id, { tipo: e.target.value })} style={inpStyle()}><option>Buff</option><option>Debuff</option><option>Efeito</option></select>
               <input value={m.nome || ""} onChange={(e) => updateLocal(m.id, { nome: e.target.value })} placeholder="Nome" style={inpStyle()} />
               <input value={m.efeito || ""} onChange={(e) => updateLocal(m.id, { efeito: e.target.value })} placeholder="+4FOR" style={inpStyle()} />
               <input value={m.origem || "Efeito"} onChange={(e) => updateLocal(m.id, { origem: e.target.value })} placeholder="Origem" style={inpStyle()} />

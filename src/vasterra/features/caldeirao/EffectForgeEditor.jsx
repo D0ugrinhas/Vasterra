@@ -77,7 +77,7 @@ export function EffectForgeEditor({ effect, onSave, onClose }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <div style={{ display: "grid", gap: 8 }}>
           <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 8 }}>
-            <select value={d.tipo} onChange={(e) => up("tipo", e.target.value)} style={inpStyle()}><option>Buff</option><option>Debuff</option></select>
+            <select value={d.tipo} onChange={(e) => up("tipo", e.target.value)} style={inpStyle()}><option>Buff</option><option>Debuff</option><option>Efeito</option></select>
             <input value={d.nome} onChange={(e) => up("nome", e.target.value)} placeholder="Nome do efeito" style={inpStyle()} />
           </div>
           <textarea value={d.descricao} onChange={(e) => up("descricao", e.target.value)} rows={3} placeholder="Descrição completa" style={inpStyle({ resize: "vertical" })} />
@@ -99,8 +99,13 @@ export function EffectForgeEditor({ effect, onSave, onClose }) {
               {allEssencias.map((es) => <option key={es.nome} value={es.nome}>{es.nome}</option>)}
             </select>
             <select value={d.rank} onChange={(e) => up("rank", e.target.value)} style={inpStyle()}>{ARSENAL_RANKS.map((r) => <option key={r}>{r}</option>)}</select>
-            <textarea value={mecanicoText} onChange={(e) => { up("efeitoMecanico", e.target.value); up("efeitosMecanicos", []); }} rows={7} placeholder="Efeito mecânico (texto livre, múltiplos efeitos separados por vírgula; texto entre aspas será ignorado no parser)" style={inpStyle({ resize: "vertical", minHeight: 140 })} />
+            <span />
           </div>
+          <div style={{ background: G.bg3, border: "1px solid " + G.border, borderRadius: 8, padding: 8 }}>
+            <div style={{ fontFamily: "'Cinzel',serif", color: G.gold, marginBottom: 6 }}>Efeito mecânico</div>
+            <textarea value={mecanicoText} onChange={(e) => { up("efeitoMecanico", e.target.value); up("efeitosMecanicos", []); }} rows={8} placeholder="Efeito mecânico (texto livre, múltiplos efeitos separados por vírgula; texto entre aspas será ignorado no parser)" style={inpStyle({ resize: "vertical", minHeight: 160 })} />
+          </div>
+
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             <select value={d.alvo || "Portador"} onChange={(e) => up("alvo", e.target.value)} style={inpStyle()}>

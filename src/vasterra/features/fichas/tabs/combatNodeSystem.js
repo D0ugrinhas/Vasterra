@@ -29,6 +29,10 @@ export function defaultGenericForm(kind = "Valor") {
   return { nodeType: "color", label: "Cor", color: "#95a5a6", x: 520, y: 820 };
 }
 
+function normalizeLooseKey(v = "") {
+  return String(v || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, "");
+}
+
 export function getFichaValueByPath(ficha, path) {
   if (!path) return 0;
   if (path.startsWith("status.")) {
@@ -41,7 +45,11 @@ export function getFichaValueByPath(ficha, path) {
   }
   if (path.startsWith("pericias.")) {
     const [_, key] = path.split(".");
-    return Number(ficha?.pericias?.[key] || 0);
+    const direct = ficha?.pericias?.[key];
+    if (Number.isFinite(Number(direct))) return Number(direct || 0);
+    const needle = normalizeLooseKey(key);
+    const foundKey = Object.keys(ficha?.pericias || {}).find((k) => normalizeLooseKey(k) === needle);
+    return Number((foundKey ? ficha?.pericias?.[foundKey] : 0) || 0);
   }
   return 0;
 }

@@ -52,7 +52,7 @@ export function CaldeiraoSection({ efeitos, onEfeitos, onNotify, onConfirmAction
           <button onClick={() => { setEditData(makeDefaultEffect()); setEditorOpen(true); }} style={{ ...btnStyle({ borderColor: "#9b59b644", color: "#d7a9ff" }), width: "100%", marginBottom: 6 }}>+ Criar Efeito</button>
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pesquisar efeito..." style={{ ...inpStyle(), marginBottom: 6 }} />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-            <select value={fTipo} onChange={(e) => setFTipo(e.target.value)} style={inpStyle({ padding: "4px 6px", fontSize: 11 })}><option value="">Tipo: todos</option><option>Buff</option><option>Debuff</option></select>
+            <select value={fTipo} onChange={(e) => setFTipo(e.target.value)} style={inpStyle({ padding: "4px 6px", fontSize: 11 })}><option value="">Tipo: todos</option><option>Buff</option><option>Debuff</option><option>Efeito</option></select>
             <select value={fRank} onChange={(e) => setFRank(e.target.value)} style={inpStyle({ padding: "4px 6px", fontSize: 11 })}><option value="">Rank: todos</option>{ARSENAL_RANKS.map((r) => <option key={r}>{r}</option>)}</select>
           </div>
         </div>
