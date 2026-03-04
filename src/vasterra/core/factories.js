@@ -52,6 +52,7 @@ export const novaFicha = (nome = "Novo Personagem") => ({
     ESF: { total: 1, usado: 0 },
   },
   inventario: [],
+  skills: [],
   corpo: {
     pontosTotal: 1000,
     partes: [],
