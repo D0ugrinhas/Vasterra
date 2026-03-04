@@ -122,3 +122,36 @@ export const novoItem = () => ({
   descricao: "",
   criado: Date.now(),
 });
+
+export const novaSkillTag = () => ({
+  id: uid(),
+  nome: "Nova Tag",
+  cor: "#7aa9d8",
+  descricao: "",
+  criado: Date.now(),
+});
+
+export const novaSkill = () => ({
+  id: uid(),
+  nome: "Nova Skill",
+  iconeModo: "fallback",
+  icone: "?",
+  iconeUrl: "",
+  iconeData: "",
+  cor: "#4a6088",
+  tagIds: [],
+  donoTipo: "Ficha",
+  donoValor: "",
+  alcance: "",
+  custoTipo: "Status",
+  custoValor: "",
+  custoCor: "#5dade2",
+  rolagemAcerto: "Destreza + Pontaria",
+  geracao: "Comum",
+  rank: "Comum",
+  essenciaAtribuida: "",
+  descricao: "",
+  descricaoCode: "",
+  criado: Date.now(),
+  atualizado: Date.now(),
+});

@@ -4,10 +4,11 @@ import { defaultExtraCondition, defaultPrestigioNode, EXTRA_CONDITION_TYPES, nor
 import { G, btnStyle, inpStyle } from "../../ui/theme";
 import { HoverButton } from "../../components/primitives/Interactive";
 import { AstralHudCard, LinkModeButton, PrestigioTreeCanvas } from "../prestigio/PrestigioTreeCanvas";
+import { novaSkillTag, uid } from "../../core/factories";
 
 const PERICIA_TAGS = Object.fromEntries(PERICIAS_GRUPOS.flatMap((g) => g.list.map((p) => [p, [g.g]])));
 
-export function VastoSection({ prestigios = {}, onPrestigios, onNotify, createNodeHotkey = "a", linkModeHotkey = "l" }) {
+export function VastoSection({ prestigios = {}, onPrestigios, skillTags = [], onSkillTags, onNotify, createNodeHotkey = "a", linkModeHotkey = "l" }) {
   const [screen, setScreen] = useState("home");
   const [query, setQuery] = useState("");
   const [tag, setTag] = useState("all");
@@ -15,6 +16,9 @@ export function VastoSection({ prestigios = {}, onPrestigios, onNotify, createNo
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [linkMode, setLinkMode] = useState(false);
   const [linkFrom, setLinkFrom] = useState(null);
+
+  const [tagSearch, setTagSearch] = useState("");
+  const [tagDraft, setTagDraft] = useState(novaSkillTag());
 
   const tree = useMemo(() => normalizePrestigioTree(prestigios?.[skill], skill), [prestigios, skill]);
   const selectedNode = tree.nodes.find((n) => n.id === selectedNodeId) || null;
@@ -25,6 +29,8 @@ export function VastoSection({ prestigios = {}, onPrestigios, onNotify, createNo
     if (tag !== "all" && !(PERICIA_TAGS[p] || []).includes(tag)) return false;
     return true;
   });
+
+  const filteredTagList = (skillTags || []).filter((t) => t.nome.toLowerCase().includes(tagSearch.toLowerCase()) || (t.descricao || "").toLowerCase().includes(tagSearch.toLowerCase()));
 
   const saveTree = (nextTree) => onPrestigios({ ...prestigios, [skill]: normalizePrestigioTree(nextTree, skill) });
   const updateNode = (id, patch) => saveTree({ ...tree, nodes: tree.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)) });
@@ -41,15 +47,8 @@ export function VastoSection({ prestigios = {}, onPrestigios, onNotify, createNo
       if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
       if (screen !== "prestigios") return;
       const k = e.key.toLowerCase();
-      if (k === String(createNodeHotkey || "a").toLowerCase()) {
-        e.preventDefault();
-        addNode();
-      }
-      if (k === String(linkModeHotkey || "l").toLowerCase()) {
-        e.preventDefault();
-        setLinkMode((v) => !v);
-        setLinkFrom(null);
-      }
+      if (k === String(createNodeHotkey || "a").toLowerCase()) { e.preventDefault(); addNode(); }
+      if (k === String(linkModeHotkey || "l").toLowerCase()) { e.preventDefault(); setLinkMode((v) => !v); setLinkFrom(null); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -97,8 +96,51 @@ export function VastoSection({ prestigios = {}, onPrestigios, onNotify, createNo
         <div style={{ color: G.muted, fontFamily: "monospace" }}>Criadores Vasterra (módulo astral unificado).</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <HoverButton style={btnStyle({ borderColor: "#4a6088", color: "#9bc5ff" })} onClick={() => setScreen("prestigios")}>Criador de Prestígios</HoverButton>
+          <HoverButton style={btnStyle({ borderColor: "#4a6088", color: "#9bc5ff" })} onClick={() => setScreen("tags")}>Criador de Tags</HoverButton>
           <HoverButton style={btnStyle({ borderColor: "#333", color: "#777" })}>Criador de Facções (em breve)</HoverButton>
-          <HoverButton style={btnStyle({ borderColor: "#333", color: "#777" })}>Criador de Missões (em breve)</HoverButton>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === "tags") {
+    return (
+      <div style={{ padding: 16, display: "grid", gap: 10 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <HoverButton onClick={() => setScreen("home")} style={btnStyle({ padding: "4px 10px" })}>← Voltar</HoverButton>
+          <span style={{ fontFamily: "'Cinzel',serif", color: G.gold }}>Criador de Tags para Skills</span>
+        </div>
+        <div style={{ border: "1px solid #233652", borderRadius: 10, padding: 10, background: "#090d12", display: "grid", gap: 8 }}>
+          <input value={tagSearch} onChange={(e) => setTagSearch(e.target.value)} placeholder="Buscar tags..." style={inpStyle()} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 1fr auto", gap: 6 }}>
+            <input value={tagDraft.nome} onChange={(e) => setTagDraft((p) => ({ ...p, nome: e.target.value }))} placeholder="Nome da tag" style={inpStyle()} />
+            <input value={tagDraft.cor} onChange={(e) => setTagDraft((p) => ({ ...p, cor: e.target.value }))} placeholder="#cor" style={inpStyle()} />
+            <input value={tagDraft.descricao || ""} onChange={(e) => setTagDraft((p) => ({ ...p, descricao: e.target.value }))} placeholder="Descrição" style={inpStyle()} />
+            <HoverButton onClick={() => {
+              if (!tagDraft.nome.trim()) return;
+              const exists = (skillTags || []).some((x) => x.id === tagDraft.id);
+              onSkillTags?.(exists ? skillTags.map((x) => (x.id === tagDraft.id ? tagDraft : x)) : [{ ...tagDraft, id: uid() }, ...skillTags]);
+              setTagDraft(novaSkillTag());
+              onNotify?.("Tag salva.", "success");
+            }}>Salvar</HoverButton>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gap: 6 }}>
+          {filteredTagList.map((t) => (
+            <div key={t.id} style={{ border: "1px solid #24364d", borderRadius: 10, padding: 8, background: "#08111a", display: "grid", gridTemplateColumns: "14px 1fr auto", gap: 8, alignItems: "center" }}>
+              <span style={{ width: 14, height: 14, borderRadius: 99, background: t.cor }} />
+              <div>
+                <div style={{ color: "#b9d9ff", fontFamily: "monospace", fontSize: 12 }}>{t.nome}</div>
+                <div style={{ color: "#6f89a4", fontFamily: "monospace", fontSize: 11 }}>{t.descricao || "Sem descrição"}</div>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <HoverButton onClick={() => setTagDraft(t)} style={btnStyle({ padding: "4px 8px" })}>Editar</HoverButton>
+                <HoverButton onClick={() => onSkillTags?.((skillTags || []).filter((x) => x.id !== t.id))} style={btnStyle({ borderColor: "#e74c3c66", color: "#ff9087", padding: "4px 8px" })}>Apagar</HoverButton>
+              </div>
+            </div>
+          ))}
+          {filteredTagList.length === 0 && <div style={{ color: G.muted, fontFamily: "monospace" }}>Nenhuma tag encontrada.</div>}
         </div>
       </div>
     );
@@ -109,82 +151,38 @@ export function VastoSection({ prestigios = {}, onPrestigios, onNotify, createNo
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <HoverButton onClick={() => setScreen("home")} style={btnStyle({ padding: "4px 10px" })}>← Voltar</HoverButton>
         <span style={{ fontFamily: "'Cinzel',serif", color: G.gold }}>Criador de Prestígios</span>
-        <span style={{ fontFamily: "monospace", color: "#89b5e8", fontSize: 11 }}>{`Atalhos: nova estrela ${String(createNodeHotkey || "a").toUpperCase()} · modo link ${String(linkModeHotkey || "l").toUpperCase()}`}</span>
       </div>
-
-      <PrestigioTreeCanvas
-        tree={tree}
-        ficha={null}
-        skillName={skill}
-        unlockedIds={[]}
-        editable
-        selectedNodeId={selectedNodeId}
-        onSelectNode={setSelectedNodeId}
-        onMoveNode={updateNode}
-        linkMode={linkMode}
-        linkFrom={linkFrom}
-        onLinkFrom={setLinkFrom}
-        onCreateLink={(from, to) => {
-          if (!from || !to || from === to) return;
-          if (tree.links.some((l) => l.from === from && l.to === to)) return;
-          saveTree({ ...tree, links: [...tree.links, { from, to }] });
-          setLinkFrom(null);
-        }}
-        onDeleteLink={(linkId) => saveTree({ ...tree, links: tree.links.filter((l) => l.id !== linkId) })}
-        showFooterHint={false}
-      />
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "290px 1fr 360px", gap: 10, minHeight: "calc(100vh - 120px)" }}>
         <AstralHudCard>
-          <div style={{ display: "grid", gap: 8 }}>
-            <div style={{ fontFamily: "'Cinzel',serif", color: G.gold2 }}>Controles do Criador</div>
-            <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 6, alignItems: "center" }}>
-              <label style={{ fontSize: 11 }}>Pesquisa:</label>
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Nome da perícia" style={inpStyle()} />
-              <label style={{ fontSize: 11 }}>Tag:</label>
-              <select value={tag} onChange={(e) => setTag(e.target.value)} style={inpStyle()}>{tags.map((t) => <option key={t} value={t}>{t === "all" ? "Todas" : t}</option>)}</select>
-              <label style={{ fontSize: 11 }}>Perícia:</label>
-              <select value={skill} onChange={(e) => { setSkill(e.target.value); setSelectedNodeId(null); }} style={inpStyle()}>{filteredSkills.map((p) => <option key={p} value={p}>{p}</option>)}</select>
-              <label style={{ fontSize: 11 }}>Máx Prestígios:</label>
-              <input type="number" min={0} value={tree.maxPrestigios || 0} onChange={(e) => saveTree({ ...tree, maxPrestigios: Math.max(0, Number(e.target.value) || 0) })} style={inpStyle()} />
-              <label style={{ fontSize: 11 }}>Tags árvore:</label>
-              <input value={(tree.tags || []).join(", ")} onChange={(e) => saveTree({ ...tree, tags: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })} style={inpStyle()} placeholder="Ex: Ofensiva, Inicial" />
-            </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filtrar perícia..." style={{ ...inpStyle(), marginBottom: 6 }} />
+          <select value={tag} onChange={(e) => setTag(e.target.value)} style={{ ...inpStyle(), marginBottom: 8 }}>{tags.map((t) => <option key={t}>{t}</option>)}</select>
+          <div style={{ maxHeight: "66vh", overflowY: "auto", display: "grid", gap: 4 }}>
+            {filteredSkills.map((p) => <button key={p} onClick={() => { setSkill(p); setSelectedNodeId(null); }} style={{ ...btnStyle({ textAlign: "left", color: skill === p ? "#d7ecff" : "#9bb6d6", borderColor: skill === p ? "#5dade288" : "#2f455f", background: skill === p ? "#12304a" : "#0c1522" }) }}>{p}</button>)}
+          </div>
+        </AstralHudCard>
+
+        <AstralHudCard>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <span style={{ color: "#b6ddff", fontFamily: "monospace", fontSize: 11 }}>{skill}</span>
+            <div style={{ display: "flex", gap: 6 }}>
               <HoverButton onClick={addNode}>+ Nova Estrela</HoverButton>
               <LinkModeButton active={linkMode} onClick={() => { setLinkMode((v) => !v); setLinkFrom(null); }} />
-              <HoverButton onClick={exportPrestigios} style={btnStyle({ borderColor: "#3498db55", color: "#8fc8ff" })}>Exportar Prestígios</HoverButton>
-              <label style={{ border: "1px solid #3498db55", color: "#8fc8ff", borderRadius: 8, padding: "6px 10px", cursor: "pointer" }}>Importar Prestígios<input type="file" accept="application/json" style={{ display: "none" }} onChange={(e) => importPrestigios(e.target.files?.[0])} /></label>
+              <HoverButton onClick={exportPrestigios} style={btnStyle({ borderColor: "#3498db55", color: "#8fc8ff" })}>Exportar</HoverButton>
+              <label style={{ border: "1px solid #3498db55", color: "#8fc8ff", borderRadius: 8, padding: "6px 10px", cursor: "pointer" }}>Importar<input type="file" accept="application/json" style={{ display: "none" }} onChange={(e) => importPrestigios(e.target.files?.[0])} /></label>
             </div>
           </div>
+          <PrestigioTreeCanvas tree={tree} onChange={saveTree} selectedNodeId={selectedNodeId} onSelectNode={setSelectedNodeId} linkMode={linkMode} linkFrom={linkFrom} onLinkFrom={setLinkFrom} skillName={skill} />
         </AstralHudCard>
 
         <AstralHudCard>
           {selectedNode ? (
             <div style={{ display: "grid", gap: 6 }}>
               <div style={{ fontFamily: "'Cinzel',serif", color: G.gold2 }}>Editar Estrela Selecionada</div>
-              <label style={{ fontSize: 11 }}>Nome:</label>
-              <input value={selectedNode.nome || ""} onChange={(e) => updateNode(selectedNode.id, { nome: e.target.value })} style={inpStyle()} />
-              <label style={{ fontSize: 11 }}>Descrição:</label>
-              <textarea rows={2} value={selectedNode.descricao || ""} onChange={(e) => updateNode(selectedNode.id, { descricao: e.target.value })} style={inpStyle()} />
-              <label style={{ fontSize: 11 }}>Efeito Narrativo:</label>
-              <textarea rows={2} value={selectedNode.efeitoNarrativo || ""} onChange={(e) => updateNode(selectedNode.id, { efeitoNarrativo: e.target.value })} style={inpStyle()} />
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                <div><label style={{ fontSize: 11 }}>Posição X:</label><input type="number" value={selectedNode.x || 0} onChange={(e) => updateNode(selectedNode.id, { x: Number(e.target.value) || 0 })} style={inpStyle()} /></div>
-                <div><label style={{ fontSize: 11 }}>Posição Y:</label><input type="number" value={selectedNode.y || 0} onChange={(e) => updateNode(selectedNode.id, { y: Number(e.target.value) || 0 })} style={inpStyle()} /></div>
-              </div>
-              <label style={{ fontSize: 11 }}><input type="checkbox" checked={tree.centralNodeId === selectedNode.id} onChange={(e) => saveTree({ ...tree, centralNodeId: e.target.checked ? selectedNode.id : "" })} /> Definir como estrela central (câmera inicial)</label>
-              <label style={{ fontSize: 11 }}><input type="checkbox" checked={!!selectedNode.isChoiceGate} onChange={(e) => updateNode(selectedNode.id, { isChoiceGate: e.target.checked })} /> Estrela de escolha (trava ramificações irmãs)</label>
-              <label style={{ fontSize: 11 }}>Nível mínimo da perícia:</label>
-              <input type="number" min={0} value={selectedNode.requires?.minSkillLevel || 0} onChange={(e) => updateNode(selectedNode.id, { requires: { ...(selectedNode.requires || {}), minSkillLevel: Math.max(0, Number(e.target.value) || 0) } })} style={inpStyle()} />
-              <label style={{ fontSize: 11 }}>Estrelas Necessárias (vírgula):</label>
-              <input value={(selectedNode.requires?.requiredNodeIds || []).join(",")} onChange={(e) => updateNode(selectedNode.id, { requires: { ...(selectedNode.requires || {}), requiredNodeIds: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) } })} style={inpStyle()} />
-
+              <input value={selectedNode.nome || ""} onChange={(e) => updateNode(selectedNode.id, { nome: e.target.value })} style={inpStyle()} placeholder="Nome" />
+              <textarea rows={2} value={selectedNode.descricao || ""} onChange={(e) => updateNode(selectedNode.id, { descricao: e.target.value })} style={inpStyle()} placeholder="Descrição" />
+              <input type="number" min={0} value={selectedNode.requires?.minSkillLevel || 0} onChange={(e) => updateNode(selectedNode.id, { requires: { ...(selectedNode.requires || {}), minSkillLevel: Math.max(0, Number(e.target.value) || 0) } })} style={inpStyle()} placeholder="Nível mínimo" />
               <div style={{ borderTop: "1px solid #233652", paddingTop: 6 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: 11, color: "#9eb8de" }}>Condições extras</span>
-                  <HoverButton onClick={addExtraCondition} style={btnStyle({ padding: "3px 8px" })}>+ condição</HoverButton>
-                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: 11, color: "#9eb8de" }}>Condições extras</span><HoverButton onClick={addExtraCondition} style={btnStyle({ padding: "3px 8px" })}>+ condição</HoverButton></div>
                 <div style={{ display: "grid", gap: 6, marginTop: 6 }}>
                   {(selectedNode.requires?.extra || []).map((c) => (
                     <div key={c.id} style={{ border: "1px solid #294164", borderRadius: 8, padding: 6, display: "grid", gap: 5 }}>
@@ -192,14 +190,7 @@ export function VastoSection({ prestigios = {}, onPrestigios, onNotify, createNo
                         <select value={c.type} onChange={(e) => updateExtraCondition(c.id, { type: e.target.value })} style={inpStyle()}>{EXTRA_CONDITION_TYPES.map((t) => <option key={t}>{t}</option>)}</select>
                         <button onClick={() => removeExtraCondition(c.id)} style={btnStyle({ borderColor: "#e74c3c66", color: "#ff9f95", padding: "2px 6px" })}>x</button>
                       </div>
-                      {c.type !== "narrativo" ? (
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 6 }}>
-                          <input value={c.key || ""} onChange={(e) => updateExtraCondition(c.id, { key: e.target.value })} placeholder={c.type === "atributo" ? "FOR" : c.type === "pericia" ? "Perícia" : c.type === "item" ? "Nome item" : "Nome efeito"} style={inpStyle()} />
-                          <input type="number" min={0} value={Number(c.min || 0)} onChange={(e) => updateExtraCondition(c.id, { min: Math.max(0, Number(e.target.value) || 0) })} style={inpStyle()} />
-                        </div>
-                      ) : (
-                        <textarea rows={2} value={c.text || ""} onChange={(e) => updateExtraCondition(c.id, { text: e.target.value })} placeholder="Condição narrativa (não validada pelo sistema)" style={inpStyle()} />
-                      )}
+                      {c.type !== "narrativo" ? <div style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 6 }}><input value={c.key || ""} onChange={(e) => updateExtraCondition(c.id, { key: e.target.value })} style={inpStyle()} /><input type="number" min={0} value={Number(c.min || 0)} onChange={(e) => updateExtraCondition(c.id, { min: Math.max(0, Number(e.target.value) || 0) })} style={inpStyle()} /></div> : <textarea rows={2} value={c.text || ""} onChange={(e) => updateExtraCondition(c.id, { text: e.target.value })} style={inpStyle()} />}
                     </div>
                   ))}
                 </div>

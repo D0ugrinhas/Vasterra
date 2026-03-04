@@ -9,8 +9,9 @@ import { FichasSection } from "./features/fichas/FichasSection";
 import { ArsenalSection } from "./features/arsenal/ArsenalSection";
 import { CaldeiraoSection } from "./features/caldeirao/CaldeiraoSection";
 import { VastoSection } from "./features/vasto/VastoSection";
+import { BibliotecaSection } from "./features/biblioteca/BibliotecaSection";
 import { EffectForgeEditor, makeDefaultEffect } from "./features/caldeirao/EffectForgeEditor";
-import { novaFicha, novoItem, uid } from "./core/factories";
+import { novaFicha, novoItem, novaSkill, novaSkillTag, uid } from "./core/factories";
 
 
 const SETTINGS_KEY = "vasterra:settings";
@@ -54,6 +55,21 @@ function normalizeFicha(ficha = {}) {
   };
 }
 
+
+function normalizeSkillTag(tag = {}) {
+  const base = novaSkillTag();
+  return { ...base, ...tag, id: tag.id || base.id || uid() };
+}
+
+function normalizeSkill(skill = {}) {
+  const base = novaSkill();
+  return {
+    ...base,
+    ...skill,
+    id: skill.id || base.id || uid(),
+    tagIds: Array.isArray(skill.tagIds) ? skill.tagIds : base.tagIds,
+  };
+}
 function normalizeEffect(effect = {}) {
   const base = makeDefaultEffect();
   return {
@@ -71,6 +87,8 @@ export default function VasterraApp() {
   const [arsenal, setArsenal] = useState([]);
   const [efeitosCaldeirao, setEfeitosCaldeirao] = useState([]);
   const [prestigios, setPrestigios] = useState({});
+  const [bibliotecaSkills, setBibliotecaSkills] = useState([]);
+  const [skillsTags, setSkillsTags] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [effectEditorOpen, setEffectEditorOpen] = useState(false);
   const [effectEditorData, setEffectEditorData] = useState(null);
@@ -88,21 +106,29 @@ export default function VasterraApp() {
       const a = await stGet(scopedKey(ns, "arsenal"));
       const c = await stGet(scopedKey(ns, "caldeirao"));
       const p = await stGet(scopedKey(ns, "prestigios"));
+      const b = await stGet(scopedKey(ns, "biblioteca"));
+      const t = await stGet(scopedKey(ns, "skilltags"));
 
       const fLegacy = !f ? await stGet("vasterra:fichas") : null;
       const aLegacy = !a ? await stGet("vasterra:arsenal") : null;
       const cLegacy = !c ? await stGet("vasterra:caldeirao") : null;
       const pLegacy = !p ? await stGet("vasterra:prestigios") : null;
+      const bLegacy = !b ? await stGet("vasterra:biblioteca") : null;
+      const tLegacy = !t ? await stGet("vasterra:skilltags") : null;
 
       const fichasLoaded = (f || fLegacy || []).map(normalizeFicha);
       const arsenalLoaded = (a || aLegacy || []).map(normalizeItem);
       const efeitosLoaded = (c || cLegacy || []).map(normalizeEffect);
       const prestigiosLoaded = p || pLegacy || {};
+      const bibliotecaLoaded = (b || bLegacy || []).map(normalizeSkill);
+      const tagsLoaded = (t || tLegacy || []).map(normalizeSkillTag);
 
       setFichas(fichasLoaded);
       setArsenal(arsenalLoaded);
       setEfeitosCaldeirao(efeitosLoaded);
       setPrestigios(prestigiosLoaded);
+      setBibliotecaSkills(bibliotecaLoaded);
+      setSkillsTags(tagsLoaded);
       setLoaded(true);
     })();
   }, []);
@@ -111,6 +137,8 @@ export default function VasterraApp() {
   useEffect(() => { if (loaded) stSet(scopedKey(settings.storageNamespace, "arsenal"), arsenal); }, [arsenal, loaded, settings.storageNamespace]);
   useEffect(() => { if (loaded) stSet(scopedKey(settings.storageNamespace, "caldeirao"), efeitosCaldeirao); }, [efeitosCaldeirao, loaded, settings.storageNamespace]);
   useEffect(() => { if (loaded) stSet(scopedKey(settings.storageNamespace, "prestigios"), prestigios); }, [prestigios, loaded, settings.storageNamespace]);
+  useEffect(() => { if (loaded) stSet(scopedKey(settings.storageNamespace, "biblioteca"), bibliotecaSkills); }, [bibliotecaSkills, loaded, settings.storageNamespace]);
+  useEffect(() => { if (loaded) stSet(scopedKey(settings.storageNamespace, "skilltags"), skillsTags); }, [skillsTags, loaded, settings.storageNamespace]);
   useEffect(() => { if (loaded) stSet(SETTINGS_KEY, settings); }, [settings, loaded]);
 
   const openEffectForge = (effect = null) => {
@@ -135,6 +163,8 @@ export default function VasterraApp() {
       arsenal,
       efeitosCaldeirao,
       prestigios,
+      bibliotecaSkills,
+      skillsTags,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -155,6 +185,8 @@ export default function VasterraApp() {
         setArsenal((data.arsenal || []).map(normalizeItem));
         setEfeitosCaldeirao((data.efeitosCaldeirao || []).map(normalizeEffect));
         setPrestigios(data.prestigios || {});
+        setBibliotecaSkills((data.bibliotecaSkills || []).map(normalizeSkill));
+        setSkillsTags((data.skillsTags || []).map(normalizeSkillTag));
         pushToast("Backup importado com sucesso.", "success");
       } catch {
         pushToast("Falha ao importar backup.", "error");
@@ -169,11 +201,15 @@ export default function VasterraApp() {
     const a = await stGet(scopedKey(ns, "arsenal"));
     const c = await stGet(scopedKey(ns, "caldeirao"));
     const p = await stGet(scopedKey(ns, "prestigios"));
+    const b = await stGet(scopedKey(ns, "biblioteca"));
+    const t = await stGet(scopedKey(ns, "skilltags"));
     setSettings((p) => ({ ...p, storageNamespace: ns }));
     setFichas((f || []).map(normalizeFicha));
     setArsenal((a || []).map(normalizeItem));
     setEfeitosCaldeirao((c || []).map(normalizeEffect));
     setPrestigios(p || {});
+    setBibliotecaSkills((b || []).map(normalizeSkill));
+    setSkillsTags((t || []).map(normalizeSkillTag));
     pushToast(`Espaço de dados alterado para: ${ns}`, "success");
   };
 
@@ -206,7 +242,7 @@ export default function VasterraApp() {
 
       <div style={{ height: 54, borderBottom: "1px solid " + G.border, background: "#060606", display: "flex", alignItems: "center", padding: "0 20px", gap: 24, position: "sticky", top: 0, zIndex: 50 }}>
         <button onClick={() => setSection("menu")} style={{ marginRight: 8, display: "flex", flexDirection: "column", lineHeight: 1, background: "transparent", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}><div style={{ fontFamily: "'Cinzel Decorative',serif", fontSize: 16, color: G.gold, letterSpacing: 4 }}>VASTERRA</div><div style={{ fontFamily: "'Cinzel',serif", fontSize: 9, color: "#7aa9d8", letterSpacing: 2, marginTop: 3 }}>Vasterra é Vasto</div></button>
-        {[{ id: "fichas", label: "FICHAS" }, { id: "arsenal", label: "ARSENAL" }, { id: "caldeirao", label: "CALDEIRÃO" }, { id: "vasto", label: "VASTO" }].map((s) => (
+        {[{ id: "fichas", label: "FICHAS" }, { id: "arsenal", label: "ARSENAL" }, { id: "biblioteca", label: "BIBLIOTECA" }, { id: "caldeirao", label: "CALDEIRÃO" }, { id: "vasto", label: "VASTO" }].map((s) => (
           <HoverButton
             className="v-nav-btn"
             key={s.id}
@@ -221,7 +257,7 @@ export default function VasterraApp() {
           >{s.label}</HoverButton>
         ))}
         <div style={{ marginLeft: "auto", fontSize: 10, color: G.muted, fontFamily: "monospace" }}>
-          {fichas.length} fichas · {arsenal.length} itens · {efeitosCaldeirao.length} efeitos · {Object.keys(prestigios || {}).length} prestígios
+          {fichas.length} fichas · {arsenal.length} itens · {bibliotecaSkills.length} skills · {efeitosCaldeirao.length} efeitos · {Object.keys(prestigios || {}).length} prestígios · {skillsTags.length} tags
         </div>
       </div>
 
@@ -236,8 +272,9 @@ export default function VasterraApp() {
       )}
       {section === "fichas" && <div className="v-fade"><FichasSection fichas={fichas} onFichas={setFichas} arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} prestigios={prestigios} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} onOpenCaldeirao={openEffectForge} createNodeHotkey={settings.controls?.createNodeHotkey || "a"} /></div>}
       {section === "arsenal" && <div className="v-fade"><ArsenalSection arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onEfeitosCaldeirao={setEfeitosCaldeirao} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} onOpenCaldeirao={openEffectForge} onEditCaldeirao={openEffectForge} /></div>}
+      {section === "biblioteca" && <div className="v-fade"><BibliotecaSection skills={bibliotecaSkills} tags={skillsTags} onSkills={setBibliotecaSkills} onNotify={pushToast} onConfirmAction={confirmAction} /></div>}
       {section === "caldeirao" && <div className="v-fade"><CaldeiraoSection efeitos={efeitosCaldeirao} onEfeitos={setEfeitosCaldeirao} onNotify={pushToast} onConfirmAction={confirmAction} /></div>}
-      {section === "vasto" && <div className="v-fade"><VastoSection prestigios={prestigios} onPrestigios={setPrestigios} onNotify={pushToast} createNodeHotkey={settings.controls?.createNodeHotkey || "a"} linkModeHotkey={settings.controls?.linkModeHotkey || "l"} /></div>}
+      {section === "vasto" && <div className="v-fade"><VastoSection prestigios={prestigios} onPrestigios={setPrestigios} skillTags={skillsTags} onSkillTags={setSkillsTags} onNotify={pushToast} createNodeHotkey={settings.controls?.createNodeHotkey || "a"} linkModeHotkey={settings.controls?.linkModeHotkey || "l"} /></div>}
 
       <ToastViewport items={toasts} onClose={closeToast} />
       <ConfirmWindow data={confirm} onCancel={cancelConfirm} onConfirm={runConfirm} />
