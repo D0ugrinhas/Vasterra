@@ -14,6 +14,7 @@ export const defaultPrestigioTree = (skill = "") => ({
   skill,
   maxPrestigios: 0,
   tags: [],
+  centralNodeId: "",
   nodes: [],
   links: [],
 });
@@ -50,6 +51,7 @@ export const normalizePrestigioTree = (tree, skill = "") => {
     skill: src.skill || skill || base.skill,
     maxPrestigios: Math.max(0, Number(src.maxPrestigios || 0)),
     tags: Array.isArray(src.tags) ? src.tags : [],
+    centralNodeId: String(src.centralNodeId || ""),
     nodes: Array.isArray(src.nodes)
       ? src.nodes.map((n) => ({
           ...defaultPrestigioNode(),

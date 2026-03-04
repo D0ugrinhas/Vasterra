@@ -237,7 +237,7 @@ export default function VasterraApp() {
       {section === "fichas" && <div className="v-fade"><FichasSection fichas={fichas} onFichas={setFichas} arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} prestigios={prestigios} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} onOpenCaldeirao={openEffectForge} createNodeHotkey={settings.controls?.createNodeHotkey || "a"} /></div>}
       {section === "arsenal" && <div className="v-fade"><ArsenalSection arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onEfeitosCaldeirao={setEfeitosCaldeirao} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} onOpenCaldeirao={openEffectForge} onEditCaldeirao={openEffectForge} /></div>}
       {section === "caldeirao" && <div className="v-fade"><CaldeiraoSection efeitos={efeitosCaldeirao} onEfeitos={setEfeitosCaldeirao} onNotify={pushToast} onConfirmAction={confirmAction} /></div>}
-      {section === "vasto" && <div className="v-fade"><VastoSection prestigios={prestigios} onPrestigios={setPrestigios} onNotify={pushToast} /></div>}
+      {section === "vasto" && <div className="v-fade"><VastoSection prestigios={prestigios} onPrestigios={setPrestigios} onNotify={pushToast} createNodeHotkey={settings.controls?.createNodeHotkey || "a"} /></div>}
 
       <ToastViewport items={toasts} onClose={closeToast} />
       <ConfirmWindow data={confirm} onCancel={cancelConfirm} onConfirm={runConfirm} />
