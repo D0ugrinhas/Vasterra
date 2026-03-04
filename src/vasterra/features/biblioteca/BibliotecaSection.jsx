@@ -88,9 +88,9 @@ export function BibliotecaSection({ skills = [], tags = [], onSkills, onNotify, 
             const src = skillIcon(s);
             return (
               <div key={s.id} className={`bib-card ${active ? "active" : ""}`} onClick={() => setSel(s.id)} style={{ background: active ? `${cor}22` : "#0f0d0b", border: `1px solid ${active ? `${cor}99` : "#3e3020"}`, borderRadius: 10, padding: 10, marginBottom: 8, cursor: "pointer" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "30px 1fr auto", alignItems: "center", gap: 8 }}>
-                  <div style={{ width: 30, height: 30, borderRadius: 8, display: "grid", placeItems: "center", border: "1px solid #4b3a19", background: "#151009" }}>
-                    {src ? <ImageViewport src={src} alt={s.nome} size={24} radius={6} adjust={s.iconeAjuste} /> : <span style={{ fontSize: 14 }}>{s.icone || "?"}</span>}
+                <div style={{ display: "grid", gridTemplateColumns: "44px 1fr auto", alignItems: "center", gap: 8 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: 8, display: "grid", placeItems: "center", border: "1px solid #4b3a19", background: "#151009" }}>
+                    {src ? <ImageViewport src={src} alt={s.nome} size={36} radius={8} adjust={s.iconeAjuste} /> : <span style={{ fontSize: 20 }}>{s.icone || "?"}</span>}
                   </div>
                   <div style={{ fontFamily: "'Cinzel',serif", color: "#f3debb", fontSize: 12 }}>{s.nome}</div>
                   <span style={{ fontFamily: "monospace", fontSize: 10, color: cor }}>{s.rank}</span>

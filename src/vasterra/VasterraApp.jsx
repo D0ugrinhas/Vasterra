@@ -73,7 +73,7 @@ function normalizeSkill(skill = {}) {
     id: skill.id || base.id || uid(),
     tagIds: Array.isArray(skill.tagIds) ? skill.tagIds : base.tagIds,
     custos,
-    custoCatalogo: Array.isArray(skill.custoCatalogo) && skill.custoCatalogo.length ? skill.custoCatalogo.map((c) => ({ ...c, id: c.id || uid() })) : base.custoCatalogo,
+    custoCatalogo: Array.isArray(skill.custoCatalogo) && skill.custoCatalogo.length ? skill.custoCatalogo.map((c) => ({ ...c, id: c.id || uid(), textoCor: c.textoCor || (String(c.nome || "").toUpperCase() === "EST" ? "#111111" : "#ffffff") })) : base.custoCatalogo,
     geracao: Number(skill.geracao || base.geracao) || 1,
     essenciaAtribuida: skill.essenciaAtribuida || "Nenhuma",
     dono: typeof skill.dono === "string" ? skill.dono : (skill.donoValor || ""),
