@@ -14,7 +14,7 @@ import { novaFicha, novoItem, uid } from "./core/factories";
 
 
 const SETTINGS_KEY = "vasterra:settings";
-const defaultSettings = { storageNamespace: "vasterra", controls: { createNodeHotkey: "a" } };
+const defaultSettings = { storageNamespace: "vasterra", controls: { createNodeHotkey: "a", linkModeHotkey: "l" } };
 
 const scopedKey = (ns, key) => `${(ns || "vasterra").trim()}:${key}`;
 
@@ -237,7 +237,7 @@ export default function VasterraApp() {
       {section === "fichas" && <div className="v-fade"><FichasSection fichas={fichas} onFichas={setFichas} arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} prestigios={prestigios} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} onOpenCaldeirao={openEffectForge} createNodeHotkey={settings.controls?.createNodeHotkey || "a"} /></div>}
       {section === "arsenal" && <div className="v-fade"><ArsenalSection arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onEfeitosCaldeirao={setEfeitosCaldeirao} onArsenal={setArsenal} onNotify={pushToast} onConfirmAction={confirmAction} onOpenCaldeirao={openEffectForge} onEditCaldeirao={openEffectForge} /></div>}
       {section === "caldeirao" && <div className="v-fade"><CaldeiraoSection efeitos={efeitosCaldeirao} onEfeitos={setEfeitosCaldeirao} onNotify={pushToast} onConfirmAction={confirmAction} /></div>}
-      {section === "vasto" && <div className="v-fade"><VastoSection prestigios={prestigios} onPrestigios={setPrestigios} onNotify={pushToast} createNodeHotkey={settings.controls?.createNodeHotkey || "a"} /></div>}
+      {section === "vasto" && <div className="v-fade"><VastoSection prestigios={prestigios} onPrestigios={setPrestigios} onNotify={pushToast} createNodeHotkey={settings.controls?.createNodeHotkey || "a"} linkModeHotkey={settings.controls?.linkModeHotkey || "l"} /></div>}
 
       <ToastViewport items={toasts} onClose={closeToast} />
       <ConfirmWindow data={confirm} onCancel={cancelConfirm} onConfirm={runConfirm} />
@@ -285,6 +285,20 @@ export default function VasterraApp() {
                 />
                 <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>
                   Atalho atual: {String(settings.controls?.createNodeHotkey || "a").toUpperCase()}.
+                </div>
+                <label style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>Atalho para entrar/sair do modo Link no Criador de Prestígios</label>
+                <input
+                  value={settings.controls?.linkModeHotkey || "l"}
+                  maxLength={1}
+                  onChange={(e) => {
+                    const val = String(e.target.value || "l").slice(-1).toLowerCase().replace(/[^a-z0-9]/g, "") || "l";
+                    setSettings((p) => ({ ...p, controls: { ...(p.controls || {}), linkModeHotkey: val } }));
+                  }}
+                  placeholder="Ex: l"
+                  style={{ background: "#0a0a0a", border: "1px solid #333", color: G.text, borderRadius: 8, padding: "8px 10px", width: 120, textTransform: "uppercase" }}
+                />
+                <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>
+                  Atalho modo Link: {String(settings.controls?.linkModeHotkey || "l").toUpperCase()}.
                 </div>
               </div>
             )}

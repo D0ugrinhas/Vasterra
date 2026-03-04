@@ -7,7 +7,7 @@ import { AstralHudCard, LinkModeButton, PrestigioTreeCanvas } from "../prestigio
 
 const PERICIA_TAGS = Object.fromEntries(PERICIAS_GRUPOS.flatMap((g) => g.list.map((p) => [p, [g.g]])));
 
-export function VastoSection({ prestigios = {}, onPrestigios, onNotify, createNodeHotkey = "a" }) {
+export function VastoSection({ prestigios = {}, onPrestigios, onNotify, createNodeHotkey = "a", linkModeHotkey = "l" }) {
   const [screen, setScreen] = useState("home");
   const [query, setQuery] = useState("");
   const [tag, setTag] = useState("all");
@@ -38,15 +38,22 @@ export function VastoSection({ prestigios = {}, onPrestigios, onNotify, createNo
 
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key.toLowerCase() !== String(createNodeHotkey || "a").toLowerCase()) return;
       if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
       if (screen !== "prestigios") return;
-      e.preventDefault();
-      addNode();
+      const k = e.key.toLowerCase();
+      if (k === String(createNodeHotkey || "a").toLowerCase()) {
+        e.preventDefault();
+        addNode();
+      }
+      if (k === String(linkModeHotkey || "l").toLowerCase()) {
+        e.preventDefault();
+        setLinkMode((v) => !v);
+        setLinkFrom(null);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [screen, createNodeHotkey, tree]);
+  }, [screen, createNodeHotkey, linkModeHotkey, tree]);
 
   const addExtraCondition = () => {
     if (!selectedNode) return;
@@ -102,7 +109,7 @@ export function VastoSection({ prestigios = {}, onPrestigios, onNotify, createNo
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <HoverButton onClick={() => setScreen("home")} style={btnStyle({ padding: "4px 10px" })}>← Voltar</HoverButton>
         <span style={{ fontFamily: "'Cinzel',serif", color: G.gold }}>Criador de Prestígios</span>
-        <span style={{ fontFamily: "monospace", color: "#89b5e8", fontSize: 11 }}>{`Atalho nova estrela: ${String(createNodeHotkey || "a").toUpperCase()}`}</span>
+        <span style={{ fontFamily: "monospace", color: "#89b5e8", fontSize: 11 }}>{`Atalhos: nova estrela ${String(createNodeHotkey || "a").toUpperCase()} · modo link ${String(linkModeHotkey || "l").toUpperCase()}`}</span>
       </div>
 
       <PrestigioTreeCanvas
@@ -170,7 +177,7 @@ export function VastoSection({ prestigios = {}, onPrestigios, onNotify, createNo
               <label style={{ fontSize: 11 }}><input type="checkbox" checked={!!selectedNode.isChoiceGate} onChange={(e) => updateNode(selectedNode.id, { isChoiceGate: e.target.checked })} /> Estrela de escolha (trava ramificações irmãs)</label>
               <label style={{ fontSize: 11 }}>Nível mínimo da perícia:</label>
               <input type="number" min={0} value={selectedNode.requires?.minSkillLevel || 0} onChange={(e) => updateNode(selectedNode.id, { requires: { ...(selectedNode.requires || {}), minSkillLevel: Math.max(0, Number(e.target.value) || 0) } })} style={inpStyle()} />
-              <label style={{ fontSize: 11 }}>IDs obrigatórios (vírgula):</label>
+              <label style={{ fontSize: 11 }}>Estrelas Necessárias (vírgula):</label>
               <input value={(selectedNode.requires?.requiredNodeIds || []).join(",")} onChange={(e) => updateNode(selectedNode.id, { requires: { ...(selectedNode.requires || {}), requiredNodeIds: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) } })} style={inpStyle()} />
 
               <div style={{ borderTop: "1px solid #233652", paddingTop: 6 }}>

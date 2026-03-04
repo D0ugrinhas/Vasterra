@@ -23,6 +23,7 @@ export function PrestigioTreeCanvas({
 }) {
   const [dragNode, setDragNode] = useState(null);
   const [dragPan, setDragPan] = useState(null);
+  const [hoverLinkId, setHoverLinkId] = useState(null);
   const [viewport, setViewport] = useState({ x: 0, y: 0 });
   const [pointerWorld, setPointerWorld] = useState({ x: 0, y: 0 });
   const wrapRef = useRef(null);
@@ -56,11 +57,26 @@ export function PrestigioTreeCanvas({
 
   const toWorld = (local) => ({ x: local.x - viewport.x, y: local.y - viewport.y });
 
-  const bgLayers = useMemo(() => [
-    { id: "a", style: { backgroundImage: "radial-gradient(circle, #ffffffcc 0 1px, transparent 1.5px)", backgroundSize: "54px 54px", opacity: 0.45, animation: "v-astralUp 52s linear infinite, v-astralPulse 9s ease-in-out infinite" } },
-    { id: "b", style: { backgroundImage: "radial-gradient(circle, #dff0ffcc 0 1px, transparent 1.5px)", backgroundSize: "88px 88px", opacity: 0.28, animation: "v-astralUp 80s linear infinite, v-astralPulse 12s ease-in-out infinite" } },
-    { id: "c", style: { backgroundImage: "radial-gradient(circle, #fff6ddaa 0 1px, transparent 1.8px)", backgroundSize: "130px 130px", opacity: 0.2, animation: "v-astralUp 120s linear infinite, v-astralPulse 14s ease-in-out infinite" } },
-  ], []);
+  const bgLayers = useMemo(() => {
+    const mk = (count, gap, speed, pulseBase) => {
+      const stars = [];
+      for (let i = 0; i < count; i += 1) {
+        const row = Math.floor(i / 20);
+        const col = i % 20;
+        const jitterX = ((i * 37) % gap) - gap / 2;
+        const jitterY = ((i * 53) % gap) - gap / 2;
+        stars.push({
+          x: col * gap + 30 + jitterX,
+          y: row * gap + 30 + jitterY,
+          size: 1 + (i % 3),
+          alpha: 0.15 + (i % 7) * 0.08,
+          pulse: `${pulseBase + (i % 9)}s`,
+        });
+      }
+      return { stars, speed };
+    };
+    return [mk(160, 46, 0.35, 6), mk(110, 62, 0.55, 8), mk(80, 78, 0.8, 10)];
+  }, []);
 
   return (
     <div
@@ -95,12 +111,19 @@ export function PrestigioTreeCanvas({
       }}
     >
       <style>{`
-        @keyframes v-astralUp { from { transform: translateY(0); } to { transform: translateY(-140px); } }
+        @keyframes v-astralUp { from { transform: translateY(0); } to { transform: translateY(-220px); } }
         @keyframes v-astralPulse { 0%,100% { opacity:.22; filter:brightness(1);} 50% { opacity:.35; filter:brightness(1.35);} }
         @keyframes v-starCorePulse { 0%,100%{transform:scale(1)}50%{transform:scale(1.12)} }
+        @keyframes v-linkPulse { 0%,100% { opacity:.18; } 50% { opacity:.42; } }
       `}</style>
 
-      {bgLayers.map((layer) => <div key={layer.id} style={{ position: "absolute", inset: -180, ...layer.style, willChange: "transform, opacity" }} />)}
+      {bgLayers.map((layer, idx) => (
+        <div key={idx} style={{ position: "absolute", inset: -260, animation: `v-astralUp ${50 + idx * 26}s linear infinite`, willChange: "transform" }}>
+          {layer.stars.map((s, i) => (
+            <span key={i} style={{ position: "absolute", left: s.x, top: s.y, width: s.size, height: s.size, borderRadius: "50%", background: "#ffffff", opacity: Math.min(0.92, s.alpha), boxShadow: "0 0 8px #ffffff, 0 0 16px #ffffff88", animation: `v-astralPulse ${s.pulse} ease-in-out infinite` }} />
+          ))}
+        </div>
+      ))}
 
       <div style={{ position: "absolute", left: viewport.x, top: viewport.y, width: worldWidth, height: worldHeight }}>
         <svg style={{ position: "absolute", inset: 0, width: worldWidth, height: worldHeight }}>
@@ -108,10 +131,17 @@ export function PrestigioTreeCanvas({
             const from = (tree?.nodes || []).find((n) => n.id === l.from);
             const to = (tree?.nodes || []).find((n) => n.id === l.to);
             if (!from || !to) return null;
+            const lit = unlockedSet.has(from.id) && unlockedSet.has(to.id);
             return (
-              <g key={l.id} onClick={(e) => { e.stopPropagation(); editable && onDeleteLink?.(l.id); }} style={{ cursor: editable ? "pointer" : "default" }}>
-                <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="#ffffff" strokeWidth="2" />
-                <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="#ffffff" strokeWidth="8" opacity="0.2" />
+              <g
+                key={l.id}
+                onClick={(e) => { e.stopPropagation(); editable && onDeleteLink?.(l.id); }}
+                onMouseEnter={() => setHoverLinkId(l.id)}
+                onMouseLeave={() => setHoverLinkId(null)}
+                style={{ cursor: editable ? "pointer" : "default" }}
+              >
+                <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={lit ? "#ffd86e" : "#ffffff"} strokeWidth={hoverLinkId === l.id ? "2.8" : "2"} />
+                <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={lit ? "#ffd86e" : "#ffffff"} strokeWidth={hoverLinkId === l.id ? "12" : "8"} opacity="0.2" style={{ animation: "v-linkPulse 1.6s ease-in-out infinite" }} />
               </g>
             );
           })}

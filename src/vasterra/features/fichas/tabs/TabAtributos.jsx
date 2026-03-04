@@ -8,26 +8,61 @@ import { Modal } from "../../shared/components";
 import { AstralHudCard, PrestigeBadgeStars, PrestigioTreeCanvas } from "../../prestigio/PrestigioTreeCanvas";
 
 function PrestigioModal({ open, onClose, skillName, tree, ficha, unlockedIds, onToggle }) {
+  const [detailNodeId, setDetailNodeId] = useState(null);
+  const [flash, setFlash] = useState(false);
   if (!open) return null;
   const normalized = normalizePrestigioTree(tree, skillName);
+  const effective = getEffectivePrestigio({ tree: normalized, ficha, unlockedIds, skillName });
+  const detailNode = normalized.nodes.find((n) => n.id === detailNodeId) || null;
 
   return (
     <Modal title={`Prestígio · ${skillName}`} onClose={onClose} wide>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 10 }}>
-        <PrestigioTreeCanvas tree={normalized} ficha={ficha} skillName={skillName} unlockedIds={unlockedIds} onToggleNode={(id, can) => can && onToggle(id)} />
+        <PrestigioTreeCanvas
+          tree={normalized}
+          ficha={ficha}
+          skillName={skillName}
+          unlockedIds={unlockedIds}
+          onToggleNode={() => {}}
+          onSelectNode={setDetailNodeId}
+          selectedNodeId={detailNodeId}
+          showFooterHint
+        />
         <div style={{ display: "grid", gap: 8, alignContent: "start" }}>
           <AstralHudCard>
-            <div style={{ fontFamily: "monospace", fontSize: 11 }}>Cada estrela acesa equivale a 1 Prestígio ativo desta perícia.</div>
+            <div style={{ fontFamily: "monospace", fontSize: 11 }}>Lista das estrelas já prestigiadas.</div>
           </AstralHudCard>
-          {normalized.nodes.map((node) => (
+          {(effective.activeNodes || []).map((node) => (
             <AstralHudCard key={node.id}>
-              <div style={{ fontFamily: "'Cinzel',serif", color: "#f3d38a", fontSize: 12 }}>{node.nome}</div>
-              <div style={{ fontSize: 10, color: "#97a9c7" }}>{node.descricao || "Sem descrição"}</div>
+              <button onClick={() => setDetailNodeId(node.id)} style={{ background: "transparent", border: "none", color: "#f3d38a", fontFamily: "'Cinzel',serif", fontSize: 12, cursor: "pointer", padding: 0 }}>{node.nome}</button>
               <div style={{ fontSize: 10, color: "#c9dcff", marginTop: 4 }}>{node.efeitoNarrativo || "Sem efeito narrativo"}</div>
             </AstralHudCard>
           ))}
+          {(effective.activeNodes || []).length === 0 && <AstralHudCard><div style={{ fontSize: 10, color: "#8fa1be" }}>Nenhuma estrela prestigiada ainda.</div></AstralHudCard>}
         </div>
       </div>
+
+      {detailNode && (
+        <Modal title={`✦ ${detailNode.nome}`} onClose={() => setDetailNodeId(null)}>
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ color: "#a5c7ef", fontSize: 11 }}>{detailNode.descricao || "Sem descrição"}</div>
+            <div style={{ color: "#f4e2a8", fontStyle: "italic", fontSize: 12 }}>{detailNode.efeitoNarrativo || "Sem efeito narrativo"}</div>
+            <button
+              onClick={() => {
+                setFlash(true);
+                onToggle(detailNode.id);
+                setTimeout(() => setFlash(false), 420);
+              }}
+              style={{
+                ...btnStyle({ borderColor: "#ffd67a88", color: "#ffeebf" }),
+                background: flash ? "radial-gradient(circle, #fff5cc, #c7931b)" : undefined,
+                transform: flash ? "scale(1.04)" : "scale(1)",
+                transition: "all .28s ease",
+              }}
+            >Prestigiar</button>
+          </div>
+        </Modal>
+      )}
     </Modal>
   );
 }
@@ -83,11 +118,12 @@ export function TabAtributos({ ficha, onUpdate, arsenal = [], prestigios = {} })
           const dt = Math.max(1, 20 - nivel);
           const desc = PERICIAS_DESC[p] || "Sem descrição.";
           const prestigio = getPrestigioInfo(p);
-          return <div key={p} style={{ background: G.bg3, border: "1px solid " + G.border, borderRadius: 8, padding: "7px 10px", display: "grid", gap: 6 }}><div style={{ display: "flex", alignItems: "center", gap: 6 }}><button onClick={() => setOpenPrestigio(p)} style={{ ...btnStyle({ padding: "2px 6px", borderColor: "#74c1ff66", color: "#cde6ff" }), fontSize: 10 }}>Árvore</button><div style={{ flex: 1, fontFamily: "monospace", fontSize: 11, color: nivel > 0 ? G.gold2 : "#888" }}>{p}<div style={{ fontSize: 9, color: "#7a7a7a", marginTop: 1 }}>{desc}</div><div style={{ fontSize: 9, color: delta ? (delta > 0 ? "#62e39e" : "#ff7a6e") : "#666" }}>Base {nivelBase} {delta ? `(${delta > 0 ? "+" : ""}${delta})` : ""}</div></div><div style={{ width: 38, textAlign: "right", fontFamily: "monospace", fontSize: 11, color: nivel === 20 ? "#ffd700" : nivel > 0 ? grp.cor : G.muted }}>DT:{dt}</div></div><div style={{ display: "flex", alignItems: "center", gap: 6 }}><button onClick={() => upP(p, nivelBase - 1)} style={{ width: 20, height: 20, background: "transparent", border: "1px solid " + G.border, borderRadius: 3, color: G.muted, cursor: "pointer", fontSize: 12 }}>−</button><input type="number" min={0} max={20} value={nivelBase} onChange={(e) => upP(p, Number(e.target.value) || 0)} style={inpStyle({ width: 36, textAlign: "center", fontSize: 13, fontWeight: "bold", color: grp.cor, padding: "2px", borderColor: grp.cor + "33" })} /><button onClick={() => upP(p, nivelBase + 1)} style={{ width: 20, height: 20, background: "transparent", border: "1px solid " + G.border, borderRadius: 3, color: G.muted, cursor: "pointer", fontSize: 12 }}>+</button><div style={{ marginLeft: "auto" }}><PrestigeBadgeStars nodes={prestigio.activeNodes} /></div></div></div>;
+          return <div key={p} style={{ background: G.bg3, border: "1px solid " + G.border, borderRadius: 8, padding: "7px 10px", display: "grid", gap: 6 }}><div style={{ display: "flex", alignItems: "center", gap: 6 }}><button onClick={() => setOpenPrestigio(p)} style={{ width: 26, height: 26, borderRadius: "50%", border: "1px solid #9fceff", color: "#ecf7ff", background: "radial-gradient(circle, #ffffff, #6ca8db)", boxShadow: "0 0 8px #9fceff88", cursor: "pointer", animation: "v-star-btn 2.2s ease-in-out infinite" }} title="Abrir árvore de prestígio">✦</button><div style={{ flex: 1, fontFamily: "monospace", fontSize: 11, color: nivel > 0 ? G.gold2 : "#888" }}>{p}<div style={{ fontSize: 9, color: "#7a7a7a", marginTop: 1 }}>{desc}</div><div style={{ fontSize: 9, color: delta ? (delta > 0 ? "#62e39e" : "#ff7a6e") : "#666" }}>Base {nivelBase} {delta ? `(${delta > 0 ? "+" : ""}${delta})` : ""}</div></div><div style={{ width: 38, textAlign: "right", fontFamily: "monospace", fontSize: 11, color: nivel === 20 ? "#ffd700" : nivel > 0 ? grp.cor : G.muted }}>DT:{dt}</div></div><div style={{ display: "flex", alignItems: "center", gap: 6 }}><button onClick={() => upP(p, nivelBase - 1)} style={{ width: 20, height: 20, background: "transparent", border: "1px solid " + G.border, borderRadius: 3, color: G.muted, cursor: "pointer", fontSize: 12 }}>−</button><input type="number" min={0} max={20} value={nivelBase} onChange={(e) => upP(p, Number(e.target.value) || 0)} style={inpStyle({ width: 36, textAlign: "center", fontSize: 13, fontWeight: "bold", color: grp.cor, padding: "2px", borderColor: grp.cor + "33" })} /><button onClick={() => upP(p, nivelBase + 1)} style={{ width: 20, height: 20, background: "transparent", border: "1px solid " + G.border, borderRadius: 3, color: G.muted, cursor: "pointer", fontSize: 12 }}>+</button><div style={{ marginLeft: "auto" }}><PrestigeBadgeStars nodes={prestigio.activeNodes} /></div></div></div>;
         })}</div>}
       </div>
 
       <PrestigioModal open={!!openPrestigio} onClose={() => setOpenPrestigio(null)} skillName={openPrestigio} tree={prestigios?.[openPrestigio]} ficha={ficha} unlockedIds={ficha.periciaPrestigios?.[openPrestigio] || []} onToggle={(nodeId) => togglePrestigioNode(openPrestigio, nodeId)} />
+      <style>{`@keyframes v-star-btn{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}`}</style>
     </div>
   );
 }
