@@ -2,10 +2,86 @@ import React, { useMemo, useState } from "react";
 import { ATRIBUTOS, PERICIAS_GRUPOS, PERICIAS_DESC } from "../../../data/gameData";
 import { aggregateModifiers, normalizePericiaKey, parseMechanicalEffects } from "../../../core/effects";
 import { inventoryItemModifiers } from "../../../core/inventory";
-import { G, inpStyle } from "../../../ui/theme";
+import { canActivatePrestigioNode, getEffectivePrestigio } from "../../../core/prestigio";
+import { G, inpStyle, btnStyle } from "../../../ui/theme";
+import { Modal } from "../../shared/components";
 
-export function TabAtributos({ ficha, onUpdate, arsenal = [] }) {
+function PrestigioModal({ open, onClose, skillName, tree, ficha, unlockedIds, onToggle }) {
+  if (!open) return null;
+  const nodes = tree?.nodes || [];
+  const links = tree?.links || [];
+  const unlockedSet = new Set(unlockedIds || []);
+
+  return (
+    <Modal title={`Prestígio · ${skillName}`} onClose={onClose} wide>
+      <style>{`@keyframes v-starPulse{0%{transform:scale(1)}50%{transform:scale(1.12)}100%{transform:scale(1)}} @keyframes v-spaceDrift{from{background-position:0 0,0 0,0 0}to{background-position:360px 240px,180px 120px,120px 80px}}`}</style>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 260px", gap: 12 }}>
+        <div style={{ border: "1px solid #29364a", borderRadius: 12, minHeight: 360, position: "relative", overflow: "hidden", background: "radial-gradient(circle at 30% 20%, #1b2240, #080a12 65%)" }}>
+          <div style={{ position: "absolute", inset: 0, opacity: 0.45, backgroundImage: "radial-gradient(#d3e8ff 1px, transparent 1px), radial-gradient(#7aa9d8 1px, transparent 1px), radial-gradient(#f3d38a 1px, transparent 1px)", backgroundSize: "42px 42px, 70px 70px, 96px 96px", animation: "v-spaceDrift 22s linear infinite" }} />
+          <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
+            {links.map((l, i) => {
+              const from = nodes.find((n) => n.id === l.from);
+              const to = nodes.find((n) => n.id === l.to);
+              if (!from || !to) return null;
+              const lit = unlockedSet.has(from.id) && unlockedSet.has(to.id);
+              return <line key={i} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={lit ? "#f3d38a" : "#5d6980"} strokeWidth="2" strokeDasharray={lit ? "0" : "4 4"} />;
+            })}
+          </svg>
+          {nodes.map((node) => {
+            const selected = unlockedSet.has(node.id);
+            const canActivate = canActivatePrestigioNode({ node, unlockedIds, tree, ficha, skillName });
+            return (
+              <button
+                key={node.id}
+                onClick={() => canActivate && onToggle(node.id)}
+                title={`${node.nome}\n${node.efeitoNarrativo || "Sem efeito narrativo"}`}
+                style={{
+                  position: "absolute",
+                  left: node.x - 14,
+                  top: node.y - 14,
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  border: `1px solid ${selected ? "#f7dc8d" : canActivate ? "#7fa2cf" : "#5d6372"}`,
+                  background: selected ? "radial-gradient(circle, #fff8d6, #d8a93b)" : canActivate ? "radial-gradient(circle, #b7d7ff, #3f5b85)" : "#181c27",
+                  boxShadow: selected ? "0 0 12px #f3d38a" : "none",
+                  cursor: canActivate ? "pointer" : "not-allowed",
+                  animation: selected ? "v-starPulse 1.4s ease-in-out infinite" : "none",
+                }}
+              >
+                ★
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ display: "grid", gap: 8, alignContent: "start" }}>
+          <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>Cada estrela desbloqueada e ativa conta como 1 Prestígio.</div>
+          {nodes.map((node) => {
+            const on = unlockedSet.has(node.id);
+            const req = node.requires || {};
+            return (
+              <div key={node.id} style={{ background: "#0b0f18", border: "1px solid #273347", borderRadius: 8, padding: 8 }}>
+                <div style={{ color: on ? "#f1d07d" : "#95a0b5", fontFamily: "'Cinzel',serif", fontSize: 12 }}>{on ? "★" : "☆"} {node.nome}</div>
+                <div style={{ fontSize: 10, color: "#8291a8", marginTop: 2 }}>{node.descricao || "Sem descrição"}</div>
+                <div style={{ fontSize: 10, color: "#b8d4ff", marginTop: 4 }}>{node.efeitoNarrativo || "Sem efeito narrativo"}</div>
+                <div style={{ fontSize: 10, color: "#6f7d96", marginTop: 4 }}>
+                  Requisitos: Perícia {req.minSkillLevel || 0}
+                  {(req.requiredNodeIds || []).length ? ` · Estrelas ${req.requiredNodeIds.length}` : ""}
+                  {(req.attributes || []).map((a) => ` · ${a.attr} ${a.min}`).join("")}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+export function TabAtributos({ ficha, onUpdate, arsenal = [], prestigios = {} }) {
   const [grupoAtivo, setGrupoAtivo] = useState(PERICIAS_GRUPOS[0].g);
+  const [openPrestigio, setOpenPrestigio] = useState(null);
   const grp = PERICIAS_GRUPOS.find((g) => g.g === grupoAtivo);
 
   const itemMods = useMemo(() => inventoryItemModifiers(ficha.inventario || [], arsenal), [ficha.inventario, arsenal]);
@@ -15,6 +91,12 @@ export function TabAtributos({ ficha, onUpdate, arsenal = [] }) {
 
   const upA = (sigla, k, v) => onUpdate({ atributos: { ...ficha.atributos, [sigla]: { ...ficha.atributos[sigla], [k]: v } } });
   const upP = (nome, v) => onUpdate({ pericias: { ...ficha.pericias, [nome]: Math.max(0, Math.min(20, v)) } });
+
+  const togglePrestigioNode = (skillName, nodeId) => {
+    const current = Array.isArray(ficha.periciaPrestigios?.[skillName]) ? ficha.periciaPrestigios[skillName] : [];
+    const next = current.includes(nodeId) ? current.filter((id) => id !== nodeId) : [...current, nodeId];
+    onUpdate({ periciaPrestigios: { ...(ficha.periciaPrestigios || {}), [skillName]: next } });
+  };
 
   const periciaDelta = (nome) => {
     const key = normalizePericiaKey(nome);
@@ -27,6 +109,13 @@ export function TabAtributos({ ficha, onUpdate, arsenal = [] }) {
       }, 0);
     }, 0);
   };
+
+  const getPrestigioInfo = (skill) => getEffectivePrestigio({
+    tree: prestigios?.[skill],
+    ficha,
+    unlockedIds: ficha.periciaPrestigios?.[skill] || [],
+    skillName: skill,
+  });
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 16 }}>
@@ -41,7 +130,7 @@ export function TabAtributos({ ficha, onUpdate, arsenal = [] }) {
       </div>
 
       <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, paddingBottom: 8, borderBottom: "1px solid " + G.border }}><span style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3 }}>◈ PERÍCIAS</span></div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, paddingBottom: 8, borderBottom: "1px solid " + G.border }}><span style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3 }}>◈ PERÍCIAS · PRESTÍGIOS</span></div>
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 12 }}>{PERICIAS_GRUPOS.map((g) => <button key={g.g} onClick={() => setGrupoAtivo(g.g)} style={{ padding: "4px 10px", background: grupoAtivo === g.g ? g.cor + "22" : "transparent", border: "1px solid " + (grupoAtivo === g.g ? g.cor + "55" : G.border), borderRadius: 14, color: grupoAtivo === g.g ? g.cor : G.muted, fontFamily: "monospace", fontSize: 10, cursor: "pointer" }}>{g.g}</button>)}</div>
         {grp && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>{grp.list.map((p) => {
           const nivelBase = ficha.pericias[p] || 0;
@@ -49,9 +138,20 @@ export function TabAtributos({ ficha, onUpdate, arsenal = [] }) {
           const nivel = Math.max(0, Math.min(20, nivelBase + delta));
           const dt = Math.max(1, 20 - nivel);
           const desc = PERICIAS_DESC[p] || "Sem descrição.";
-          return <div key={p} style={{ background: G.bg3, border: "1px solid " + G.border, borderRadius: 8, padding: "7px 10px", display: "flex", alignItems: "center", gap: 6 }} title={desc}><div style={{ flex: 1, fontFamily: "monospace", fontSize: 11, color: nivel > 0 ? G.gold2 : "#888" }}>{p}<div style={{ fontSize: 9, color: "#7a7a7a", marginTop: 1 }}>{desc}</div><div style={{ fontSize: 9, color: delta ? (delta > 0 ? "#62e39e" : "#ff7a6e") : "#666" }}>Base {nivelBase} {delta ? `(${delta > 0 ? "+" : ""}${delta})` : ""}</div></div><button onClick={() => upP(p, nivelBase - 1)} style={{ width: 20, height: 20, background: "transparent", border: "1px solid " + G.border, borderRadius: 3, color: G.muted, cursor: "pointer", fontSize: 12 }}>−</button><input type="number" min={0} max={20} value={nivelBase} onChange={(e) => upP(p, Number(e.target.value) || 0)} style={inpStyle({ width: 36, textAlign: "center", fontSize: 13, fontWeight: "bold", color: grp.cor, padding: "2px", borderColor: grp.cor + "33" })} /><button onClick={() => upP(p, nivelBase + 1)} style={{ width: 20, height: 20, background: "transparent", border: "1px solid " + G.border, borderRadius: 3, color: G.muted, cursor: "pointer", fontSize: 12 }}>+</button><div style={{ width: 38, textAlign: "right", fontFamily: "monospace", fontSize: 11, color: nivel === 20 ? "#ffd700" : nivel > 0 ? grp.cor : G.muted }}>DT:{dt}</div></div>;
+          const prestigio = getPrestigioInfo(p);
+          return <div key={p} style={{ background: G.bg3, border: "1px solid " + G.border, borderRadius: 8, padding: "7px 10px", display: "grid", gap: 6 }} title={desc}><div style={{ display: "flex", alignItems: "center", gap: 6 }}><button onClick={() => setOpenPrestigio(p)} style={{ ...btnStyle({ padding: "2px 6px", borderColor: "#d5b26d66", color: "#f0d79c" }), fontSize: 10 }}>Árvore</button><div style={{ flex: 1, fontFamily: "monospace", fontSize: 11, color: nivel > 0 ? G.gold2 : "#888" }}>{p}<div style={{ fontSize: 9, color: "#7a7a7a", marginTop: 1 }}>{desc}</div><div style={{ fontSize: 9, color: delta ? (delta > 0 ? "#62e39e" : "#ff7a6e") : "#666" }}>Base {nivelBase} {delta ? `(${delta > 0 ? "+" : ""}${delta})` : ""}</div></div><div style={{ width: 38, textAlign: "right", fontFamily: "monospace", fontSize: 11, color: nivel === 20 ? "#ffd700" : nivel > 0 ? grp.cor : G.muted }}>DT:{dt}</div></div><div style={{ display: "flex", alignItems: "center", gap: 6 }}><button onClick={() => upP(p, nivelBase - 1)} style={{ width: 20, height: 20, background: "transparent", border: "1px solid " + G.border, borderRadius: 3, color: G.muted, cursor: "pointer", fontSize: 12 }}>−</button><input type="number" min={0} max={20} value={nivelBase} onChange={(e) => upP(p, Number(e.target.value) || 0)} style={inpStyle({ width: 36, textAlign: "center", fontSize: 13, fontWeight: "bold", color: grp.cor, padding: "2px", borderColor: grp.cor + "33" })} /><button onClick={() => upP(p, nivelBase + 1)} style={{ width: 20, height: 20, background: "transparent", border: "1px solid " + G.border, borderRadius: 3, color: G.muted, cursor: "pointer", fontSize: 12 }}>+</button><div style={{ marginLeft: "auto", display: "flex", gap: 2 }}>{prestigio.activeNodes.map((n) => <span key={n.id} title={`${n.nome}\n${n.efeitoNarrativo || "Sem efeito narrativo"}`} style={{ cursor: "help", color: "#f6d57e", filter: "drop-shadow(0 0 4px #f6d57e77)", transition: "transform .16s" }} onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.25)"; }} onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}>★</span>)}</div></div></div>;
         })}</div>}
       </div>
+
+      <PrestigioModal
+        open={!!openPrestigio}
+        onClose={() => setOpenPrestigio(null)}
+        skillName={openPrestigio}
+        tree={prestigios?.[openPrestigio]}
+        ficha={ficha}
+        unlockedIds={ficha.periciaPrestigios?.[openPrestigio] || []}
+        onToggle={(nodeId) => togglePrestigioNode(openPrestigio, nodeId)}
+      />
     </div>
   );
 }

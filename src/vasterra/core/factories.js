@@ -44,6 +44,7 @@ export const novaFicha = (nome = "Novo Personagem") => ({
   },
   atributos: Object.fromEntries(ATRIBUTOS.map((a) => [a.sigla, { val: 5, ae: false, ne: false }])),
   pericias: Object.fromEntries(PERICIAS_GRUPOS.flatMap((g) => g.list.map((p) => [p, 0]))),
+  periciaPrestigios: {},
   recursos: {
     ACO: { total: 2, usado: 0 },
     MOV: { total: 1, usado: 0 },

@@ -28,6 +28,8 @@ export const PERICIAS_GRUPOS = [
   { g:"Especial",  cor:"#c8a96e", list:["Artística","Poder","Aura", "Profissão 1","Profissão 2", "Iniciativa"] },
 ];
 
+export const ALL_PERICIAS = PERICIAS_GRUPOS.flatMap((g) => g.list);
+
 export const PERICIAS_DESC = {
   "Lâminas Pesadas": "Domínio de armas cortantes de grande massa e impacto.",
   "Lâminas Grandes": "Uso eficiente de espadas e lâminas longas de duas mãos.",
