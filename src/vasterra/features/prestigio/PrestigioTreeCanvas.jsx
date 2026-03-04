@@ -20,10 +20,13 @@ export function PrestigioTreeCanvas({
   showFooterHint = true,
   worldWidth = 5200,
   worldHeight = 3200,
+  pulseNodeId = null,
+  flashCanvas = false,
 }) {
   const [dragNode, setDragNode] = useState(null);
   const [dragPan, setDragPan] = useState(null);
   const [hoverLinkId, setHoverLinkId] = useState(null);
+  const [hoverNodeId, setHoverNodeId] = useState(null);
   const [viewport, setViewport] = useState({ x: 0, y: 0 });
   const [pointerWorld, setPointerWorld] = useState({ x: 0, y: 0 });
   const wrapRef = useRef(null);
@@ -58,7 +61,7 @@ export function PrestigioTreeCanvas({
   const toWorld = (local) => ({ x: local.x - viewport.x, y: local.y - viewport.y });
 
   const bgLayers = useMemo(() => {
-    const mk = (count, gap, speed, pulseBase) => {
+    const mk = (count, gap, pulseBase) => {
       const stars = [];
       for (let i = 0; i < count; i += 1) {
         const row = Math.floor(i / 20);
@@ -73,9 +76,9 @@ export function PrestigioTreeCanvas({
           pulse: `${pulseBase + (i % 9)}s`,
         });
       }
-      return { stars, speed };
+      return { stars };
     };
-    return [mk(160, 46, 0.35, 6), mk(110, 62, 0.55, 8), mk(80, 78, 0.8, 10)];
+    return [mk(900, 46, 6), mk(520, 62, 8), mk(320, 78, 10)];
   }, []);
 
   return (
@@ -108,6 +111,8 @@ export function PrestigioTreeCanvas({
         background: "radial-gradient(circle at 20% 10%, #231a58 0%, #0f1430 30%, #060913 70%, #020307 100%)",
         boxShadow: "inset 0 0 120px #7d4dff22, inset 0 0 60px #ffffff10, 0 0 30px #000",
         cursor: dragPan ? "grabbing" : "default",
+        transform: flashCanvas ? "scale(1.01)" : "scale(1)",
+        transition: "transform .34s ease, box-shadow .34s ease",
       }}
     >
       <style>{`
@@ -115,15 +120,20 @@ export function PrestigioTreeCanvas({
         @keyframes v-astralPulse { 0%,100% { opacity:.22; filter:brightness(1);} 50% { opacity:.35; filter:brightness(1.35);} }
         @keyframes v-starCorePulse { 0%,100%{transform:scale(1)}50%{transform:scale(1.12)} }
         @keyframes v-linkPulse { 0%,100% { opacity:.18; } 50% { opacity:.42; } }
+        @keyframes v-upFloat { from { transform: translateY(0); } to { transform: translateY(-220px); } }
       `}</style>
 
-      {bgLayers.map((layer, idx) => (
-        <div key={idx} style={{ position: "absolute", inset: -260, animation: `v-astralUp ${50 + idx * 26}s linear infinite`, willChange: "transform" }}>
-          {layer.stars.map((s, i) => (
-            <span key={i} style={{ position: "absolute", left: s.x, top: s.y, width: s.size, height: s.size, borderRadius: "50%", background: "#ffffff", opacity: Math.min(0.92, s.alpha), boxShadow: "0 0 8px #ffffff, 0 0 16px #ffffff88", animation: `v-astralPulse ${s.pulse} ease-in-out infinite` }} />
-          ))}
-        </div>
-      ))}
+      <div style={{ position: "absolute", left: viewport.x, top: viewport.y, width: worldWidth, height: worldHeight, overflow: "hidden", pointerEvents: "none" }}>
+        {bgLayers.map((layer, idx) => (
+          <div key={idx} style={{ position: "absolute", inset: 0 }}>
+            {layer.stars.map((s, i) => {
+              const x = (s.x * 7 + i * 11) % worldWidth;
+              const y = Math.max(0, worldHeight - ((s.y * 9 + i * 13) % worldHeight));
+              return <span key={i} style={{ position: "absolute", left: x, top: y, width: s.size, height: s.size, borderRadius: "50%", background: "#ffffff", opacity: Math.min(0.9, s.alpha), boxShadow: `0 0 ${6 + s.size * 2}px #ffffff, 0 0 ${12 + s.size * 2}px #ffffff88`, animation: `v-upFloat ${40 + idx * 24 + (i % 10)}s linear infinite, v-astralPulse ${s.pulse} ease-in-out infinite`, animationDelay: `-${(i % 12) * 1.1}s` }} />;
+            })}
+          </div>
+        ))}
+      </div>
 
       <div style={{ position: "absolute", left: viewport.x, top: viewport.y, width: worldWidth, height: worldHeight }}>
         <svg style={{ position: "absolute", inset: 0, width: worldWidth, height: worldHeight }}>
@@ -140,8 +150,8 @@ export function PrestigioTreeCanvas({
                 onMouseLeave={() => setHoverLinkId(null)}
                 style={{ cursor: editable ? "pointer" : "default" }}
               >
-                <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={lit ? "#ffd86e" : "#ffffff"} strokeWidth={hoverLinkId === l.id ? "2.8" : "2"} />
-                <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={lit ? "#ffd86e" : "#ffffff"} strokeWidth={hoverLinkId === l.id ? "12" : "8"} opacity="0.2" style={{ animation: "v-linkPulse 1.6s ease-in-out infinite" }} />
+                <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={lit ? "#ffd86e" : "#d8e1ef"} strokeWidth={hoverLinkId === l.id ? "2.8" : "1.7"} opacity={lit ? 0.95 : 0.55} />
+                <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={lit ? "#ffd86e" : "#d8e1ef"} strokeWidth={hoverLinkId === l.id ? "10" : "6"} opacity={lit ? 0.2 : 0.08} style={{ animation: "v-linkPulse 1.6s ease-in-out infinite" }} />
               </g>
             );
           })}
@@ -157,40 +167,42 @@ export function PrestigioTreeCanvas({
           const canActivate = canActivatePrestigioNode({ node, unlockedIds, tree, ficha, skillName });
           const activeForEdit = selectedNodeId === node.id;
           return (
-            <button
-              key={node.id}
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                onSelectNode?.(node.id);
-                if (editable && !linkMode && e.button === 0) setDragNode(node);
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (linkMode) {
-                  if (!linkFrom) onLinkFrom?.(node.id);
-                  else if (linkFrom === node.id) onLinkFrom?.(null);
-                  else onCreateLink?.(linkFrom, node.id);
-                  return;
-                }
-                if (!editable) onToggleNode?.(node.id, canActivate);
-              }}
-              title={`${node.nome}\n${node.efeitoNarrativo || "Sem efeito narrativo"}`}
-              style={{
-                position: "absolute",
-                left: node.x - 11,
-                top: node.y - 11,
-                width: 22,
-                height: 22,
-                borderRadius: "50%",
-                border: `1px solid ${activeForEdit ? "#98ddff" : selected ? "#ffd76a" : "#ffffff"}`,
-                background: selected ? "radial-gradient(circle, #fff6bd 0%, #ffd14d 45%, #94660a 100%)" : "radial-gradient(circle, #ffffff 0%, #f4fbff 40%, #8fb0d6 100%)",
-                boxShadow: selected ? "0 0 16px #ffd76a, 0 0 32px #ffd76a88" : "0 0 16px #ffffffcc, 0 0 28px #ffffff77",
-                animation: "v-starCorePulse 2.1s ease-in-out infinite",
-                cursor: editable ? (linkMode ? "crosshair" : "grab") : (canActivate ? "pointer" : "not-allowed"),
-                opacity: canActivate || selected || editable ? 1 : 0.6,
-                transform: activeForEdit ? "scale(1.2)" : "scale(1)",
-              }}
-            />
+            <div key={node.id} style={{ position: "absolute", left: node.x - 60, top: node.y - 33, width: 120, textAlign: "center" }}>
+              <div style={{ color: selected ? "#ffe3a1" : "#cfe0f8", fontSize: 10, textShadow: "0 0 10px #000", fontFamily: "monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{node.nome}</div>
+              <button
+                onMouseEnter={() => setHoverNodeId(node.id)}
+                onMouseLeave={() => setHoverNodeId(null)}
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  onSelectNode?.(node.id);
+                  if (editable && !linkMode && e.button === 0) setDragNode(node);
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (linkMode) {
+                    if (!linkFrom) onLinkFrom?.(node.id);
+                    else if (linkFrom === node.id) onLinkFrom?.(null);
+                    else onCreateLink?.(linkFrom, node.id);
+                    return;
+                  }
+                  if (!editable) onToggleNode?.(node.id, canActivate);
+                }}
+                title={`${node.nome}\n${node.efeitoNarrativo || "Sem efeito narrativo"}`}
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: "50%",
+                  border: `1px solid ${activeForEdit ? "#98ddff" : selected ? "#ffd76a" : "#ffffff"}`,
+                  background: selected ? "radial-gradient(circle, #fff6bd 0%, #ffd14d 45%, #94660a 100%)" : "radial-gradient(circle, #ffffff 0%, #f4fbff 40%, #8fb0d6 100%)",
+                  boxShadow: selected ? "0 0 16px #ffd76a, 0 0 32px #ffd76a88" : "0 0 16px #ffffffcc, 0 0 28px #ffffff77",
+                  animation: "v-starCorePulse 2.1s ease-in-out infinite",
+                  cursor: editable ? (linkMode ? "crosshair" : "grab") : (canActivate ? "pointer" : "not-allowed"),
+                  opacity: canActivate || selected || editable ? 1 : 0.6,
+                  transform: (activeForEdit || hoverNodeId === node.id || pulseNodeId === node.id) ? "scale(1.25)" : "scale(1)",
+                  transition: "transform .2s ease",
+                }}
+              />
+            </div>
           );
         })}
       </div>

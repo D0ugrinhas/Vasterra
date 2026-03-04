@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { ATRIBUTOS, PERICIAS_GRUPOS, PERICIAS_DESC } from "../../../data/gameData";
 import { aggregateModifiers, normalizePericiaKey, parseMechanicalEffects } from "../../../core/effects";
 import { inventoryItemModifiers } from "../../../core/inventory";
-import { getEffectivePrestigio, normalizePrestigioTree } from "../../../core/prestigio";
+import { canActivatePrestigioNode, getEffectivePrestigio, normalizePrestigioTree } from "../../../core/prestigio";
 import { G, inpStyle, btnStyle } from "../../../ui/theme";
 import { Modal } from "../../shared/components";
 import { AstralHudCard, PrestigeBadgeStars, PrestigioTreeCanvas } from "../../prestigio/PrestigioTreeCanvas";
@@ -10,6 +10,8 @@ import { AstralHudCard, PrestigeBadgeStars, PrestigioTreeCanvas } from "../../pr
 function PrestigioModal({ open, onClose, skillName, tree, ficha, unlockedIds, onToggle }) {
   const [detailNodeId, setDetailNodeId] = useState(null);
   const [flash, setFlash] = useState(false);
+  const [pulseNodeId, setPulseNodeId] = useState(null);
+  const [flashCanvas, setFlashCanvas] = useState(false);
   if (!open) return null;
   const normalized = normalizePrestigioTree(tree, skillName);
   const effective = getEffectivePrestigio({ tree: normalized, ficha, unlockedIds, skillName });
@@ -26,9 +28,11 @@ function PrestigioModal({ open, onClose, skillName, tree, ficha, unlockedIds, on
           onToggleNode={() => {}}
           onSelectNode={setDetailNodeId}
           selectedNodeId={detailNodeId}
+          pulseNodeId={pulseNodeId}
+          flashCanvas={flashCanvas}
           showFooterHint
         />
-        <div style={{ display: "grid", gap: 8, alignContent: "start" }}>
+        <div style={{ display: "grid", gap: 8, alignContent: "start", maxHeight: 620, overflow: "auto", paddingRight: 4 }}>
           <AstralHudCard>
             <div style={{ fontFamily: "monospace", fontSize: 11 }}>Lista das estrelas já prestigiadas.</div>
           </AstralHudCard>
@@ -44,22 +48,30 @@ function PrestigioModal({ open, onClose, skillName, tree, ficha, unlockedIds, on
 
       {detailNode && (
         <Modal title={`✦ ${detailNode.nome}`} onClose={() => setDetailNodeId(null)}>
-          <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ display: "grid", gap: 8, maxHeight: "58vh", overflow: "auto" }}>
             <div style={{ color: "#a5c7ef", fontSize: 11 }}>{detailNode.descricao || "Sem descrição"}</div>
             <div style={{ color: "#f4e2a8", fontStyle: "italic", fontSize: 12 }}>{detailNode.efeitoNarrativo || "Sem efeito narrativo"}</div>
             <button
+              disabled={!canActivatePrestigioNode({ node: detailNode, unlockedIds, tree: normalized, ficha, skillName })}
               onClick={() => {
+                if (!canActivatePrestigioNode({ node: detailNode, unlockedIds, tree: normalized, ficha, skillName })) return;
                 setFlash(true);
+                setPulseNodeId(detailNode.id);
+                setFlashCanvas(true);
                 onToggle(detailNode.id);
                 setTimeout(() => setFlash(false), 420);
+                setTimeout(() => setPulseNodeId(null), 520);
+                setTimeout(() => setFlashCanvas(false), 520);
               }}
               style={{
-                ...btnStyle({ borderColor: "#ffd67a88", color: "#ffeebf" }),
-                background: flash ? "radial-gradient(circle, #fff5cc, #c7931b)" : undefined,
+                ...btnStyle({ borderColor: "#a87410", color: "#fff7df" }),
+                background: flash ? "radial-gradient(circle, #fff2bf, #b97e0e)" : "linear-gradient(180deg, #8f5f0b, #5f3d06)",
                 transform: flash ? "scale(1.04)" : "scale(1)",
+                opacity: canActivatePrestigioNode({ node: detailNode, unlockedIds, tree: normalized, ficha, skillName }) ? 1 : 0.45,
                 transition: "all .28s ease",
               }}
             >Prestigiar</button>
+            {!canActivatePrestigioNode({ node: detailNode, unlockedIds, tree: normalized, ficha, skillName }) && <div style={{ fontSize: 10, color: "#ffb1a8" }}>Requisitos não cumpridos para prestigiar esta estrela.</div>}
           </div>
         </Modal>
       )}
