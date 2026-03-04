@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { MOD_ORIGENS, STATUS_CFG } from "../../data/gameData";
 import { uid } from "../../core/factories";
+import { parseMechanicalEffects } from "../../core/effects";
 import { G, inpStyle, btnStyle } from "../../ui/theme";
 import { HoverButton } from "../../components/primitives/Interactive";
 import { ImageViewport } from "../../components/media/ImageAttachModal";
@@ -93,7 +94,17 @@ export function EffectDetailsModal({ effect, onClose }) {
           </div>
         )}
         <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>
-          {effect.tipo || "—"} · {effect.rank || "Sem rank"} · {effect.efeitoMecanico || effect.efeito || effect.valor || "Sem efeito mecânico"}
+          {effect.tipo || "—"} · {effect.rank || "Sem rank"}
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {parseMechanicalEffects(effect.efeitosMecanicos || effect.efeitoMecanico || effect.efeito || effect.valor || "").map((m, idx) => (
+            <span key={`${m.raw}-${idx}`} style={{ padding: "3px 8px", borderRadius: 999, border: "1px solid #2f4f66", background: "#0a1a24", color: "#8fd2ff", fontFamily: "monospace", fontSize: 11 }}>
+              {m.raw}
+            </span>
+          ))}
+          {parseMechanicalEffects(effect.efeitosMecanicos || effect.efeitoMecanico || effect.efeito || effect.valor || "").length === 0 && (
+            <span style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>Sem efeito mecânico</span>
+          )}
         </div>
         <div style={{ color: G.text }}>{effect.descricao || "Sem descrição."}</div>
         {effect.frase && <div style={{ color: "#ba9cc8", fontStyle: "italic" }}>“{effect.frase}”</div>}

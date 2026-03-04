@@ -41,7 +41,7 @@ export function FichasSection({ fichas, onFichas, arsenal, efeitosCaldeirao = []
   const ficha = fichas.find((f) => f.id === sel) || null;
 
   const updateFicha = (partial) => {
-    onFichas(fichas.map((f) => (f.id === sel ? Object.assign({}, f, partial, { atualizado: Date.now() }) : f)));
+    onFichas((prev) => (prev || []).map((f) => (f.id === sel ? Object.assign({}, f, partial, { atualizado: Date.now() }) : f)));
   };
 
   const criar = () => {

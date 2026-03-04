@@ -17,6 +17,13 @@ const STATUS_ALIAS = {
   CONS: "CONS", CONSCIENCIA: "CONS", CONSCIÊNCIA: "CONS",
 };
 
+const BODY_ALIAS = {
+  OSSOS: "ossos", OSSO: "ossos",
+  MUSCULOS: "musculos", MUSCULO: "musculos",
+  PELE: "pele",
+  SAUDE: "saude",
+};
+
 const ESSENCIA_ALIAS = {
   ETER: "Éter", SABEDORIA: "Éter", PUREZA: "Cristal", CRISTAL: "Cristal", FURIA: "Sangue", GULA: "Víscera", INVEJA: "Sombra", SOBERBA: "Ouro", LUXURIA: "Néctar", PREGUICA: "Corrosão", TEMPERANCA: "Água", DILIGENCIA: "Mecânico", PACIENCIA: "Raiz", HUMILDADE: "O Cinza", CARIDADE: "Luz",
 };
@@ -34,7 +41,7 @@ function detectStatusTarget(code, canonical) {
 
 
 function resolveMechanicalRaw(it = {}) {
-  return it.efeitoMecanico || it.efeito || it.valor || "";
+  return it.efeitosMecanicos || it.efeitoMecanico || it.efeito || it.valor || "";
 }
 
 export function parseMechanicalEffect(raw = "") {
@@ -64,6 +71,9 @@ export function parseMechanicalEffect(raw = "") {
     };
   }
 
+  const body = BODY_ALIAS[code];
+  if (body) return { scope: "corpo", key: body, value, isPct, target: "base", raw: `${value >= 0 ? "+" : ""}${value}${isPct ? "%" : ""}${code}` };
+
   const ess = ESSENCIA_ALIAS[code];
   if (ess) return { scope: "essencia", key: ess, value, isPct, target: "base", raw: `${value >= 0 ? "+" : ""}${value}${isPct ? "%" : ""}${ess}` };
 
@@ -79,6 +89,14 @@ export function parseMechanicalEffect(raw = "") {
 }
 
 export function parseMechanicalEffects(raw = "") {
+  if (Array.isArray(raw)) {
+    return raw.flatMap((part) => parseMechanicalEffects(part));
+  }
+  if (raw && typeof raw === "object") {
+    if (typeof raw.raw === "string") return parseMechanicalEffects(raw.raw);
+    if (typeof raw.valor === "string") return parseMechanicalEffects(raw.valor);
+    if (typeof raw.expr === "string") return parseMechanicalEffects(raw.expr);
+  }
   return String(raw || "")
     .split(",")
     .map((part) => parseMechanicalEffect(part.trim()))

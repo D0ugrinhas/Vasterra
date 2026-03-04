@@ -1,6 +1,6 @@
 import { uid } from "../../../core/factories";
 
-export const NODE_TYPES = ["Recurso", "Barra de Status", "Valor", "Math", "Condicionais", "Color picker", "Comentário", "Dado", "Lógico"];
+export const NODE_TYPES = ["Recurso", "Barra de Status", "Valor", "Math", "Condicionais", "Color picker", "Comentário", "Dado", "Lógico", "Recebedor"];
 export const SHAPES = ["square", "circle", "diamond", "triangle", "hex"];
 
 export const defaultCombatState = () => ({
@@ -25,7 +25,8 @@ export function defaultGenericForm(kind = "Valor") {
   if (kind === "Comentário") return { nodeType: "comment", label: "Comentário", text: "", x: 520, y: 420 };
   if (kind === "Dado") return { nodeType: "dice", label: "Dado", qty: 1, faces: 20, bonus: 0, critMin: 20, critMax: 20, critValue: 1, failValue: -1, lastRoll: 0, x: 520, y: 520 };
   if (kind === "Lógico") return { nodeType: "logic", label: "Lógico", logic: "if", ifTrue: 1, ifFalse: 0, x: 520, y: 620 };
-  return { nodeType: "color", label: "Cor", color: "#95a5a6", x: 520, y: 720 };
+  if (kind === "Recebedor") return { nodeType: "receiver", label: "Recebedor", receiverKey: "DET", equation: "0", x: 520, y: 720 };
+  return { nodeType: "color", label: "Cor", color: "#95a5a6", x: 520, y: 820 };
 }
 
 export function getFichaValueByPath(ficha, path) {
@@ -62,6 +63,7 @@ export function getInputPorts(node) {
   if (node.kind === "generic" && node.nodeType === "comment") return ["value"];
   if (node.kind === "generic" && node.nodeType === "dice") return ["qty", "faces", "bonus", "critMin", "critMax", "critValue", "failValue"];
   if (node.kind === "generic" && node.nodeType === "logic") return ["a", "b", "ifTrue", "ifFalse"];
+  if (node.kind === "generic" && node.nodeType === "receiver") return ["a", "b", "c"];
   return [];
 }
 
@@ -72,7 +74,20 @@ export function getOutputPorts(node) {
   if (node.kind === "generic" && node.nodeType === "color") return ["cor"];
   if (node.kind === "generic" && node.nodeType === "dice") return ["value", "crit"];
   if (node.kind === "generic" && node.nodeType === "logic") return ["value"];
+  if (node.kind === "generic" && node.nodeType === "receiver") return ["value", "sum"];
   return [];
+}
+
+
+function evalEquation(expr = "0") {
+  const safe = String(expr || "0").replace(/[^0-9+\-*/().\s]/g, "").trim();
+  if (!safe) return 0;
+  try {
+    const out = Function(`"use strict"; return (${safe});`)();
+    return Number.isFinite(Number(out)) ? Number(out) : 0;
+  } catch {
+    return 0;
+  }
 }
 
 export function canLink(fromNode, fromPort, toNode, toPort) {
@@ -83,7 +98,7 @@ export function canLink(fromNode, fromPort, toNode, toPort) {
   return numericOut;
 }
 
-export function evaluateNodeOutputs(state, ficha) {
+export function evaluateNodeOutputs(state, ficha, receiverSignals = {}) {
   const nodes = toAllNodes(state);
   const links = state.nodeLinks || [];
   const outputs = {};
@@ -161,6 +176,17 @@ export function evaluateNodeOutputs(state, ficha) {
           : op === "not" ? !(a > 0)
           : a > b;
         outputs[n.id] = { value: cond ? ifTrue : ifFalse };
+        return;
+      }
+      if (n.nodeType === "receiver") {
+        const linkedA = Number(findSourceValue(n.id, "a") || 0);
+        const linkedB = Number(findSourceValue(n.id, "b") || 0);
+        const linkedC = Number(findSourceValue(n.id, "c") || 0);
+        const key = String(n.receiverKey || "").toUpperCase();
+        const signal = Number(receiverSignals[key] || 0);
+        const equationBase = Number(evalEquation(n.equation || "0") || 0);
+        const sum = equationBase + linkedA + linkedB + linkedC + signal;
+        outputs[n.id] = { value: sum, sum };
         return;
       }
       if (n.nodeType === "dice") {
