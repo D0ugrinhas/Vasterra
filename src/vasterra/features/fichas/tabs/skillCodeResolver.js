@@ -4,8 +4,13 @@ const normalizeKey = (value = "") => String(value)
   .toLowerCase()
   .replace(/[^a-z0-9]/g, "");
 
+const aliasKey = (clean) => {
+  if (clean === "const") return "cons";
+  return clean;
+};
+
 const keyFromFicha = (ficha, key) => {
-  const clean = normalizeKey(key);
+  const clean = aliasKey(normalizeKey(key));
   if (!clean) return 0;
 
   const attrPair = Object.entries(ficha?.atributos || {}).find(([k]) => normalizeKey(k) === clean);
@@ -22,6 +27,27 @@ const keyFromFicha = (ficha, key) => {
   return 0;
 };
 
+const evaluateMathExpression = (expr = "", vars = {}, ficha) => {
+  const tokens = String(expr).match(/[A-Za-z_][A-Za-z0-9_]*/g) || [];
+  let safeExpr = String(expr);
+  const uniq = [...new Set(tokens)].sort((a, b) => b.length - a.length);
+  uniq.forEach((token) => {
+    const value = Object.prototype.hasOwnProperty.call(vars, token) ? Number(vars[token] || 0) : keyFromFicha(ficha, token);
+    safeExpr = safeExpr.replace(new RegExp(`\\b${token}\\b`, "g"), String(value));
+  });
+
+  if (!/^[0-9+\-*/().,%\s]+$/.test(safeExpr)) return 0;
+  const normalized = safeExpr.replace(/,/g, ".");
+  try {
+    // eslint-disable-next-line no-new-func
+    const raw = Function(`"use strict"; return (${normalized});`)();
+    const num = Number(raw);
+    return Number.isFinite(num) ? num : 0;
+  } catch {
+    return 0;
+  }
+};
+
 const evaluateExpr = (expr, vars, ficha) => {
   const raw = String(expr || "").trim();
   if (!raw) return 0;
@@ -29,17 +55,12 @@ const evaluateExpr = (expr, vars, ficha) => {
   const pct = raw.match(/^(\d+(?:[\.,]\d+)?)\s*%\s*(.+)$/);
   if (pct) {
     const rate = Number(String(pct[1]).replace(",", "."));
-    const baseToken = String(pct[2] || "").trim();
-    const base = Object.prototype.hasOwnProperty.call(vars, baseToken)
-      ? Number(vars[baseToken] || 0)
-      : keyFromFicha(ficha, baseToken);
+    const base = evaluateMathExpression(String(pct[2] || "").trim(), vars, ficha);
     return Math.floor(base * (rate / 100));
   }
 
   if (/^-?\d+(?:[\.,]\d+)?$/.test(raw)) return Number(raw.replace(",", "."));
-
-  if (Object.prototype.hasOwnProperty.call(vars, raw)) return Number(vars[raw] || 0);
-  return keyFromFicha(ficha, raw);
+  return evaluateMathExpression(raw, vars, ficha);
 };
 
 export function resolveSkillCode(descricaoCode = "", ficha) {

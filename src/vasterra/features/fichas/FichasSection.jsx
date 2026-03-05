@@ -245,7 +245,19 @@ export function FichasSection({ fichas, onFichas, arsenal, efeitosCaldeirao = []
             {tab === "identidade" && <TabIdentidade ficha={ficha} onUpdate={updateFicha} />}
             {tab === "essencia" && <TabEssencia ficha={ficha} onUpdate={updateFicha} />}
             {tab === "inventario" && <TabInventario ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onArsenal={onArsenal} onNotify={onNotify} onConfirmAction={onConfirmAction} onOpenCaldeirao={onOpenCaldeirao} />}
-            {tab === "skills" && <TabSkills ficha={ficha} onUpdate={updateFicha} bibliotecaSkills={bibliotecaSkills} skillTags={skillTags} onNotify={onNotify} onExportToBiblioteca={(skill) => onBibliotecaSkills?.([skill, ...(bibliotecaSkills || [])])} />}
+            {tab === "skills" && <TabSkills
+              ficha={ficha}
+              onUpdate={updateFicha}
+              bibliotecaSkills={bibliotecaSkills}
+              skillTags={skillTags}
+              onNotify={onNotify}
+              onConfirmAction={onConfirmAction}
+              onExportToBiblioteca={(skill) => onBibliotecaSkills?.([skill, ...(bibliotecaSkills || [])])}
+              onLinkBibliotecaChange={(entry) => {
+                if (!entry?.sourceSkillId) return;
+                onBibliotecaSkills?.((bibliotecaSkills || []).map((s) => (s.id === entry.sourceSkillId ? { ...(entry.effectiveSkill || entry.skill), id: s.id, atualizado: Date.now() } : s)));
+              }}
+            />}
           </div>
         </>
       )}

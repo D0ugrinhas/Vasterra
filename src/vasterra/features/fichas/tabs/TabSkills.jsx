@@ -22,12 +22,7 @@ function normalizeAssignedSkills(ficha) {
   if (!Array.isArray(ficha?.skills)) return [];
   return ficha.skills.map((entry) => {
     if (entry?.skill) return entry;
-    return {
-      id: uid(),
-      scope: "local",
-      sourceSkillId: "",
-      skill: { ...novaSkill(), ...(entry || {}) },
-    };
+    return { id: uid(), scope: "local", sourceSkillId: "", skill: { ...novaSkill(), ...(entry || {}) } };
   });
 }
 
@@ -37,7 +32,7 @@ function tagNames(skill, tagsById) {
 
 function ResolvedCodePanel({ entry, ficha }) {
   const [showResolved, setShowResolved] = useState(false);
-  const skill = entry?.skill || {};
+  const skill = entry?.effectiveSkill || entry?.skill || {};
   const preview = useMemo(() => resolveSkillCode(skill.descricaoCode || "", ficha), [skill.descricaoCode, ficha]);
   if (!entry) return null;
   return (
@@ -75,16 +70,13 @@ function AssignModal({ open, onClose, pool = [], onPick, tagsById }) {
 
   const suggestions = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q || q.length < 2) return [];
+    if (q.length < 2) return [];
     return filtered.filter((s) => (`${s.nome || ""} ${s.descricao || ""}`).toLowerCase().includes(q)).slice(0, 8);
   }, [filtered, query]);
 
-  useEffect(() => {
-    setCursor((c) => Math.min(c, Math.max(0, suggestions.length - 1)));
-  }, [suggestions.length]);
+  useEffect(() => setCursor((c) => Math.min(c, Math.max(0, suggestions.length - 1))), [suggestions.length]);
 
   if (!open) return null;
-
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.62)", zIndex: 80, display: "grid", placeItems: "center" }}>
       <div style={{ width: "min(980px, 92vw)", maxHeight: "86vh", overflow: "auto", border: "1px solid #5a431f", borderRadius: 12, background: "linear-gradient(180deg,#171108,#0f0b06)", padding: 12 }}>
@@ -92,32 +84,15 @@ function AssignModal({ open, onClose, pool = [], onPick, tagsById }) {
           <div style={{ fontFamily: "'Cinzel Decorative',serif", color: G.gold, letterSpacing: 2 }}>Atribuir Skill da Biblioteca</div>
           <HoverButton onClick={onClose} style={btnStyle({ borderColor: "#6c5531", color: "#d5bc8f", padding: "4px 10px" })}>Fechar</HoverButton>
         </div>
-
         <div style={{ display: "grid", gridTemplateColumns: "1fr 110px 120px 120px 120px 120px", gap: 6, marginBottom: 8 }}>
           <div style={{ position: "relative" }}>
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (!suggestions.length) return;
-                if (e.key === "ArrowDown") { e.preventDefault(); setCursor((c) => (c + 1) % suggestions.length); }
-                if (e.key === "ArrowUp") { e.preventDefault(); setCursor((c) => (c - 1 + suggestions.length) % suggestions.length); }
-                if (e.key === "Enter") { e.preventDefault(); onPick(suggestions[cursor]); }
-              }}
-              placeholder="Pesquisar com autocomplete (↑ ↓ Enter)..."
-              style={inpStyle({ border: "1px solid #5a431f", background: "#0f0b07" })}
-              autoFocus
-            />
-            {!!suggestions.length && (
-              <div style={{ position: "absolute", left: 0, right: 0, top: "calc(100% + 2px)", border: "1px solid #5a431f", borderRadius: 8, background: "#0f0b07", zIndex: 2, maxHeight: 220, overflowY: "auto" }}>
-                {suggestions.map((s, idx) => (
-                  <button key={s.id} onClick={() => onPick(s)} style={{ width: "100%", textAlign: "left", padding: "6px 8px", border: "none", borderBottom: "1px solid #2a1f10", background: idx === cursor ? "#2a1d0f" : "transparent", color: "#f0dfbe", cursor: "pointer" }}>
-                    <div style={{ fontFamily: "'Cinzel',serif", fontSize: 13 }}>{s.nome}</div>
-                    <div style={{ fontFamily: "monospace", fontSize: 10, color: "#c0a06a" }}>{s.rank || "-"} · {s.essenciaAtribuida || "Nenhuma"}</div>
-                  </button>
-                ))}
-              </div>
-            )}
+            <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => {
+              if (!suggestions.length) return;
+              if (e.key === "ArrowDown") { e.preventDefault(); setCursor((c) => (c + 1) % suggestions.length); }
+              if (e.key === "ArrowUp") { e.preventDefault(); setCursor((c) => (c - 1 + suggestions.length) % suggestions.length); }
+              if (e.key === "Enter") { e.preventDefault(); onPick(suggestions[cursor]); }
+            }} placeholder="Pesquisar com autocomplete (↑ ↓ Enter)..." style={inpStyle({ border: "1px solid #5a431f", background: "#0f0b07" })} autoFocus />
+            {!!suggestions.length && <div style={{ position: "absolute", left: 0, right: 0, top: "calc(100% + 2px)", border: "1px solid #5a431f", borderRadius: 8, background: "#0f0b07", zIndex: 2, maxHeight: 220, overflowY: "auto" }}>{suggestions.map((s, idx) => <button key={s.id} onClick={() => onPick(s)} style={{ width: "100%", textAlign: "left", padding: "6px 8px", border: "none", borderBottom: "1px solid #2a1f10", background: idx === cursor ? "#2a1d0f" : "transparent", color: "#f0dfbe", cursor: "pointer" }}><div style={{ fontFamily: "'Cinzel',serif", fontSize: 13 }}>{s.nome}</div><div style={{ fontFamily: "monospace", fontSize: 10, color: "#c0a06a" }}>{s.rank || "-"} · {s.essenciaAtribuida || "Nenhuma"}</div></button>)}</div>}
           </div>
           <input value={fDono} onChange={(e) => setFDono(e.target.value)} placeholder="Dono" style={inpStyle({ border: "1px solid #5a431f", background: "#0f0b07" })} />
           <select value={fRank} onChange={(e) => setFRank(e.target.value)} style={inpStyle({ border: "1px solid #5a431f", background: "#0f0b07" })}><option value="">Rank</option>{ARSENAL_RANKS.map((r) => <option key={r}>{r}</option>)}</select>
@@ -125,25 +100,13 @@ function AssignModal({ open, onClose, pool = [], onPick, tagsById }) {
           <input value={fAlcance} onChange={(e) => setFAlcance(e.target.value)} placeholder="Alcance" style={inpStyle({ border: "1px solid #5a431f", background: "#0f0b07" })} />
           <input value={fTag} onChange={(e) => setFTag(e.target.value)} placeholder="Tag" style={inpStyle({ border: "1px solid #5a431f", background: "#0f0b07" })} />
         </div>
-
-        <div style={{ display: "grid", gap: 6 }}>
-          {filtered.map((s) => (
-            <div key={s.id} style={{ border: "1px solid #5c4a2c", borderRadius: 8, padding: 8, background: "#161008", display: "grid", gap: 4 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ color: "#f1dfbe", fontFamily: "'Cinzel',serif" }}>{s.nome}</div>
-                <HoverButton onClick={() => onPick(s)} style={btnStyle({ padding: "4px 9px", borderColor: "#c5a16966", color: "#f3d79f" })}>Atribuir</HoverButton>
-              </div>
-              <div style={{ color: "#b89d6f", fontSize: 11, fontFamily: "monospace" }}>{s.descricao || "Sem descrição"}</div>
-            </div>
-          ))}
-          {filtered.length === 0 && <div style={{ color: G.muted, fontFamily: "monospace" }}>Nenhuma skill encontrada.</div>}
-        </div>
+        <div style={{ display: "grid", gap: 6 }}>{filtered.map((s) => <div key={s.id} style={{ border: "1px solid #5c4a2c", borderRadius: 8, padding: 8, background: "#161008", display: "grid", gap: 4 }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><div style={{ color: "#f1dfbe", fontFamily: "'Cinzel',serif" }}>{s.nome}</div><HoverButton onClick={() => onPick(s)} style={btnStyle({ padding: "4px 9px", borderColor: "#c5a16966", color: "#f3d79f" })}>Atribuir</HoverButton></div><div style={{ color: "#b89d6f", fontSize: 11, fontFamily: "monospace" }}>{s.descricao || "Sem descrição"}</div></div>)}{filtered.length === 0 && <div style={{ color: G.muted, fontFamily: "monospace" }}>Nenhuma skill encontrada.</div>}</div>
       </div>
     </div>
   );
 }
 
-export function TabSkills({ ficha, onUpdate, bibliotecaSkills = [], skillTags = [], onNotify, onExportToBiblioteca }) {
+export function TabSkills({ ficha, onUpdate, bibliotecaSkills = [], skillTags = [], onNotify, onExportToBiblioteca, onLinkBibliotecaChange, onConfirmAction }) {
   const [query, setQuery] = useState("");
   const [fDono, setFDono] = useState("");
   const [fRank, setFRank] = useState("");
@@ -156,11 +119,16 @@ export function TabSkills({ ficha, onUpdate, bibliotecaSkills = [], skillTags = 
   const [selectedId, setSelectedId] = useState(null);
 
   const tagsById = useMemo(() => Object.fromEntries((skillTags || []).map((t) => [t.id, t])), [skillTags]);
-  const assigned = normalizeAssignedSkills(ficha);
+  const bibById = useMemo(() => Object.fromEntries((bibliotecaSkills || []).map((s) => [s.id, s])), [bibliotecaSkills]);
+  const assignedRaw = normalizeAssignedSkills(ficha);
+  const assigned = useMemo(() => assignedRaw.map((entry) => {
+    const linked = entry.scope === "biblioteca" && entry.sourceSkillId ? bibById[entry.sourceSkillId] : null;
+    return { ...entry, effectiveSkill: linked || entry.skill };
+  }), [assignedRaw, bibById]);
   const assignedIds = new Set(assigned.map((s) => s.sourceSkillId).filter(Boolean));
 
   const filteredAssigned = useMemo(() => assigned.filter((entry) => {
-    const s = entry.skill || {};
+    const s = entry.effectiveSkill || {};
     const tgs = tagNames(s, tagsById).join(" ").toLowerCase();
     const full = `${s.nome || ""} ${s.descricao || ""} ${s.dono || ""} ${s.alcance || ""} ${s.rank || ""} ${s.essenciaAtribuida || ""} ${tgs}`.toLowerCase();
     if (query && !full.includes(query.toLowerCase())) return false;
@@ -185,7 +153,7 @@ export function TabSkills({ ficha, onUpdate, bibliotecaSkills = [], skillTags = 
   const assignFromLibrary = (skill) => {
     if (!skill?.id || assignedIds.has(skill.id)) return;
     const entry = { id: uid(), scope: "biblioteca", sourceSkillId: skill.id, skill: { ...skill, id: uid(), atualizado: Date.now() } };
-    persist([...assigned, entry]);
+    persist([...assignedRaw, entry]);
     setSelectedId(entry.id);
     setAssignOpen(false);
     onNotify?.(`Skill atribuída: ${skill.nome}`, "success");
@@ -193,14 +161,14 @@ export function TabSkills({ ficha, onUpdate, bibliotecaSkills = [], skillTags = 
 
   const openNewLocal = () => {
     const local = { id: uid(), scope: "local", sourceSkillId: "", skill: { ...novaSkill(), nome: "Nova Skill Local" } };
-    persist([...assigned, local]);
+    persist([...assignedRaw, local]);
     setEditingId(local.id);
     setSelectedId(local.id);
     setEditorOpen(true);
   };
 
   const unassign = (id) => {
-    persist(assigned.filter((s) => s.id !== id));
+    persist(assignedRaw.filter((s) => s.id !== id));
     onNotify?.("Skill desatribuída.", "info");
   };
 
@@ -208,23 +176,41 @@ export function TabSkills({ ficha, onUpdate, bibliotecaSkills = [], skillTags = 
 
   const saveSkill = (nextSkill) => {
     if (!editingEntry) return;
-    persist(assigned.map((s) => (s.id === editingEntry.id ? { ...s, skill: { ...nextSkill, atualizado: Date.now() } } : s)));
+    const next = assignedRaw.map((s) => {
+      if (s.id !== editingEntry.id) return s;
+      if (s.scope === "biblioteca") return { ...s, scope: "local", sourceSkillId: "", skill: { ...nextSkill, atualizado: Date.now() } };
+      return { ...s, skill: { ...nextSkill, atualizado: Date.now() } };
+    });
+    persist(next);
     setEditorOpen(false);
     setEditingId(null);
   };
 
   const cloneAsLocal = () => {
     if (!selected) return;
-    const clone = { id: uid(), scope: "local", sourceSkillId: "", skill: { ...selected.skill, id: uid(), nome: `${selected.skill?.nome || "Skill"} (local)` } };
-    persist([...assigned, clone]);
+    const base = selected.effectiveSkill || selected.skill;
+    const clone = { id: uid(), scope: "local", sourceSkillId: "", skill: { ...base, id: uid(), nome: `${base?.nome || "Skill"} (local)` } };
+    persist([...assignedRaw, clone]);
     setSelectedId(clone.id);
     onNotify?.("Skill clonada localmente.", "success");
   };
 
   const exportSelectedToBiblioteca = () => {
-    if (!selected?.skill) return;
-    onExportToBiblioteca?.({ ...selected.skill, id: uid(), nome: `${selected.skill.nome || "Skill"} (exportada)` });
+    if (!selected?.effectiveSkill) return;
+    onExportToBiblioteca?.({ ...selected.effectiveSkill, id: uid(), nome: `${selected.effectiveSkill.nome || "Skill"} (exportada)` });
     onNotify?.("Skill exportada para Biblioteca.", "success");
+  };
+
+  const linkChangesToBiblioteca = () => {
+    if (!selected?.effectiveSkill) return;
+    onConfirmAction?.({
+      title: "Linkar alterações na Biblioteca",
+      message: `Deseja aplicar as alterações de \"${selected.effectiveSkill.nome}\" diretamente na Biblioteca?`,
+      onConfirm: () => {
+        onLinkBibliotecaChange?.(selected);
+        onNotify?.("Biblioteca atualizada com alterações da ficha.", "success");
+      },
+    });
   };
 
   return (
@@ -257,23 +243,24 @@ export function TabSkills({ ficha, onUpdate, bibliotecaSkills = [], skillTags = 
           </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto", padding: 8, display: "grid", gap: 6 }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: 8, display: "grid", gap: 4 }}>
           {filteredAssigned.map((entry) => {
+            const skill = entry.effectiveSkill || entry.skill;
             const badge = skillBadge(entry.scope);
             const active = selected?.id === entry.id;
-            const iconSrc = skillIconSrc(entry.skill || {});
+            const iconSrc = skillIconSrc(skill || {});
             return (
-              <button key={entry.id} className={`ficha-skill-card ${active ? "active" : ""}`} onClick={() => setSelectedId(entry.id)} style={{ border: "1px solid #5c4a2c", borderRadius: 10, background: "#161008", padding: 8, textAlign: "left", cursor: "pointer", display: "grid", gridTemplateColumns: "42px 1fr", gap: 8, alignItems: "center" }}>
-                <div style={{ width: 42, height: 42, borderRadius: 8, border: "1px solid #6b5431", display: "grid", placeItems: "center", background: "#1d1409", overflow: "hidden" }}>
-                  {iconSrc ? <ImageViewport src={iconSrc} alt={entry.skill?.nome || "skill"} size={40} radius={6} adjust={entry.skill?.iconeAjuste} /> : <span style={{ fontSize: 20 }}>{entry.skill?.icone || "?"}</span>}
+              <button key={entry.id} className={`ficha-skill-card ${active ? "active" : ""}`} onClick={() => setSelectedId(entry.id)} style={{ border: "1px solid #5c4a2c", borderRadius: 9, background: "#161008", padding: "6px 7px", textAlign: "left", cursor: "pointer", display: "grid", gridTemplateColumns: "30px 1fr", gap: 7, alignItems: "center" }}>
+                <div style={{ width: 30, height: 30, borderRadius: 6, border: "1px solid #6b5431", display: "grid", placeItems: "center", background: "#1d1409", overflow: "hidden" }}>
+                  {iconSrc ? <ImageViewport src={iconSrc} alt={skill?.nome || "skill"} size={28} radius={4} adjust={skill?.iconeAjuste} /> : <span style={{ fontSize: 14 }}>{skill?.icone || "?"}</span>}
                 </div>
                 <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                    <div style={{ color: "#f1dfbe", fontFamily: "'Cinzel',serif", fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{entry.skill?.nome || "Skill"}</div>
-                    <span style={{ color: badge.color, fontFamily: "monospace", fontSize: 10 }}>{badge.text}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+                    <div style={{ color: "#f1dfbe", fontFamily: "'Cinzel',serif", fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{skill?.nome || "Skill"}</div>
+                    <span style={{ color: badge.color, fontFamily: "monospace", fontSize: 9 }}>{badge.text}</span>
                   </div>
-                  <div style={{ color: "#c9ab75", fontFamily: "monospace", fontSize: 10 }}>{entry.skill?.rank || "-"} · {entry.skill?.essenciaAtribuida || "Nenhuma"}</div>
-                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>{(entry.skill?.tagIds || []).slice(0, 3).map((tid) => tagsById[tid]).filter(Boolean).map((t) => <span key={t.id} style={{ padding: "1px 6px", borderRadius: 999, background: t.cor, color: "#fff", fontFamily: "monospace", fontSize: 9 }}>{t.nome}</span>)}</div>
+                  <div style={{ color: "#c9ab75", fontFamily: "monospace", fontSize: 9 }}>{skill?.rank || "-"} · {skill?.essenciaAtribuida || "Nenhuma"}</div>
+                  <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 2 }}>{(skill?.tagIds || []).slice(0, 3).map((tid) => tagsById[tid]).filter(Boolean).map((t) => <span key={t.id} style={{ padding: "0 5px", borderRadius: 999, background: t.cor, color: "#fff", fontFamily: "monospace", fontSize: 8 }}>{t.nome}</span>)}</div>
                 </div>
               </button>
             );
@@ -285,11 +272,12 @@ export function TabSkills({ ficha, onUpdate, bibliotecaSkills = [], skillTags = 
       <div style={{ border: "1px solid #4b3a19", borderRadius: 12, background: "#0b0906", padding: 12, display: "grid", gap: 10 }}>
         {selected ? (
           <>
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
               <HoverButton onClick={exportSelectedToBiblioteca} style={btnStyle({ borderColor: "#c5a16966", color: "#f3d79f", padding: "4px 10px" })}>Exportar para Biblioteca</HoverButton>
+              <HoverButton onClick={linkChangesToBiblioteca} style={btnStyle({ borderColor: "#63a0d166", color: "#9ad4ff", padding: "4px 10px" })}>Linkar Alterações</HoverButton>
             </div>
             <SkillDetalhe
-              skill={selected.skill}
+              skill={selected.effectiveSkill || selected.skill}
               tagsById={tagsById}
               onEdit={() => { setEditingId(selected.id); setEditorOpen(true); }}
               onDup={cloneAsLocal}
@@ -304,7 +292,7 @@ export function TabSkills({ ficha, onUpdate, bibliotecaSkills = [], skillTags = 
 
       {editorOpen && editingEntry && (
         <SkillEditor
-          skill={editingEntry.skill}
+          skill={editingEntry.effectiveSkill || editingEntry.skill}
           tags={skillTags}
           onClose={() => { setEditorOpen(false); setEditingId(null); }}
           onSave={saveSkill}
