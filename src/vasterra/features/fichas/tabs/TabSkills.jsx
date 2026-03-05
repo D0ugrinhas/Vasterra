@@ -3,6 +3,7 @@ import { HoverButton } from "../../../components/primitives/Interactive";
 import { uid, novaSkill } from "../../../core/factories";
 import { btnStyle, G, inpStyle } from "../../../ui/theme";
 import { SkillEditor } from "../../biblioteca/SkillEditor";
+import { SkillDetalhe } from "../../biblioteca/SkillDetalhe";
 import { resolveSkillCode } from "./skillCodeResolver";
 import { ARSENAL_RANKS } from "../../../data/gameData";
 
@@ -27,54 +28,19 @@ function tagNames(skill, tagsById) {
   return (skill?.tagIds || []).map((id) => tagsById[id]?.nome || "").filter(Boolean);
 }
 
-function SkillFichaDetalhe({ entry, tagsById, ficha, onEdit, onUnassign, onCloneLocal }) {
+function ResolvedCodePanel({ entry, ficha }) {
   const [showResolved, setShowResolved] = useState(false);
-  const badge = skillBadge(entry?.scope);
   const skill = entry?.skill || {};
   const preview = useMemo(() => resolveSkillCode(skill.descricaoCode || "", ficha), [skill.descricaoCode, ficha]);
-
-  if (!entry) {
-    return <div style={{ color: G.muted, fontFamily: "monospace" }}>Nenhuma skill selecionada.</div>;
-  }
-
+  if (!entry) return null;
   return (
-    <div style={{ display: "grid", gap: 10 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-        <div>
-          <div style={{ fontFamily: "'Cinzel Decorative',serif", color: G.gold, fontSize: 20 }}>{skill.nome || "Skill sem nome"}</div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", fontFamily: "monospace", fontSize: 11 }}>
-            <span style={{ color: badge.color }}>{badge.text}</span>
-            <span style={{ color: "#89b4dd" }}>{skill.rank || "Sem rank"}</span>
-            <span style={{ color: "#89b4dd" }}>{skill.essenciaAtribuida || "Nenhuma"}</span>
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          <HoverButton onClick={onEdit} style={btnStyle({ padding: "4px 10px" })}>Editar</HoverButton>
-          <HoverButton onClick={onCloneLocal} style={btnStyle({ borderColor: "#6e60d166", color: "#cabfff", padding: "4px 10px" })}>Clonar local</HoverButton>
-          <HoverButton onClick={onUnassign} style={btnStyle({ borderColor: "#e74c3c66", color: "#ff9087", padding: "4px 10px" })}>Desatribuir</HoverButton>
-        </div>
-      </div>
-
-      <div style={{ border: "1px solid #344761", borderRadius: 12, background: "linear-gradient(180deg,#0f1a2d,#0b1322)", padding: 10 }}>
-        <div style={{ color: "#d8e9ff", fontFamily: "monospace", fontSize: 12, marginBottom: 6 }}>Tags</div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {tagNames(skill, tagsById).map((name) => <span key={name} style={{ padding: "3px 9px", borderRadius: 999, border: "1px solid #3f5d83", color: "#b9d8ff", fontFamily: "monospace", fontSize: 11 }}>{name}</span>)}
-          {tagNames(skill, tagsById).length === 0 && <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Sem tags</span>}
-        </div>
-      </div>
-
-      <div style={{ border: "1px solid #344761", borderRadius: 12, background: "linear-gradient(180deg,#0f1a2d,#0b1322)", padding: 10, color: "#a6c8ed", fontFamily: "monospace", whiteSpace: "pre-wrap", minHeight: 80 }}>
-        {skill.descricao || "Sem descrição."}
-      </div>
-
-      <div style={{ border: "1px solid #344761", borderRadius: 12, background: "#0b1424", position: "relative" }}>
-        <button onClick={() => setShowResolved((v) => !v)} title="Alternar código/resolvido" style={{ position: "absolute", right: 8, top: 8, border: "1px solid #47658f", background: "#10213a", color: "#9ec6ff", borderRadius: 999, width: 24, height: 24, cursor: "pointer" }}>👁</button>
-        <pre style={{ margin: 0, padding: "12px 38px 12px 12px", color: "#90c7ff", fontFamily: "monospace", whiteSpace: "pre-wrap", minHeight: 130 }}>
-          {showResolved
-            ? `${preview.resolved.join("\n")}${preview.resolved.length ? "\n\n" : ""}${preview.resolvedCode || "// sem descrição code"}`
-            : (skill.descricaoCode || "// sem descrição code")}
-        </pre>
-      </div>
+    <div style={{ border: "1px solid #5c4a2c", borderRadius: 12, background: "#101827", position: "relative" }}>
+      <button onClick={() => setShowResolved((v) => !v)} title="Alternar código/resolvido" style={{ position: "absolute", right: 8, top: 8, border: "1px solid #47658f", background: "#10213a", color: "#9ec6ff", borderRadius: 999, width: 24, height: 24, cursor: "pointer" }}>👁</button>
+      <pre style={{ margin: 0, padding: "12px 38px 12px 12px", color: "#8fc8ff", fontFamily: "monospace", whiteSpace: "pre-wrap", minHeight: 110 }}>
+        {showResolved
+          ? `${preview.resolved.join("\n")}${preview.resolved.length ? "\n\n" : ""}${preview.resolvedCode || "// sem descrição code"}`
+          : (skill.descricaoCode || "// sem descrição code")}
+      </pre>
     </div>
   );
 }
@@ -274,6 +240,7 @@ export function TabSkills({ ficha, onUpdate, bibliotecaSkills = [], skillTags = 
                   <span style={{ color: badge.color, fontFamily: "monospace", fontSize: 10 }}>{badge.text}</span>
                 </div>
                 <div style={{ color: "#8fb5dd", fontFamily: "monospace", fontSize: 10 }}>{entry.skill?.rank || "-"} · {entry.skill?.essenciaAtribuida || "Nenhuma"}</div>
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>{(entry.skill?.tagIds || []).slice(0, 3).map((tid) => tagsById[tid]).filter(Boolean).map((t) => <span key={t.id} style={{ padding: "1px 6px", borderRadius: 999, background: t.cor, color: "#fff", fontFamily: "monospace", fontSize: 9 }}>{t.nome}</span>)}</div>
               </button>
             );
           })}
@@ -281,15 +248,19 @@ export function TabSkills({ ficha, onUpdate, bibliotecaSkills = [], skillTags = 
         </div>
       </div>
 
-      <div style={{ border: "1px solid #2f435f", borderRadius: 12, background: "radial-gradient(circle at top left,#132338,#0a1220 52%,#070b14)", padding: 12 }}>
-        <SkillFichaDetalhe
-          entry={selected}
-          tagsById={tagsById}
-          ficha={ficha}
-          onEdit={() => { if (!selected) return; setEditingId(selected.id); setEditorOpen(true); }}
-          onUnassign={() => selected && unassign(selected.id)}
-          onCloneLocal={cloneAsLocal}
-        />
+      <div style={{ border: "1px solid #2f435f", borderRadius: 12, background: "radial-gradient(circle at top left,#132338,#0a1220 52%,#070b14)", padding: 12, display: "grid", gap: 10 }}>
+        {selected ? (
+          <>
+            <SkillDetalhe
+              skill={selected.skill}
+              tagsById={tagsById}
+              onEdit={() => { setEditingId(selected.id); setEditorOpen(true); }}
+              onDup={cloneAsLocal}
+              onDel={() => unassign(selected.id)}
+            />
+            <ResolvedCodePanel entry={selected} ficha={ficha} />
+          </>
+        ) : <div style={{ color: G.muted, fontFamily: "monospace" }}>Nenhuma skill selecionada.</div>}
       </div>
 
       <AssignModal open={assignOpen} onClose={() => setAssignOpen(false)} pool={assignablePool} onPick={assignFromLibrary} tagsById={tagsById} />
