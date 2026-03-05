@@ -15,7 +15,7 @@ import { novaFicha, novoItem, novaSkill, novaSkillTag, uid } from "./core/factor
 
 
 const SETTINGS_KEY = "vasterra:settings";
-const defaultSettings = { storageNamespace: "vasterra", controls: { createNodeHotkey: "a", linkModeHotkey: "l" } };
+const defaultSettings = { storageNamespace: "vasterra", controls: { createNodeHotkey: "a", linkModeHotkey: "l" }, view: { mobilePreview: false } };
 
 const scopedKey = (ns, key) => `${(ns || "vasterra").trim()}:${key}`;
 
@@ -235,7 +235,7 @@ export default function VasterraApp() {
   }
 
   return (
-    <div style={{ background: G.bg, minHeight: "100vh", color: G.text }}>
+    <div className={settings.view?.mobilePreview ? "v-mobile-preview" : ""} style={{ background: G.bg, minHeight: "100vh", color: G.text }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=Cinzel+Decorative:wght@400;700&display=swap');
         * { box-sizing: border-box; }
@@ -251,9 +251,19 @@ export default function VasterraApp() {
         ::-webkit-scrollbar-track { background: #0a0a0a; }
         ::-webkit-scrollbar-thumb { background: rgba(200,169,110,.25); border-radius: 2px; }
         select option { background: #0a0a0a; color: #e8d5b0; }
+        .v-mobile-preview { max-width: 430px; margin: 0 auto; border-left: 1px solid #2a2a2a; border-right: 1px solid #2a2a2a; }
+        .v-mobile-preview .v-nav-wrap { height: auto !important; min-height: 54px; padding: 8px 10px !important; gap: 10px !important; flex-wrap: wrap; }
+        .v-mobile-preview .v-nav-btn { height: 34px !important; font-size: 11px !important; letter-spacing: 1px !important; }
+        .v-mobile-preview input, .v-mobile-preview select, .v-mobile-preview textarea, .v-mobile-preview button { font-size: 14px; }
+        .v-mobile-preview .v-responsive-grid-3 { grid-template-columns: 1fr !important; }
+        @media (max-width: 900px) {
+          .v-nav-wrap { height: auto !important; min-height: 54px; padding: 8px 10px !important; gap: 10px !important; flex-wrap: wrap; }
+          .v-nav-btn { height: 34px !important; font-size: 11px !important; letter-spacing: 1px !important; }
+          .v-responsive-grid-3 { grid-template-columns: 1fr !important; }
+        }
       `}</style>
 
-      <div style={{ height: 54, borderBottom: "1px solid " + G.border, background: "#060606", display: "flex", alignItems: "center", padding: "0 20px", gap: 24, position: "sticky", top: 0, zIndex: 50 }}>
+      <div className="v-nav-wrap" style={{ height: 54, borderBottom: "1px solid " + G.border, background: "#060606", display: "flex", alignItems: "center", padding: "0 20px", gap: 24, position: "sticky", top: 0, zIndex: 50 }}>
         <button onClick={() => setSection("menu")} style={{ marginRight: 8, display: "flex", flexDirection: "column", lineHeight: 1, background: "transparent", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}><div style={{ fontFamily: "'Cinzel Decorative',serif", fontSize: 16, color: G.gold, letterSpacing: 4 }}>VASTERRA</div><div style={{ fontFamily: "'Cinzel',serif", fontSize: 9, color: "#7aa9d8", letterSpacing: 2, marginTop: 3 }}>Vasterra é Vasto</div></button>
         {[{ id: "fichas", label: "FICHAS" }, { id: "arsenal", label: "ARSENAL" }, { id: "biblioteca", label: "BIBLIOTECA" }, { id: "caldeirao", label: "CALDEIRÃO" }, { id: "vasto", label: "VASTO" }].map((s) => (
           <HoverButton
@@ -322,6 +332,10 @@ export default function VasterraApp() {
 
             {settingsTab === "controles" && (
               <div style={{ display: "grid", gap: 8 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "monospace", fontSize: 12, color: "#b6ddff" }}>
+                  <input type="checkbox" checked={!!settings.view?.mobilePreview} onChange={(e) => setSettings((p) => ({ ...p, view: { ...(p.view || {}), mobilePreview: e.target.checked } }))} />
+                  Visualização no Mobile
+                </label>
                 <label style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>Atalho para criar nós no canvas de combate</label>
                 <input
                   value={settings.controls?.createNodeHotkey || "a"}

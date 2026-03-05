@@ -50,7 +50,7 @@ export function BibliotecaSection({ skills = [], tags = [], onSkills, onNotify, 
   };
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "420px 1fr", height: "calc(100vh - 54px)", background: "radial-gradient(circle at top left,#2a2210,#140f08 45%,#0a0805)" }}>
+    <div className="v-bib-layout" style={{ display: "grid", gridTemplateColumns: "420px 1fr", height: "calc(100vh - 54px)", background: "radial-gradient(circle at top left,#2a2210,#140f08 45%,#0a0805)" }}>
       <style>{`
         @keyframes bPulse {0%{box-shadow:0 0 0 rgba(201,163,74,.1)}50%{box-shadow:0 0 18px rgba(201,163,74,.26)}100%{box-shadow:0 0 0 rgba(201,163,74,.1)}}
         @keyframes bParticles { from { transform: translateX(-12vw) translateY(0); opacity:.12; } to { transform: translateX(112vw) translateY(-8px); opacity:.32; } }
@@ -58,6 +58,7 @@ export function BibliotecaSection({ skills = [], tags = [], onSkills, onNotify, 
         .bib-card:hover { transform: translateY(-1px); border-color:#b99345a6; }
         .bib-card.active { animation: bPulse 2.2s infinite ease-in-out; }
         .b-scroll::-webkit-scrollbar-thumb { background: rgba(201,163,74,.35); }
+        @media (max-width: 900px) { .v-bib-layout { grid-template-columns: 1fr !important; height: auto !important; } }
       `}</style>
       <div style={{ position: "relative", borderRight: `1px solid #4b3a19`, display: "flex", flexDirection: "column", overflow: "hidden", background: "#0b0906" }}>
         <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden" }}>

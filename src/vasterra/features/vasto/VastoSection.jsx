@@ -182,12 +182,13 @@ export function VastoSection({ prestigios = {}, onPrestigios, skillTags = [], on
           50% { background-position: 100% 50%; }
           100% { background-position: 0% 50%; }
         }
+        @media (max-width: 980px) { .v-vasto-layout { grid-template-columns: 1fr !important; } }
       `}</style>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <HoverButton onClick={() => setScreen("home")} style={btnStyle({ padding: "4px 10px" })}>← Voltar</HoverButton>
         <span style={{ fontFamily: "'Cinzel',serif", color: G.gold, padding: "2px 10px", borderRadius: 999, background: "linear-gradient(90deg,#ffffff10,#7d4dff22,#ffffff10)", backgroundSize: "200% 200%", animation: "vastoNebulaFlow 7s ease-in-out infinite" }}>Criador de Prestígios</span>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "290px 1fr 360px", gap: 10, minHeight: "calc(100vh - 120px)" }}>
+      <div className="v-vasto-layout" style={{ display: "grid", gridTemplateColumns: "290px 1fr 360px", gap: 10, minHeight: "calc(100vh - 120px)" }}>
         <AstralHudCard>
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filtrar perícia..." style={{ ...inpStyle(), marginBottom: 6 }} />
           <select value={tag} onChange={(e) => setTag(e.target.value)} style={{ ...inpStyle(), marginBottom: 8 }}>{tags.map((t) => <option key={t}>{t}</option>)}</select>

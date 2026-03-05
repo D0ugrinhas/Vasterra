@@ -61,6 +61,13 @@ export function PrestigioTreeCanvas({
 
   const toWorld = (local) => ({ x: local.x - viewport.x, y: local.y - viewport.y });
 
+  const pointerXY = (e) => {
+    const t = e.touches?.[0] || e.changedTouches?.[0];
+    if (t) return { x: t.clientX, y: t.clientY };
+    return { x: e.clientX, y: e.clientY };
+  };
+
+
   const bgStars = useMemo(() => {
     const mk = (count, sizeMin, sizeVar, alphaMin, alphaVar, speedMin, speedVar) =>
       Array.from({ length: count }).map((_, i) => ({
@@ -130,19 +137,24 @@ export function PrestigioTreeCanvas({
   return (
     <div
       ref={wrapRef}
-      onMouseMove={(e) => {
+      onPointerMove={(e) => {
         const local = toLocal(e);
         const world = toWorld(local);
         setPointerWorld(world);
         if (dragNode && editable) onMoveNode?.(dragNode.id, { x: Math.max(20, Math.round(world.x)), y: Math.max(20, Math.round(world.y)) });
-        if (dragPan) setViewport({ x: Math.round(dragPan.viewX + (e.clientX - dragPan.startX)), y: Math.round(dragPan.viewY + (e.clientY - dragPan.startY)) });
+        if (dragPan) {
+          const pt = pointerXY(e);
+          setViewport({ x: Math.round(dragPan.viewX + (pt.x - dragPan.startX)), y: Math.round(dragPan.viewY + (pt.y - dragPan.startY)) });
+        }
       }}
-      onMouseUp={() => { setDragNode(null); setDragPan(null); }}
-      onMouseLeave={() => { setDragNode(null); setDragPan(null); }}
-      onMouseDown={(e) => {
-        if (e.button === 1) {
+      onPointerUp={() => { setDragNode(null); setDragPan(null); }}
+      onPointerLeave={() => { setDragNode(null); setDragPan(null); }}
+      onPointerDown={(e) => {
+        const pt = pointerXY(e);
+        const isTouch = e.pointerType === "touch";
+        if (e.button === 1 || isTouch) {
           e.preventDefault();
-          setDragPan({ startX: e.clientX, startY: e.clientY, viewX: viewport.x, viewY: viewport.y });
+          setDragPan({ startX: pt.x, startY: pt.y, viewX: viewport.x, viewY: viewport.y });
           return;
         }
         if (linkMode) onLinkFrom?.(null);
@@ -159,6 +171,7 @@ export function PrestigioTreeCanvas({
         cursor: dragPan ? "grabbing" : "default",
         transform: flashCanvas ? "scale(1.01)" : "scale(1)",
         transition: "transform .34s ease, box-shadow .34s ease",
+        touchAction: "none",
       }}
     >
       <style>{`
@@ -205,10 +218,10 @@ export function PrestigioTreeCanvas({
               <button
                 onMouseEnter={() => setHoverNodeId(node.id)}
                 onMouseLeave={() => setHoverNodeId(null)}
-                onMouseDown={(e) => {
+                onPointerDown={(e) => {
                   e.stopPropagation();
                   onSelectNode?.(node.id);
-                  if (editable && !linkMode && e.button === 0) setDragNode(node);
+                  if (editable && !linkMode && (e.button === 0 || e.pointerType === "touch")) setDragNode(node);
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
