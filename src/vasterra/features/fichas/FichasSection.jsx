@@ -25,7 +25,7 @@ export const FICHA_TABS = [
   { id: "skills", label: "Skills" },
 ];
 
-export function FichasSection({ fichas, onFichas, arsenal, efeitosCaldeirao = [], prestigios = {}, bibliotecaSkills = [], skillTags = [], onArsenal, onNotify, onConfirmAction, onOpenCaldeirao, createNodeHotkey = "a" }) {
+export function FichasSection({ fichas, onFichas, arsenal, efeitosCaldeirao = [], prestigios = {}, bibliotecaSkills = [], skillTags = [], onBibliotecaSkills, onArsenal, onNotify, onConfirmAction, onOpenCaldeirao, createNodeHotkey = "a" }) {
   const [sel, setSel] = useState(null);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState("status");
@@ -245,7 +245,7 @@ export function FichasSection({ fichas, onFichas, arsenal, efeitosCaldeirao = []
             {tab === "identidade" && <TabIdentidade ficha={ficha} onUpdate={updateFicha} />}
             {tab === "essencia" && <TabEssencia ficha={ficha} onUpdate={updateFicha} />}
             {tab === "inventario" && <TabInventario ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} efeitosCaldeirao={efeitosCaldeirao} onArsenal={onArsenal} onNotify={onNotify} onConfirmAction={onConfirmAction} onOpenCaldeirao={onOpenCaldeirao} />}
-            {tab === "skills" && <TabSkills ficha={ficha} onUpdate={updateFicha} bibliotecaSkills={bibliotecaSkills} skillTags={skillTags} onNotify={onNotify} />}
+            {tab === "skills" && <TabSkills ficha={ficha} onUpdate={updateFicha} bibliotecaSkills={bibliotecaSkills} skillTags={skillTags} onNotify={onNotify} onExportToBiblioteca={(skill) => onBibliotecaSkills?.([skill, ...(bibliotecaSkills || [])])} />}
           </div>
         </>
       )}
