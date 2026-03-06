@@ -286,7 +286,12 @@ export default function VasterraApp() {
     };
 
     if (mode === "substituir") {
-      setFichas(norm.fichas); setArsenal(norm.arsenal); setEfeitosCaldeirao(norm.efeitosCaldeirao); setBibliotecaSkills(norm.bibliotecaSkills); setSkillsTags(norm.skillsTags); setPrestigios(norm.prestigios);
+      setFichas(norm.fichas);
+      setArsenal(norm.arsenal);
+      setEfeitosCaldeirao(norm.efeitosCaldeirao);
+      setBibliotecaSkills(norm.bibliotecaSkills);
+      setSkillsTags(norm.skillsTags);
+      setPrestigios(norm.prestigios);
       persistAllNow({ fichas: norm.fichas, arsenal: norm.arsenal, efeitosCaldeirao: norm.efeitosCaldeirao, bibliotecaSkills: norm.bibliotecaSkills, skillsTags: norm.skillsTags, prestigios: norm.prestigios });
       return;
     }
@@ -298,16 +303,20 @@ export default function VasterraApp() {
     };
 
     if (mode === "adicionar") {
-      setFichas((p) => mergeArr(p, norm.fichas));
-      setArsenal((p) => mergeArr(p, norm.arsenal));
-      setEfeitosCaldeirao((p) => mergeArr(p, norm.efeitosCaldeirao));
-      setBibliotecaSkills((p) => mergeArr(p, norm.bibliotecaSkills));
-      setSkillsTags((p) => mergeArr(p, norm.skillsTags));
-      setPrestigios((p) => {
-        const next = { ...(p || {}), ...Object.fromEntries(Object.entries(norm.prestigios).filter(([k]) => !(p || {})[k])) };
-        persistAllNow({ prestigios: next });
-        return next;
-      });
+      const nextFichas = mergeArr(fichas, norm.fichas);
+      const nextArsenal = mergeArr(arsenal, norm.arsenal);
+      const nextCaldeirao = mergeArr(efeitosCaldeirao, norm.efeitosCaldeirao);
+      const nextBiblioteca = mergeArr(bibliotecaSkills, norm.bibliotecaSkills);
+      const nextTags = mergeArr(skillsTags, norm.skillsTags);
+      const nextPrestigios = { ...(prestigios || {}), ...Object.fromEntries(Object.entries(norm.prestigios).filter(([k]) => !(prestigios || {})[k])) };
+
+      setFichas(nextFichas);
+      setArsenal(nextArsenal);
+      setEfeitosCaldeirao(nextCaldeirao);
+      setBibliotecaSkills(nextBiblioteca);
+      setSkillsTags(nextTags);
+      setPrestigios(nextPrestigios);
+      persistAllNow({ fichas: nextFichas, arsenal: nextArsenal, efeitosCaldeirao: nextCaldeirao, bibliotecaSkills: nextBiblioteca, skillsTags: nextTags, prestigios: nextPrestigios });
       return;
     }
 
@@ -316,17 +325,22 @@ export default function VasterraApp() {
       inc.forEach((x) => { if (review[`${group}:${x.id}`]) map.set(x.id, x); });
       return [...map.values()];
     };
-    setFichas((p) => upsertChecked(p, norm.fichas, "fichas"));
-    setArsenal((p) => upsertChecked(p, norm.arsenal, "arsenal"));
-    setEfeitosCaldeirao((p) => upsertChecked(p, norm.efeitosCaldeirao, "efeitosCaldeirao"));
-    setBibliotecaSkills((p) => upsertChecked(p, norm.bibliotecaSkills, "bibliotecaSkills"));
-    setSkillsTags((p) => upsertChecked(p, norm.skillsTags, "skillsTags"));
-    setPrestigios((p) => {
-      const next = { ...(p || {}) };
-      Object.entries(norm.prestigios).forEach(([k, v]) => { if (review[`prestigios:${k}`]) next[k] = v; });
-      persistAllNow({ prestigios: next });
-      return next;
-    });
+
+    const nextFichas = upsertChecked(fichas, norm.fichas, "fichas");
+    const nextArsenal = upsertChecked(arsenal, norm.arsenal, "arsenal");
+    const nextCaldeirao = upsertChecked(efeitosCaldeirao, norm.efeitosCaldeirao, "efeitosCaldeirao");
+    const nextBiblioteca = upsertChecked(bibliotecaSkills, norm.bibliotecaSkills, "bibliotecaSkills");
+    const nextTags = upsertChecked(skillsTags, norm.skillsTags, "skillsTags");
+    const nextPrestigios = { ...(prestigios || {}) };
+    Object.entries(norm.prestigios).forEach(([k, v]) => { if (review[`prestigios:${k}`]) nextPrestigios[k] = v; });
+
+    setFichas(nextFichas);
+    setArsenal(nextArsenal);
+    setEfeitosCaldeirao(nextCaldeirao);
+    setBibliotecaSkills(nextBiblioteca);
+    setSkillsTags(nextTags);
+    setPrestigios(nextPrestigios);
+    persistAllNow({ fichas: nextFichas, arsenal: nextArsenal, efeitosCaldeirao: nextCaldeirao, bibliotecaSkills: nextBiblioteca, skillsTags: nextTags, prestigios: nextPrestigios });
   };
 
   const importBackup = (file) => {
