@@ -16,9 +16,10 @@ import { novaFicha, novoItem, novaSkill, novaSkillTag, uid } from "./core/factor
 
 const SETTINGS_KEY = "vasterra:settings";
 const SAVE_PROFILES_KEY = "vasterra:saveProfiles";
-const defaultSettings = { storageNamespace: "vasterra", controls: { createNodeHotkey: "a", linkModeHotkey: "l" }, view: { mobilePreview: false } };
+const DATA_NS = "vasterra";
+const defaultSettings = { controls: { createNodeHotkey: "a", linkModeHotkey: "l" }, view: { mobilePreview: false } };
 
-const scopedKey = (ns, key) => `${(ns || "vasterra").trim()}:${key}`;
+const scopedKey = (key) => `${DATA_NS}:${key}`;
 
 function normalizeItem(item = {}) {
   const base = novoItem();
@@ -128,17 +129,16 @@ export default function VasterraApp() {
     setPersistReady(false);
     (async () => {
       const cfg = (await stGet(SETTINGS_KEY)) || defaultSettings;
-      const ns = cfg.storageNamespace || "vasterra";
-      setSettings({ ...defaultSettings, ...cfg });
+      setSettings({ ...defaultSettings, ...(cfg || {}) });
       const profiles = (await stGet(SAVE_PROFILES_KEY)) || [];
       setSaveProfiles(Array.isArray(profiles) ? profiles : []);
 
-      const f = await stGet(scopedKey(ns, "fichas"));
-      const a = await stGet(scopedKey(ns, "arsenal"));
-      const c = await stGet(scopedKey(ns, "caldeirao"));
-      const p = await stGet(scopedKey(ns, "prestigios"));
-      const b = await stGet(scopedKey(ns, "biblioteca"));
-      const t = await stGet(scopedKey(ns, "skilltags"));
+      const f = await stGet(scopedKey("fichas"));
+      const a = await stGet(scopedKey("arsenal"));
+      const c = await stGet(scopedKey("caldeirao"));
+      const p = await stGet(scopedKey("prestigios"));
+      const b = await stGet(scopedKey("biblioteca"));
+      const t = await stGet(scopedKey("skilltags"));
 
       const fLegacy = !f ? await stGet("vasterra:fichas") : null;
       const aLegacy = !a ? await stGet("vasterra:arsenal") : null;
@@ -165,12 +165,12 @@ export default function VasterraApp() {
     })();
   }, []);
 
-  useEffect(() => { if (persistReady) stSet(scopedKey(settings.storageNamespace, "fichas"), fichas); }, [fichas, persistReady, settings.storageNamespace]);
-  useEffect(() => { if (persistReady) stSet(scopedKey(settings.storageNamespace, "arsenal"), arsenal); }, [arsenal, persistReady, settings.storageNamespace]);
-  useEffect(() => { if (persistReady) stSet(scopedKey(settings.storageNamespace, "caldeirao"), efeitosCaldeirao); }, [efeitosCaldeirao, persistReady, settings.storageNamespace]);
-  useEffect(() => { if (persistReady) stSet(scopedKey(settings.storageNamespace, "prestigios"), prestigios); }, [prestigios, persistReady, settings.storageNamespace]);
-  useEffect(() => { if (persistReady) stSet(scopedKey(settings.storageNamespace, "biblioteca"), bibliotecaSkills); }, [bibliotecaSkills, persistReady, settings.storageNamespace]);
-  useEffect(() => { if (persistReady) stSet(scopedKey(settings.storageNamespace, "skilltags"), skillsTags); }, [skillsTags, persistReady, settings.storageNamespace]);
+  useEffect(() => { if (persistReady) stSet(scopedKey("fichas"), fichas); }, [fichas, persistReady]);
+  useEffect(() => { if (persistReady) stSet(scopedKey("arsenal"), arsenal); }, [arsenal, persistReady]);
+  useEffect(() => { if (persistReady) stSet(scopedKey("caldeirao"), efeitosCaldeirao); }, [efeitosCaldeirao, persistReady]);
+  useEffect(() => { if (persistReady) stSet(scopedKey("prestigios"), prestigios); }, [prestigios, persistReady]);
+  useEffect(() => { if (persistReady) stSet(scopedKey("biblioteca"), bibliotecaSkills); }, [bibliotecaSkills, persistReady]);
+  useEffect(() => { if (persistReady) stSet(scopedKey("skilltags"), skillsTags); }, [skillsTags, persistReady]);
   useEffect(() => { if (persistReady) stSet(SETTINGS_KEY, settings); }, [settings, persistReady]);
   useEffect(() => { if (persistReady) stSet(SAVE_PROFILES_KEY, saveProfiles); }, [saveProfiles, persistReady]);
 
@@ -190,7 +190,7 @@ export default function VasterraApp() {
   const buildCurrentPayload = () => ({
     version: 2,
     exportedAt: Date.now(),
-    namespace: settings.storageNamespace,
+    namespace: DATA_NS,
     fichas,
     arsenal,
     efeitosCaldeirao,
@@ -321,23 +321,6 @@ export default function VasterraApp() {
     reader.readAsText(file);
   };
 
-  const applyNamespace = async (nsValue) => {
-    const ns = (nsValue || "vasterra").trim() || "vasterra";
-    const f = await stGet(scopedKey(ns, "fichas"));
-    const a = await stGet(scopedKey(ns, "arsenal"));
-    const c = await stGet(scopedKey(ns, "caldeirao"));
-    const p = await stGet(scopedKey(ns, "prestigios"));
-    const b = await stGet(scopedKey(ns, "biblioteca"));
-    const t = await stGet(scopedKey(ns, "skilltags"));
-    setSettings((p) => ({ ...p, storageNamespace: ns }));
-    setFichas((f || []).map(normalizeFicha));
-    setArsenal((a || []).map(normalizeItem));
-    setEfeitosCaldeirao((c || []).map(normalizeEffect));
-    setPrestigios(p || {});
-    setBibliotecaSkills((b || []).map(normalizeSkill));
-    setSkillsTags((t || []).map(normalizeSkillTag));
-    pushToast(`Espaço de dados alterado para: ${ns}`, "success");
-  };
 
   if (!loaded) {
     return (
@@ -463,12 +446,7 @@ export default function VasterraApp() {
             {settingsTab === "dados" && (
               <>
                 <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>
-                  Dica: no navegador não há acesso direto a diretórios do sistema por segurança.
-                  Em vez disso, use “espaço de dados” (namespace) + backup/importação JSON.
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
-                  <input value={settings.storageNamespace || "vasterra"} onChange={(e) => setSettings((p) => ({ ...p, storageNamespace: e.target.value }))} placeholder="Namespace de dados" style={{ background: "#0a0a0a", border: "1px solid #333", color: G.text, borderRadius: 8, padding: "8px 10px" }} />
-                  <HoverButton onClick={() => applyNamespace(settings.storageNamespace)}>Aplicar</HoverButton>
+                  Dica: seus dados agora usam salvamento automático local + perfil de saves nomeados.
                 </div>
                 <div style={{ border: "1px solid #2e4465", borderRadius: 10, padding: 10, background: "linear-gradient(180deg,#0b1220,#0a101a)", display: "grid", gap: 8 }}>
                   <div style={{ fontFamily: "'Cinzel',serif", color: G.gold, letterSpacing: 1 }}>Saves com apelido</div>
