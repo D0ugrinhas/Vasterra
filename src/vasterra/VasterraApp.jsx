@@ -187,6 +187,27 @@ export default function VasterraApp() {
     pushToast("Efeito salvo no Caldeirão.", "success");
   };
 
+  const persistAllNow = (next = {}) => {
+    const data = {
+      fichas: next.fichas ?? fichas,
+      arsenal: next.arsenal ?? arsenal,
+      efeitosCaldeirao: next.efeitosCaldeirao ?? efeitosCaldeirao,
+      prestigios: next.prestigios ?? prestigios,
+      bibliotecaSkills: next.bibliotecaSkills ?? bibliotecaSkills,
+      skillsTags: next.skillsTags ?? skillsTags,
+      settings: next.settings ?? settings,
+      saveProfiles: next.saveProfiles ?? saveProfiles,
+    };
+    stSet(scopedKey("fichas"), data.fichas);
+    stSet(scopedKey("arsenal"), data.arsenal);
+    stSet(scopedKey("caldeirao"), data.efeitosCaldeirao);
+    stSet(scopedKey("prestigios"), data.prestigios);
+    stSet(scopedKey("biblioteca"), data.bibliotecaSkills);
+    stSet(scopedKey("skilltags"), data.skillsTags);
+    stSet(SETTINGS_KEY, data.settings);
+    stSet(SAVE_PROFILES_KEY, data.saveProfiles);
+  };
+
   const buildCurrentPayload = () => ({
     version: 2,
     exportedAt: Date.now(),
@@ -208,7 +229,11 @@ export default function VasterraApp() {
 
   const saveProfile = () => {
     const profile = makeProfile(saveNickname || "Vasterra-Skills");
-    setSaveProfiles((prev) => [profile, ...(prev || [])]);
+    setSaveProfiles((prev) => {
+      const next = [profile, ...(prev || [])];
+      persistAllNow({ saveProfiles: next });
+      return next;
+    });
     pushToast(`Save criado: ${profile.nickname}`, "success");
   };
 
@@ -262,6 +287,7 @@ export default function VasterraApp() {
 
     if (mode === "substituir") {
       setFichas(norm.fichas); setArsenal(norm.arsenal); setEfeitosCaldeirao(norm.efeitosCaldeirao); setBibliotecaSkills(norm.bibliotecaSkills); setSkillsTags(norm.skillsTags); setPrestigios(norm.prestigios);
+      persistAllNow({ fichas: norm.fichas, arsenal: norm.arsenal, efeitosCaldeirao: norm.efeitosCaldeirao, bibliotecaSkills: norm.bibliotecaSkills, skillsTags: norm.skillsTags, prestigios: norm.prestigios });
       return;
     }
 
@@ -277,7 +303,11 @@ export default function VasterraApp() {
       setEfeitosCaldeirao((p) => mergeArr(p, norm.efeitosCaldeirao));
       setBibliotecaSkills((p) => mergeArr(p, norm.bibliotecaSkills));
       setSkillsTags((p) => mergeArr(p, norm.skillsTags));
-      setPrestigios((p) => ({ ...(p || {}), ...Object.fromEntries(Object.entries(norm.prestigios).filter(([k]) => !(p || {})[k])) }));
+      setPrestigios((p) => {
+        const next = { ...(p || {}), ...Object.fromEntries(Object.entries(norm.prestigios).filter(([k]) => !(p || {})[k])) };
+        persistAllNow({ prestigios: next });
+        return next;
+      });
       return;
     }
 
@@ -294,6 +324,7 @@ export default function VasterraApp() {
     setPrestigios((p) => {
       const next = { ...(p || {}) };
       Object.entries(norm.prestigios).forEach(([k, v]) => { if (review[`prestigios:${k}`]) next[k] = v; });
+      persistAllNow({ prestigios: next });
       return next;
     });
   };
@@ -462,7 +493,7 @@ export default function VasterraApp() {
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                           <HoverButton onClick={() => downloadProfile(p)} style={btnStyle({ padding: "4px 8px" })}>Baixar</HoverButton>
                           <HoverButton onClick={() => { applyImportPayload(p.payload || {}, "substituir"); pushToast("Save carregado.", "success"); }} style={btnStyle({ borderColor: "#4f7dbc66", color: "#9ecfff", padding: "4px 8px" })}>Carregar</HoverButton>
-                          <HoverButton onClick={() => setSaveProfiles((prev) => prev.filter((x) => x.id !== p.id))} style={btnStyle({ borderColor: "#b9483a66", color: "#ff9f92", padding: "4px 8px" })}>Apagar</HoverButton>
+                          <HoverButton onClick={() => setSaveProfiles((prev) => { const next = prev.filter((x) => x.id !== p.id); persistAllNow({ saveProfiles: next }); return next; })} style={btnStyle({ borderColor: "#b9483a66", color: "#ff9f92", padding: "4px 8px" })}>Apagar</HoverButton>
                         </div>
                       </div>
                     ))}
