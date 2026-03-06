@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { stGet, stSet } from "./core/storage";
-import { G } from "./ui/theme";
+import { G, btnStyle } from "./ui/theme";
 import { useFeedback } from "./hooks/useFeedback";
 import { ToastViewport, ConfirmWindow } from "./components/feedback/FeedbackUI";
 import { HoverButton } from "./components/primitives/Interactive";
@@ -15,6 +15,7 @@ import { novaFicha, novoItem, novaSkill, novaSkillTag, uid } from "./core/factor
 
 
 const SETTINGS_KEY = "vasterra:settings";
+const SAVE_PROFILES_KEY = "vasterra:saveProfiles";
 const defaultSettings = { storageNamespace: "vasterra", controls: { createNodeHotkey: "a", linkModeHotkey: "l" }, view: { mobilePreview: false } };
 
 const scopedKey = (ns, key) => `${(ns || "vasterra").trim()}:${key}`;
@@ -108,12 +109,19 @@ export default function VasterraApp() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState(defaultSettings);
   const [settingsTab, setSettingsTab] = useState("dados");
+  const [saveProfiles, setSaveProfiles] = useState([]);
+  const [saveNickname, setSaveNickname] = useState("Vasterra-Skills");
+  const [importPreview, setImportPreview] = useState(null);
+  const [importMode, setImportMode] = useState("adicionar");
+  const [reviewSelection, setReviewSelection] = useState({});
 
   useEffect(() => {
     (async () => {
       const cfg = (await stGet(SETTINGS_KEY)) || defaultSettings;
       const ns = cfg.storageNamespace || "vasterra";
       setSettings({ ...defaultSettings, ...cfg });
+      const profiles = (await stGet(SAVE_PROFILES_KEY)) || [];
+      setSaveProfiles(Array.isArray(profiles) ? profiles : []);
 
       const f = await stGet(scopedKey(ns, "fichas"));
       const a = await stGet(scopedKey(ns, "arsenal"));
@@ -153,6 +161,7 @@ export default function VasterraApp() {
   useEffect(() => { if (loaded) stSet(scopedKey(settings.storageNamespace, "biblioteca"), bibliotecaSkills); }, [bibliotecaSkills, loaded, settings.storageNamespace]);
   useEffect(() => { if (loaded) stSet(scopedKey(settings.storageNamespace, "skilltags"), skillsTags); }, [skillsTags, loaded, settings.storageNamespace]);
   useEffect(() => { if (loaded) stSet(SETTINGS_KEY, settings); }, [settings, loaded]);
+  useEffect(() => { if (loaded) stSet(SAVE_PROFILES_KEY, saveProfiles); }, [saveProfiles, loaded]);
 
   const openEffectForge = (effect = null) => {
     setEffectEditorData(effect ? { ...effect } : makeDefaultEffect());
@@ -167,25 +176,115 @@ export default function VasterraApp() {
     pushToast("Efeito salvo no Caldeirão.", "success");
   };
 
-  const exportBackup = () => {
-    const payload = {
-      version: 1,
-      exportedAt: Date.now(),
-      namespace: settings.storageNamespace,
-      fichas,
-      arsenal,
-      efeitosCaldeirao,
-      prestigios,
-      bibliotecaSkills,
-      skillsTags,
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const buildCurrentPayload = () => ({
+    version: 2,
+    exportedAt: Date.now(),
+    namespace: settings.storageNamespace,
+    fichas,
+    arsenal,
+    efeitosCaldeirao,
+    prestigios,
+    bibliotecaSkills,
+    skillsTags,
+  });
+
+  const makeProfile = (nickname) => ({
+    id: uid(),
+    nickname: (nickname || "Vasterra-Save").trim() || "Vasterra-Save",
+    createdAt: Date.now(),
+    payload: buildCurrentPayload(),
+  });
+
+  const saveProfile = () => {
+    const profile = makeProfile(saveNickname || "Vasterra-Skills");
+    setSaveProfiles((prev) => [profile, ...(prev || [])]);
+    pushToast(`Save criado: ${profile.nickname}`, "success");
+  };
+
+  const downloadProfile = (profile) => {
+    if (!profile) return;
+    const blob = new Blob([JSON.stringify(profile, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `vasterra-backup-${Date.now()}.json`;
+    a.download = `${profile.nickname || "vasterra-save"}-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const summarizeImport = (incoming) => {
+    const current = buildCurrentPayload();
+    const byId = (arr = []) => Object.fromEntries(arr.map((x) => [x.id, x]));
+    const groups = [
+      { key: "fichas", label: "Fichas", type: "array", normalize: normalizeFicha },
+      { key: "arsenal", label: "Arsenal", type: "array", normalize: normalizeItem },
+      { key: "efeitosCaldeirao", label: "Caldeirão", type: "array", normalize: normalizeEffect },
+      { key: "bibliotecaSkills", label: "Biblioteca", type: "array", normalize: normalizeSkill },
+      { key: "skillsTags", label: "Tags", type: "array", normalize: normalizeSkillTag },
+      { key: "prestigios", label: "Prestígios", type: "object" },
+    ];
+    return groups.map((g) => {
+      if (g.type === "object") {
+        const a = Object.keys(current[g.key] || {});
+        const b = Object.keys(incoming[g.key] || {});
+        const additions = b.filter((k) => !a.includes(k));
+        const conflicts = b.filter((k) => a.includes(k));
+        return { ...g, additions, conflicts, total: b.length };
+      }
+      const cur = byId((current[g.key] || []).map(g.normalize));
+      const inc = (incoming[g.key] || []).map(g.normalize);
+      const additions = inc.filter((x) => !cur[x.id]);
+      const conflicts = inc.filter((x) => !!cur[x.id]);
+      return { ...g, additions, conflicts, total: inc.length };
+    });
+  };
+
+  const applyImportPayload = (incoming, mode, review = {}) => {
+    const norm = {
+      fichas: (incoming.fichas || []).map(normalizeFicha),
+      arsenal: (incoming.arsenal || []).map(normalizeItem),
+      efeitosCaldeirao: (incoming.efeitosCaldeirao || []).map(normalizeEffect),
+      bibliotecaSkills: (incoming.bibliotecaSkills || []).map(normalizeSkill),
+      skillsTags: (incoming.skillsTags || []).map(normalizeSkillTag),
+      prestigios: incoming.prestigios || {},
+    };
+
+    if (mode === "substituir") {
+      setFichas(norm.fichas); setArsenal(norm.arsenal); setEfeitosCaldeirao(norm.efeitosCaldeirao); setBibliotecaSkills(norm.bibliotecaSkills); setSkillsTags(norm.skillsTags); setPrestigios(norm.prestigios);
+      return;
+    }
+
+    const mergeArr = (prev, inc) => {
+      const map = new Map((prev || []).map((x) => [x.id, x]));
+      inc.forEach((x) => { if (!map.has(x.id)) map.set(x.id, x); });
+      return [...map.values()];
+    };
+
+    if (mode === "adicionar") {
+      setFichas((p) => mergeArr(p, norm.fichas));
+      setArsenal((p) => mergeArr(p, norm.arsenal));
+      setEfeitosCaldeirao((p) => mergeArr(p, norm.efeitosCaldeirao));
+      setBibliotecaSkills((p) => mergeArr(p, norm.bibliotecaSkills));
+      setSkillsTags((p) => mergeArr(p, norm.skillsTags));
+      setPrestigios((p) => ({ ...(p || {}), ...Object.fromEntries(Object.entries(norm.prestigios).filter(([k]) => !(p || {})[k])) }));
+      return;
+    }
+
+    const upsertChecked = (prev, inc, group) => {
+      const map = new Map((prev || []).map((x) => [x.id, x]));
+      inc.forEach((x) => { if (review[`${group}:${x.id}`]) map.set(x.id, x); });
+      return [...map.values()];
+    };
+    setFichas((p) => upsertChecked(p, norm.fichas, "fichas"));
+    setArsenal((p) => upsertChecked(p, norm.arsenal, "arsenal"));
+    setEfeitosCaldeirao((p) => upsertChecked(p, norm.efeitosCaldeirao, "efeitosCaldeirao"));
+    setBibliotecaSkills((p) => upsertChecked(p, norm.bibliotecaSkills, "bibliotecaSkills"));
+    setSkillsTags((p) => upsertChecked(p, norm.skillsTags, "skillsTags"));
+    setPrestigios((p) => {
+      const next = { ...(p || {}) };
+      Object.entries(norm.prestigios).forEach(([k, v]) => { if (review[`prestigios:${k}`]) next[k] = v; });
+      return next;
+    });
   };
 
   const importBackup = (file) => {
@@ -193,14 +292,17 @@ export default function VasterraApp() {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const data = JSON.parse(String(reader.result || "{}"));
-        setFichas((data.fichas || []).map(normalizeFicha));
-        setArsenal((data.arsenal || []).map(normalizeItem));
-        setEfeitosCaldeirao((data.efeitosCaldeirao || []).map(normalizeEffect));
-        setPrestigios(data.prestigios || {});
-        setBibliotecaSkills((data.bibliotecaSkills || []).map(normalizeSkill));
-        setSkillsTags((data.skillsTags || []).map(normalizeSkillTag));
-        pushToast("Backup importado com sucesso.", "success");
+        const raw = JSON.parse(String(reader.result || "{}"));
+        const incoming = raw.payload || raw;
+        const summary = summarizeImport(incoming);
+        const draft = { raw, incoming, summary };
+        setImportPreview(draft);
+        setImportMode("adicionar");
+        const defaults = {};
+        summary.forEach((g) => {
+          (g.additions || []).forEach((x) => { defaults[`${g.key}:${x.id || x}`] = true; });
+        });
+        setReviewSelection(defaults);
       } catch {
         pushToast("Falha ao importar backup.", "error");
       }
@@ -302,6 +404,43 @@ export default function VasterraApp() {
       <ToastViewport items={toasts} onClose={closeToast} />
       <ConfirmWindow data={confirm} onCancel={cancelConfirm} onConfirm={runConfirm} />
       {effectEditorOpen && <EffectForgeEditor effect={effectEditorData} onSave={saveEffectFromModal} onClose={() => setEffectEditorOpen(false)} />}
+      {importPreview && (
+        <Modal title="Importar Save/Backup" onClose={() => setImportPreview(null)} wide>
+          <div style={{ display: "grid", gap: 10 }}>
+            <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Escolha como aplicar os dados importados.</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {[["adicionar", "Adicionar"], ["substituir", "Substituir"], ["revisar", "Revisar"]].map(([k, l]) => (
+                <HoverButton key={k} onClick={() => setImportMode(k)} style={{ borderColor: importMode === k ? "#5dade266" : undefined, color: importMode === k ? "#b6ddff" : undefined }}>{l}</HoverButton>
+              ))}
+            </div>
+            <div style={{ maxHeight: "46vh", overflowY: "auto", display: "grid", gap: 8 }}>
+              {(importPreview.summary || []).map((g) => (
+                <div key={g.key} style={{ border: "1px solid #2b3f5c", borderRadius: 8, padding: 8 }}>
+                  <div style={{ color: "#c8defe", fontFamily: "monospace", fontSize: 12 }}>{g.label}: {g.total} entrada(s) · +{(g.additions || []).length} · conflitos {(g.conflicts || []).length}</div>
+                  {importMode === "revisar" && (
+                    <div style={{ marginTop: 6, display: "grid", gap: 4 }}>
+                      {[...(g.additions || []), ...(g.conflicts || [])].map((x) => {
+                        const key = `${g.key}:${x.id || x}`;
+                        const label = x.nome || x.skill || x.id || x;
+                        return (
+                          <label key={key} style={{ display: "flex", gap: 6, alignItems: "center", color: "#b8d6ff", fontFamily: "monospace", fontSize: 11 }}>
+                            <input type="checkbox" checked={!!reviewSelection[key]} onChange={(e) => setReviewSelection((p) => ({ ...p, [key]: e.target.checked }))} />
+                            {String(label)}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <HoverButton onClick={() => setImportPreview(null)} style={btnStyle({ borderColor: "#555", color: "#999" })}>Cancelar</HoverButton>
+              <HoverButton onClick={() => { applyImportPayload(importPreview.incoming || {}, importMode, reviewSelection); setImportPreview(null); pushToast("Importação aplicada.", "success"); }}>Aplicar importação</HoverButton>
+            </div>
+          </div>
+        </Modal>
+      )}
       {settingsOpen && (
         <Modal title="Opções" onClose={() => setSettingsOpen(false)} wide>
           <div style={{ display: "grid", gap: 10 }}>
@@ -320,12 +459,32 @@ export default function VasterraApp() {
                   <input value={settings.storageNamespace || "vasterra"} onChange={(e) => setSettings((p) => ({ ...p, storageNamespace: e.target.value }))} placeholder="Namespace de dados" style={{ background: "#0a0a0a", border: "1px solid #333", color: G.text, borderRadius: 8, padding: "8px 10px" }} />
                   <HoverButton onClick={() => applyNamespace(settings.storageNamespace)}>Aplicar</HoverButton>
                 </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <HoverButton onClick={exportBackup}>Exportar backup (.json)</HoverButton>
-                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid #3498db44", borderRadius: 8, padding: "6px 10px", color: "#73bfff", cursor: "pointer" }}>
-                    Importar backup
-                    <input type="file" accept="application/json" onChange={(e) => importBackup(e.target.files?.[0])} style={{ display: "none" }} />
-                  </label>
+                <div style={{ border: "1px solid #2e4465", borderRadius: 10, padding: 10, background: "linear-gradient(180deg,#0b1220,#0a101a)", display: "grid", gap: 8 }}>
+                  <div style={{ fontFamily: "'Cinzel',serif", color: G.gold, letterSpacing: 1 }}>Saves com apelido</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
+                    <input value={saveNickname} onChange={(e) => setSaveNickname(e.target.value)} placeholder="Ex: Vasterra-Skills" style={{ background: "#0a0a0a", border: "1px solid #333", color: G.text, borderRadius: 8, padding: "8px 10px" }} />
+                    <HoverButton onClick={saveProfile}>Salvar</HoverButton>
+                  </div>
+                  <div style={{ display: "grid", gap: 6, maxHeight: 190, overflowY: "auto" }}>
+                    {(saveProfiles || []).map((p) => (
+                      <div key={p.id} style={{ border: "1px solid #324b70", borderRadius: 8, padding: 8, display: "grid", gap: 4 }}>
+                        <div style={{ color: "#c6ddff", fontFamily: "monospace", fontSize: 12 }}>{p.nickname}</div>
+                        <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 10 }}>{new Date(p.createdAt || Date.now()).toLocaleString()}</div>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <HoverButton onClick={() => downloadProfile(p)} style={btnStyle({ padding: "4px 8px" })}>Baixar</HoverButton>
+                          <HoverButton onClick={() => { applyImportPayload(p.payload || {}, "substituir"); pushToast("Save carregado.", "success"); }} style={btnStyle({ borderColor: "#4f7dbc66", color: "#9ecfff", padding: "4px 8px" })}>Carregar</HoverButton>
+                          <HoverButton onClick={() => setSaveProfiles((prev) => prev.filter((x) => x.id !== p.id))} style={btnStyle({ borderColor: "#b9483a66", color: "#ff9f92", padding: "4px 8px" })}>Apagar</HoverButton>
+                        </div>
+                      </div>
+                    ))}
+                    {(saveProfiles || []).length === 0 && <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Nenhum save salvo com apelido ainda.</div>}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid #3498db44", borderRadius: 8, padding: "6px 10px", color: "#73bfff", cursor: "pointer" }}>
+                      Importar save/backup
+                      <input type="file" accept="application/json" onChange={(e) => importBackup(e.target.files?.[0])} style={{ display: "none" }} />
+                    </label>
+                  </div>
                 </div>
               </>
             )}
