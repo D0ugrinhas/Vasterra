@@ -48,6 +48,14 @@ function normalizeFicha(ficha = {}) {
     recursos: { ...base.recursos, ...(ficha.recursos || {}) },
     inventarioCfg: { ...base.inventarioCfg, ...(ficha.inventarioCfg || {}), vastos: { ...base.inventarioCfg.vastos, ...(ficha.inventarioCfg?.vastos || {}) } },
     modificadores: { ...base.modificadores, ...(ficha.modificadores || {}) },
+    skills: Array.isArray(ficha.skills)
+      ? ficha.skills.map((entry) => ({
+          id: entry?.id || uid(),
+          scope: entry?.scope === "biblioteca" ? "biblioteca" : "local",
+          sourceSkillId: entry?.sourceSkillId || "",
+          skill: normalizeSkill(entry?.skill || entry || {}),
+        }))
+      : base.skills,
     inventario: Array.isArray(ficha.inventario) ? ficha.inventario.map((entry) => ({
       ...entry,
       id: entry?.id || uid(),
@@ -104,6 +112,7 @@ export default function VasterraApp() {
   const [bibliotecaSkills, setBibliotecaSkills] = useState([]);
   const [skillsTags, setSkillsTags] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  const [persistReady, setPersistReady] = useState(false);
   const [effectEditorOpen, setEffectEditorOpen] = useState(false);
   const [effectEditorData, setEffectEditorData] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -116,6 +125,7 @@ export default function VasterraApp() {
   const [reviewSelection, setReviewSelection] = useState({});
 
   useEffect(() => {
+    setPersistReady(false);
     (async () => {
       const cfg = (await stGet(SETTINGS_KEY)) || defaultSettings;
       const ns = cfg.storageNamespace || "vasterra";
@@ -151,17 +161,18 @@ export default function VasterraApp() {
       setBibliotecaSkills(bibliotecaLoaded);
       setSkillsTags(tagsLoaded);
       setLoaded(true);
+      requestAnimationFrame(() => setPersistReady(true));
     })();
   }, []);
 
-  useEffect(() => { if (loaded) stSet(scopedKey(settings.storageNamespace, "fichas"), fichas); }, [fichas, loaded, settings.storageNamespace]);
-  useEffect(() => { if (loaded) stSet(scopedKey(settings.storageNamespace, "arsenal"), arsenal); }, [arsenal, loaded, settings.storageNamespace]);
-  useEffect(() => { if (loaded) stSet(scopedKey(settings.storageNamespace, "caldeirao"), efeitosCaldeirao); }, [efeitosCaldeirao, loaded, settings.storageNamespace]);
-  useEffect(() => { if (loaded) stSet(scopedKey(settings.storageNamespace, "prestigios"), prestigios); }, [prestigios, loaded, settings.storageNamespace]);
-  useEffect(() => { if (loaded) stSet(scopedKey(settings.storageNamespace, "biblioteca"), bibliotecaSkills); }, [bibliotecaSkills, loaded, settings.storageNamespace]);
-  useEffect(() => { if (loaded) stSet(scopedKey(settings.storageNamespace, "skilltags"), skillsTags); }, [skillsTags, loaded, settings.storageNamespace]);
-  useEffect(() => { if (loaded) stSet(SETTINGS_KEY, settings); }, [settings, loaded]);
-  useEffect(() => { if (loaded) stSet(SAVE_PROFILES_KEY, saveProfiles); }, [saveProfiles, loaded]);
+  useEffect(() => { if (persistReady) stSet(scopedKey(settings.storageNamespace, "fichas"), fichas); }, [fichas, persistReady, settings.storageNamespace]);
+  useEffect(() => { if (persistReady) stSet(scopedKey(settings.storageNamespace, "arsenal"), arsenal); }, [arsenal, persistReady, settings.storageNamespace]);
+  useEffect(() => { if (persistReady) stSet(scopedKey(settings.storageNamespace, "caldeirao"), efeitosCaldeirao); }, [efeitosCaldeirao, persistReady, settings.storageNamespace]);
+  useEffect(() => { if (persistReady) stSet(scopedKey(settings.storageNamespace, "prestigios"), prestigios); }, [prestigios, persistReady, settings.storageNamespace]);
+  useEffect(() => { if (persistReady) stSet(scopedKey(settings.storageNamespace, "biblioteca"), bibliotecaSkills); }, [bibliotecaSkills, persistReady, settings.storageNamespace]);
+  useEffect(() => { if (persistReady) stSet(scopedKey(settings.storageNamespace, "skilltags"), skillsTags); }, [skillsTags, persistReady, settings.storageNamespace]);
+  useEffect(() => { if (persistReady) stSet(SETTINGS_KEY, settings); }, [settings, persistReady]);
+  useEffect(() => { if (persistReady) stSet(SAVE_PROFILES_KEY, saveProfiles); }, [saveProfiles, persistReady]);
 
   const openEffectForge = (effect = null) => {
     setEffectEditorData(effect ? { ...effect } : makeDefaultEffect());
