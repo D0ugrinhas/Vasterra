@@ -9,10 +9,10 @@ import { SkillDetalhe } from "../../biblioteca/SkillDetalhe";
 import { ImageViewport } from "../../../components/media/ImageAttachModal";
 
 const CORE_RESOURCES = [
-  { codigo: "ACO", nome: "Ação", cor: "#2ecc71", shape: "circle", total: 2 },
+  { codigo: "ACO", nome: "Ação", cor: "#2ecc71", shape: "square", total: 2 },
   { codigo: "MOV", nome: "Movimento", cor: "#3498db", shape: "square", total: 1 },
-  { codigo: "REA", nome: "Reação", cor: "#e74c3c", shape: "triangle", total: 1 },
-  { codigo: "ESF", nome: "Esforço", cor: "#8b0000", shape: "hex", total: 1 },
+  { codigo: "REA", nome: "Reação", cor: "#e74c3c", shape: "square", total: 1 },
+  { codigo: "ESF", nome: "Esforço", cor: "#8b0000", shape: "square", total: 1 },
 ];
 
 const CORE_STATUS_META = {
@@ -26,14 +26,6 @@ const CORE_STATUS_META = {
 function toNumber(v, fallback = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
-}
-
-function normalizeResourceShape(shape) {
-  const raw = String(shape || "").trim().toLowerCase();
-  if (["triangle", "triangulo", "triângulo", "tri"].includes(raw)) return "triangle";
-  if (["circle", "circulo", "círculo", "circ"].includes(raw)) return "circle";
-  if (["hex", "hexagon", "hexagono", "hexágono"].includes(raw)) return "hex";
-  return "square";
 }
 
 function effectIconSrc(effect = {}) {
@@ -70,7 +62,7 @@ function normalizeCombateState(combate = {}) {
       codigo: core.codigo,
       nome: old?.nome || core.nome,
       cor: old?.cor || core.cor,
-      shape: normalizeResourceShape(old?.shape || old?.slotShape || core.shape),
+      shape: "square",
       total,
       atual,
       custom: false,
@@ -86,7 +78,7 @@ function normalizeCombateState(combate = {}) {
         codigo: String(r.codigo || r.nome || "").toUpperCase() || "NOVO",
         nome: r.nome || "Recurso",
         cor: r.cor || "#7f8c8d",
-        shape: normalizeResourceShape(r.shape || r.slotShape || "square"),
+        shape: "square",
         total,
         atual: Math.max(0, Math.min(total, Math.floor(toNumber(r.atual ?? r.max ?? total, total)))),
         custom: true,
@@ -125,38 +117,23 @@ function skillIconSrc(skill = {}) {
   return "";
 }
 
-function ResourcePip({ shape, active, color, onClick, title }) {
-  const normalizedShape = normalizeResourceShape(shape);
+function ResourcePip({ active, color, onClick, title }) {
   const common = {
     width: 17,
     height: 17,
     cursor: "pointer",
     transition: "all .18s ease",
-    filter: active ? "drop-shadow(0 0 8px rgba(255,255,255,.32))" : "grayscale(0.85) brightness(.45)",
-    transform: active ? "scale(1)" : "scale(.9)",
+    filter: active ? "drop-shadow(0 0 8px rgba(255,255,255,.32))" : "grayscale(0.9) brightness(.45)",
+    transform: active ? "scale(1)" : "scale(.88)",
     opacity: active ? 1 : 0.72,
+    borderRadius: "3px",
+    background: color,
+    animation: active ? "resourcePulse 1.2s ease-in-out infinite" : "none",
   };
 
-  if (normalizedShape === "triangle") {
-    return (
-      <button title={title} onClick={onClick} style={{ border: "none", background: "transparent", padding: 0 }}>
-        <span style={{ ...common, width: 0, height: 0, borderLeft: "9px solid transparent", borderRight: "9px solid transparent", borderBottom: `16px solid ${color}` }} />
-      </button>
-    );
-  }
-
-  if (normalizedShape === "hex") {
-    return (
-      <button title={title} onClick={onClick} style={{ border: "none", background: "transparent", padding: 0 }}>
-        <span style={{ ...common, background: color, clipPath: "polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%)" }} />
-      </button>
-    );
-  }
-
-  const radius = normalizedShape === "circle" ? "50%" : "4px";
   return (
     <button title={title} onClick={onClick} style={{ border: "none", background: "transparent", padding: 0 }}>
-      <span style={{ ...common, background: color, borderRadius: radius }} />
+      <span style={common} />
     </button>
   );
 }
@@ -327,6 +304,10 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
         .combat-card { border:1px solid ${G.border}; border-radius:12px; background:linear-gradient(180deg,#13100c,#0c0906); box-shadow:0 8px 30px rgba(0,0,0,.18); }
         .resource-group:hover { border-color:#8a6e3e !important; transform:translateY(-1px); }
         .skill-row:hover { border-color:#96713a !important; transform:translateY(-1px); }
+        @keyframes resourcePulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.08); }
+        }
       `}</style>
 
       <div className="combat-card" style={{ padding: 10, display: "grid", gridTemplateRows: "auto auto 1fr auto" }}>
@@ -413,7 +394,6 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
                     {Array.from({ length: Number(r.total || 0) }).map((_, idx) => (
                       <ResourcePip
                         key={`${r.id}-${idx}`}
-                        shape={r.shape}
                         color={r.cor}
                         active={idx < Number(r.atual || 0)}
                         title={`${r.codigo} ${idx + 1}/${r.total}`}
@@ -561,8 +541,7 @@ function ResourceQuickModal({ resource, previewCost, onClose, onToggle, onDelete
           {Array.from({ length: Number(resource.total || 0) }).map((_, idx) => (
             <ResourcePip
               key={`${resource.id}-${idx}`}
-              shape={resource.shape}
-              color={resource.cor}
+                            color={resource.cor}
               active={idx < Number(resource.atual || 0)}
               title={`${resource.codigo} ${idx + 1}/${resource.total}`}
               onClick={() => onToggle(idx)}
@@ -631,7 +610,7 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
   const [list, setList] = useState(combate.recursos || []);
   const [statusMeta, setStatusMeta] = useState(combate.statusMeta || {});
   const [statusState, setStatusState] = useState(ficha?.status || {});
-  const [resourceDraft, setResourceDraft] = useState({ codigo: "", nome: "", cor: "#e0b44c", shape: "square", total: 1, atual: 1 });
+  const [resourceDraft, setResourceDraft] = useState({ codigo: "", nome: "", cor: "#e0b44c", total: 1, atual: 1 });
   const [statusDraft, setStatusDraft] = useState({ codigo: "DET", label: "Determinação", cor: "#8dc2ff", val: 10, max: 10 });
 
   return (
@@ -639,17 +618,16 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
       <div style={{ display: "grid", gap: 12 }}>
         <div style={{ border: "1px solid #3d2f1f", borderRadius: 8, padding: 10 }}>
           <div style={{ color: G.gold, marginBottom: 6, fontFamily: "'Cinzel',serif" }}>Recurso personalizado</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px 110px 90px 90px auto", gap: 6 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px 90px 90px auto", gap: 6 }}>
             <input value={resourceDraft.codigo} onChange={(e) => setResourceDraft((p) => ({ ...p, codigo: e.target.value.toUpperCase() }))} placeholder="Código" style={inpStyle()} />
             <input value={resourceDraft.nome} onChange={(e) => setResourceDraft((p) => ({ ...p, nome: e.target.value }))} placeholder="Nome" style={inpStyle()} />
             <input type="color" value={resourceDraft.cor} onChange={(e) => setResourceDraft((p) => ({ ...p, cor: e.target.value }))} style={inpStyle({ padding: 2 })} />
-            <select value={resourceDraft.shape} onChange={(e) => setResourceDraft((p) => ({ ...p, shape: e.target.value }))} style={inpStyle()}><option value="square">Quadrado</option><option value="circle">Círculo</option><option value="triangle">Triângulo</option><option value="hex">Hexágono</option></select>
             <input type="number" min={0} value={resourceDraft.atual} onChange={(e) => setResourceDraft((p) => ({ ...p, atual: Number(e.target.value) || 0 }))} style={inpStyle()} />
             <input type="number" min={0} value={resourceDraft.total} onChange={(e) => setResourceDraft((p) => ({ ...p, total: Number(e.target.value) || 0 }))} style={inpStyle()} />
             <HoverButton onClick={() => {
               if (!resourceDraft.codigo.trim()) return;
-              setList((prev) => [...prev, { id: uid(), ...resourceDraft }]);
-              setResourceDraft({ codigo: "", nome: "", cor: "#e0b44c", shape: "square", total: 1, atual: 1 });
+              setList((prev) => [...prev, { id: uid(), ...resourceDraft, shape: "square" }]);
+              setResourceDraft({ codigo: "", nome: "", cor: "#e0b44c", total: 1, atual: 1 });
             }} style={btnStyle()}>Adicionar</HoverButton>
           </div>
         </div>
@@ -695,11 +673,11 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
 
         <div style={{ maxHeight: 260, overflow: "auto", display: "grid", gap: 4 }}>
           {list.map((r) => (
-            <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px 110px 90px 90px auto", gap: 6 }}>
+            <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px 90px 90px 90px auto", gap: 6 }}>
               <input value={r.codigo} onChange={(e) => setList((prev) => prev.map((x) => x.id === r.id ? { ...x, codigo: e.target.value.toUpperCase() } : x))} style={inpStyle()} />
               <input value={r.nome} onChange={(e) => setList((prev) => prev.map((x) => x.id === r.id ? { ...x, nome: e.target.value } : x))} style={inpStyle()} />
               <input type="color" value={r.cor} onChange={(e) => setList((prev) => prev.map((x) => x.id === r.id ? { ...x, cor: e.target.value } : x))} style={inpStyle({ padding: 2 })} />
-              <select value={r.shape} onChange={(e) => setList((prev) => prev.map((x) => x.id === r.id ? { ...x, shape: e.target.value } : x))} style={inpStyle()}><option value="square">Quadrado</option><option value="circle">Círculo</option><option value="triangle">Triângulo</option><option value="hex">Hexágono</option></select>
+              <div style={{ ...inpStyle(), display: "grid", placeItems: "center", color: G.muted, fontSize: 11 }}>Quadrado</div>
               <input type="number" min={0} value={r.atual} onChange={(e) => setList((prev) => prev.map((x) => x.id === r.id ? { ...x, atual: Number(e.target.value) || 0 } : x))} style={inpStyle()} />
               <input type="number" min={0} value={r.total} onChange={(e) => setList((prev) => prev.map((x) => x.id === r.id ? { ...x, total: Number(e.target.value) || 0 } : x))} style={inpStyle()} />
               <HoverButton onClick={() => setList((prev) => prev.filter((x) => x.id !== r.id))} style={btnStyle({ borderColor: "#87413a", color: "#ff9990" })}>✕</HoverButton>
