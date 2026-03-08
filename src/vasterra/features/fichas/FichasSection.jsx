@@ -239,7 +239,7 @@ export function FichasSection({ fichas, onFichas, arsenal, efeitosCaldeirao = []
 
           <div className="v-fade" style={{ flex: 1, overflow: "auto", padding: 16 }}>
             {tab === "status" && <TabStatus ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} />}
-            {tab === "combate" && <TabCombate ficha={ficha} onUpdate={updateFicha} efeitosCaldeirao={efeitosCaldeirao} onOpenCaldeirao={onOpenCaldeirao} onNotify={onNotify} createNodeHotkey={createNodeHotkey} />}
+            {tab === "combate" && <TabCombate ficha={ficha} onUpdate={updateFicha} efeitosCaldeirao={efeitosCaldeirao} skillTags={skillTags} onOpenCaldeirao={onOpenCaldeirao} onNotify={onNotify} createNodeHotkey={createNodeHotkey} />}
             {tab === "corpo" && <TabCorpo ficha={ficha} onUpdate={updateFicha} onNotify={onNotify} />}
             {tab === "atributos" && <TabAtributos ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} prestigios={prestigios} efeitosCaldeirao={efeitosCaldeirao} onOpenCaldeirao={onOpenCaldeirao} inventarioNomes={(ficha.inventario || []).map((e) => e.item?.nome).filter(Boolean)} />}
             {tab === "identidade" && <TabIdentidade ficha={ficha} onUpdate={updateFicha} />}
