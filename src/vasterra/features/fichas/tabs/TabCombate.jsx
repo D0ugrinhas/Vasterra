@@ -28,6 +28,14 @@ function toNumber(v, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function normalizeResourceShape(shape) {
+  const raw = String(shape || "").trim().toLowerCase();
+  if (["triangle", "triangulo", "triângulo", "tri"].includes(raw)) return "triangle";
+  if (["circle", "circulo", "círculo", "circ"].includes(raw)) return "circle";
+  if (["hex", "hexagon", "hexagono", "hexágono"].includes(raw)) return "hex";
+  return "square";
+}
+
 function effectIconSrc(effect = {}) {
   if (effect.iconeModo === "url" && effect.iconeUrl) return effect.iconeUrl;
   if (effect.iconeModo === "upload" && effect.iconeData) return effect.iconeData;
@@ -62,7 +70,7 @@ function normalizeCombateState(combate = {}) {
       codigo: core.codigo,
       nome: old?.nome || core.nome,
       cor: old?.cor || core.cor,
-      shape: old?.shape || old?.slotShape || core.shape,
+      shape: normalizeResourceShape(old?.shape || old?.slotShape || core.shape),
       total,
       atual,
       custom: false,
@@ -78,7 +86,7 @@ function normalizeCombateState(combate = {}) {
         codigo: String(r.codigo || r.nome || "").toUpperCase() || "NOVO",
         nome: r.nome || "Recurso",
         cor: r.cor || "#7f8c8d",
-        shape: r.shape || r.slotShape || "square",
+        shape: normalizeResourceShape(r.shape || r.slotShape || "square"),
         total,
         atual: Math.max(0, Math.min(total, Math.floor(toNumber(r.atual ?? r.max ?? total, total)))),
         custom: true,
@@ -118,6 +126,7 @@ function skillIconSrc(skill = {}) {
 }
 
 function ResourcePip({ shape, active, color, onClick, title }) {
+  const normalizedShape = normalizeResourceShape(shape);
   const common = {
     width: 17,
     height: 17,
@@ -128,7 +137,7 @@ function ResourcePip({ shape, active, color, onClick, title }) {
     opacity: active ? 1 : 0.72,
   };
 
-  if (shape === "triangle") {
+  if (normalizedShape === "triangle") {
     return (
       <button title={title} onClick={onClick} style={{ border: "none", background: "transparent", padding: 0 }}>
         <span style={{ ...common, width: 0, height: 0, borderLeft: "9px solid transparent", borderRight: "9px solid transparent", borderBottom: `16px solid ${color}` }} />
@@ -136,7 +145,7 @@ function ResourcePip({ shape, active, color, onClick, title }) {
     );
   }
 
-  if (shape === "hex") {
+  if (normalizedShape === "hex") {
     return (
       <button title={title} onClick={onClick} style={{ border: "none", background: "transparent", padding: 0 }}>
         <span style={{ ...common, background: color, clipPath: "polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%)" }} />
@@ -144,7 +153,7 @@ function ResourcePip({ shape, active, color, onClick, title }) {
     );
   }
 
-  const radius = shape === "circle" ? "50%" : "4px";
+  const radius = normalizedShape === "circle" ? "50%" : "4px";
   return (
     <button title={title} onClick={onClick} style={{ border: "none", background: "transparent", padding: 0 }}>
       <span style={{ ...common, background: color, borderRadius: radius }} />
@@ -226,13 +235,11 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     saveCombate({ pendingSkillIds: list });
   };
 
-  const addLog = (mensagem, rodada = combate.rodadaAtual) => {
-    saveCombate({ logs: [{ id: uid(), rodada, mensagem, em: Date.now() }, ...(combate.logs || [])].slice(0, 160) });
-  };
+  const addLog = (mensagem, rodada = combate.rodadaAtual, baseLogs = combate.logs || []) => [{ id: uid(), rodada, mensagem, em: Date.now() }, ...baseLogs].slice(0, 160);
 
   const setRound = (nextRound) => saveCombate({ rodadaAtual: Math.max(0, Math.floor(nextRound)) });
 
-  const handleEffectExpiration = (nextRound) => {
+  const handleEffectExpiration = (nextRound, baseLogs = combate.logs || []) => {
     const list = ficha?.modificadores?.efeitos || [];
     const expiredNames = [];
     const nextEffects = list.map((ef) => {
@@ -247,8 +254,10 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     });
 
     if (expiredNames.length > 0) {
-      onUpdate({ modificadores: { ...(ficha.modificadores || {}), efeitos: nextEffects } });
-      expiredNames.forEach((name) => addLog(`Efeito expirou: ${name}`, nextRound));
+      onUpdate({
+        modificadores: { ...(ficha.modificadores || {}), efeitos: nextEffects },
+        combate: { ...(ficha.combate || {}), logs: expiredNames.reduce((acc, name) => addLog(`Efeito expirou: ${name}`, nextRound, acc), baseLogs) },
+      });
       onNotify?.(`Efeito expirou: ${expiredNames.join(", ")}`, "info");
     }
   };
@@ -269,13 +278,15 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
       nextStatus[code] = { ...nextStatus[code], val: Math.max(0, Number(nextStatus[code].val || 0) - qtd) };
     });
 
+    const roundLog = `Rodada ${nextRound}: ${pendingEntries.map(({ skill }) => skill.nome || "Skill").join(", ") || "sem skills"}.`;
+    const nextLogs = addLog(roundLog, nextRound);
+
     onUpdate({
       status: nextStatus,
-      combate: { ...(ficha.combate || {}), recursos: nextResources, rodadaAtual: nextRound, pendingSkillIds: [] },
+      combate: { ...(ficha.combate || {}), recursos: nextResources, rodadaAtual: nextRound, pendingSkillIds: [], logs: nextLogs },
     });
 
-    addLog(`Rodada ${nextRound}: ${pendingEntries.map(({ skill }) => skill.nome || "Skill").join(", ") || "sem skills"}.`, nextRound);
-    handleEffectExpiration(nextRound);
+    handleEffectExpiration(nextRound, nextLogs);
   };
 
   const resetCombate = () => {
@@ -345,7 +356,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
                   key={ef.id}
                   title={`${ef.nome || "Efeito"}${dur ? ` · restante: ${dur.restante}/${dur.total}` : ""}`}
                   onClick={() => setEffectDetail(ef)}
-                  style={{ width: 38, height: 38, borderRadius: 8, border: "1px solid #5f4f31", background: "#1a130b", color: "#f2ddb8", cursor: "pointer", overflow: "hidden", display: "grid", placeItems: "center" }}
+                  style={{ width: 38, height: 38, borderRadius: 8, border: "1px solid #5f4f31", background: "#1a130b", color: "#f2ddb8", cursor: "pointer", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1, padding: 0 }}
                 >
                   {src ? <ImageViewport src={src} alt={ef.nome || "Efeito"} size={34} radius={6} adjust={ef.iconeAjuste} /> : (ef.icone || (ef.nome || "E").slice(0, 1).toUpperCase())}
                 </button>
@@ -522,6 +533,15 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
           onClose={() => setStatusModal(null)}
           onApply={(next) => setStatusValue(statusModal.key, "val", next.val)}
           onSetMax={(nextMax) => setStatusValue(statusModal.key, "max", nextMax)}
+          onDelete={() => {
+            if (!window.confirm(`Apagar status ${statusModal.label || statusModal.code}?`)) return;
+            const nextStatus = { ...(ficha.status || {}) };
+            const nextMeta = { ...(combate.statusMeta || {}) };
+            delete nextStatus[statusModal.key];
+            delete nextMeta[statusModal.code];
+            onUpdate({ status: nextStatus, combate: { ...(ficha.combate || {}), statusMeta: nextMeta } });
+            setStatusModal(null);
+          }}
         />
       )}
 
@@ -537,7 +557,7 @@ function ResourceQuickModal({ resource, previewCost, onClose, onToggle, onDelete
     <Modal title={`Recurso: ${resource.codigo}`} onClose={onClose}>
       <div style={{ display: "grid", gap: 10 }}>
         <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Toque nos ícones para gastar/restaurar. Prévia de gasto da rodada: {previewCost > 0 ? `-${previewCost}` : "—"}</div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", padding: "6px 0" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", alignItems: "center", padding: "6px 0" }}>
           {Array.from({ length: Number(resource.total || 0) }).map((_, idx) => (
             <ResourcePip
               key={`${resource.id}-${idx}`}
@@ -558,7 +578,7 @@ function ResourceQuickModal({ resource, previewCost, onClose, onToggle, onDelete
   );
 }
 
-function StatusQuickModal({ status, statusDef, previewCost, onClose, onApply, onSetMax }) {
+function StatusQuickModal({ status, statusDef, previewCost, onClose, onApply, onSetMax, onDelete }) {
   const [val, setVal] = useState(Number(status?.val || 0));
   const [max, setMax] = useState(Math.max(1, Number(status?.max || 1)));
   const [delta, setDelta] = useState(0);
@@ -595,9 +615,12 @@ function StatusQuickModal({ status, statusDef, previewCost, onClose, onApply, on
           </div>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <HoverButton onClick={onClose} style={btnStyle({ borderColor: "#4f4f4f", color: "#b8b8b8" })}>Fechar</HoverButton>
-          <HoverButton onClick={() => { onSetMax(max); onApply({ val: Math.max(0, Math.min(max, val)) }); onClose(); }} style={btnStyle()}>Salvar</HoverButton>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+          <HoverButton onClick={onDelete} style={btnStyle({ borderColor: "#87413a", color: "#ff9990" })}>Apagar</HoverButton>
+          <div style={{ display: "flex", gap: 8 }}>
+            <HoverButton onClick={onClose} style={btnStyle({ borderColor: "#4f4f4f", color: "#b8b8b8" })}>Fechar</HoverButton>
+            <HoverButton onClick={() => { onSetMax(max); onApply({ val: Math.max(0, Math.min(max, val)) }); onClose(); }} style={btnStyle()}>Salvar</HoverButton>
+          </div>
         </div>
       </div>
     </Modal>
