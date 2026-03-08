@@ -1,782 +1,397 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { uid } from "../../../core/factories";
-import { instantiateEffectFromTemplate, parseMechanicalEffects } from "../../../core/effects";
-import { makeDefaultEffect } from "../../caldeirao/EffectForgeEditor";
-import { Modal } from "../../shared/components";
-import { G, inpStyle, btnStyle } from "../../../ui/theme";
+import { G, btnStyle, inpStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
-import {
-  NODE_TYPES, SHAPES, defaultCombatState, defaultResourceForm, defaultStatusForm, defaultGenericForm,
-  getFichaValueByPath, toAllNodes, getInputPorts, getOutputPorts, canLink, evaluateNodeOutputs,
-} from "./combatNodeSystem";
+import { Modal, EffectDetailsModal } from "../../shared/components";
+import { SkillDetalhe } from "../../biblioteca/SkillDetalhe";
 
-export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], onOpenCaldeirao, onNotify, createNodeHotkey = "a" }) {
-  const state = useMemo(() => ({ ...defaultCombatState(), ...(ficha.combate || {}) }), [ficha.combate]);
-  const [collapsed, setCollapsed] = useState({});
-  const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
-  const [nodePickerOpen, setNodePickerOpen] = useState(false);
-  const [resourceEditorOpen, setResourceEditorOpen] = useState(false);
-  const [statusEditorOpen, setStatusEditorOpen] = useState(false);
-  const [genericEditorOpen, setGenericEditorOpen] = useState(false);
-  const [resourceEditorData, setResourceEditorData] = useState(defaultResourceForm());
-  const [statusEditorData, setStatusEditorData] = useState(defaultStatusForm());
-  const [genericEditorData, setGenericEditorData] = useState(defaultGenericForm());
-  const [editing, setEditing] = useState({ kind: null, id: null });
-  const [linkDrag, setLinkDrag] = useState(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [hoverSlot, setHoverSlot] = useState({});
-  const [minNodes, setMinNodes] = useState({});
-  const [selectedNodes, setSelectedNodes] = useState([]);
-  const [marquee, setMarquee] = useState(null);
-  const [flash, setFlash] = useState({});
-  const [reduceMotion, setReduceMotion] = useState(false);
-  const [isCanvasHot, setIsCanvasHot] = useState(false);
+const CORE_RESOURCES = [
+  { codigo: "ACO", nome: "Ação", cor: "#37c96a", shape: "circle", total: 2 },
+  { codigo: "MOV", nome: "Movimento", cor: "#2b83ff", shape: "square", total: 1 },
+  { codigo: "REA", nome: "Reação", cor: "#ff4f4f", shape: "triangle", total: 1 },
+  { codigo: "ESF", nome: "Esforço", cor: "#8a1414", shape: "hex", total: 1 },
+];
 
-  const fullscreenRootRef = useRef(null);
-  const canvasWrapRef = useRef(null);
-  const dragRef = useRef(null);
-  const selectedNodesRef = useRef([]);
-  const [clipboardNodes, setClipboardNodes] = useState([]);
-  const charEffects = ficha.modificadores?.efeitos || [];
+const CORE_STATUS = [
+  { key: "VIT", label: "VIT", cor: "#ff5b4d" },
+  { key: "EST", label: "EST", cor: "#d7d748" },
+  { key: "MAN", label: "MAN", cor: "#4a7dff" },
+  { key: "SAN", label: "SAN", cor: "#c15cff" },
+  { key: "CONS", label: "CONSC", cor: "#50c5aa" },
+];
 
-  const saveCombate = (next) => onUpdate({ combate: { ...state, ...next } });
-  const saveEffects = (next) => onUpdate({ modificadores: { ...(ficha.modificadores || {}), efeitos: next } });
-  const setTab = (abaAtiva) => saveCombate({ abaAtiva });
-  const setRodada = (rodadaAtual) => { const next = Math.max(0, rodadaAtual); saveCombate({ rodadaAtual: next }); applyRoundTick(next); };
-  const updateResourceById = (id, patch) => saveCombate({ recursos: state.recursos.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
-  const updateStatusById = (id, patch) => saveCombate({ statusNodes: (state.statusNodes || []).map((r) => (r.id === id ? { ...r, ...patch } : r)) });
-  const updateGenericById = (id, patch) => saveCombate({ genericNodes: (state.genericNodes || []).map((r) => (r.id === id ? { ...r, ...patch } : r)) });
+const SHAPE = {
+  circle: "50%",
+  square: "5px",
+  triangle: "0",
+  hex: "8px",
+};
 
-  const allNodes = useMemo(() => toAllNodes(state), [state]);
-  const receiverSignals = useMemo(() => {
-    const map = {};
-    (charEffects || []).filter((e) => e.ativo !== false).forEach((e) => {
-      parseMechanicalEffects(e.efeitosMecanicos || e.efeitoMecanico || e.efeito || e.valor || "").forEach((m) => {
-        const key = String(m.key || "").toUpperCase();
-        if (!key) return;
-        map[key] = (map[key] || 0) + Number(m.value || 0);
-      });
-    });
-    return map;
-  }, [charEffects]);
-  const outputs = useMemo(() => evaluateNodeOutputs(state, ficha, receiverSignals), [state, ficha, receiverSignals]);
-  const links = state.nodeLinks || [];
-
-  const fichaValueOptions = useMemo(() => {
-    const out = [];
-    Object.keys(ficha?.status || {}).forEach((k) => { out.push({ label: `Status ${k} atual`, value: `status.${k}.val` }); out.push({ label: `Status ${k} max`, value: `status.${k}.max` }); });
-    Object.keys(ficha?.atributos || {}).forEach((k) => out.push({ label: `Atributo ${k}`, value: `atributos.${k}.val` }));
-    Object.keys(ficha?.pericias || {}).forEach((k) => out.push({ label: `Perícia ${k}`, value: `pericias.${k}` }));
-    return out;
-  }, [ficha]);
-
-  const activeLembretes = (state.lembretes || []).filter((l) => (l.tipo === "naRodada" ? Number(l.lembrarNaRodada || 0) : Number(l.criadoNaRodada || 0) + Number(l.lembrarEm || 1)) === state.rodadaAtual);
-  const activeEfeitos = (charEffects || []).filter((e) => e.ativo !== false);
-  const notifyingEffects = activeEfeitos.filter((e) => e.sinalizar !== false);
-
-  const parseDice = (txt = "") => {
-    const m = String(txt).trim().match(/^(\d+)d(\d+)$/i);
-    if (!m) return null;
-    return { qtd: Math.max(1, Number(m[1]) || 1), faces: Math.max(2, Number(m[2]) || 2) };
-  };
-
-  const rollDice = (expr) => {
-    const d = parseDice(expr);
-    if (!d) return null;
-    let total = 0;
-    for (let i = 0; i < d.qtd; i += 1) total += 1 + Math.floor(Math.random() * d.faces);
-    return total;
-  };
-
-  const parseDurationRounds = (duracao) => {
-    const raw = String(duracao || "").trim();
-    if (!raw) return null;
-    const dice = rollDice(raw);
-    if (Number.isFinite(dice)) return { rounds: Math.max(1, dice), rolled: dice, source: raw };
-    const num = Number(raw.replace(/[^0-9.-]/g, ""));
-    if (Number.isFinite(num) && num > 0) return { rounds: Math.max(1, Math.round(num)), rolled: null, source: raw };
-    const m = raw.match(/(\d+)\s*rod/i);
-    if (m) return { rounds: Math.max(1, Number(m[1]) || 1), rolled: null, source: raw };
-    return null;
-  };
-
-  const reminderRound = (l) => (l.tipo === "naRodada" ? Number(l.lembrarNaRodada || 0) : Number(l.criadoNaRodada || 0) + Number(l.lembrarEm || 1));
-
-  const applyRoundTick = (nextRound) => {
-    const effects = (charEffects || []).map((e) => {
-      if (e.ativo === false) return e;
-      if (!Number.isFinite(Number(e.rodadaFim))) return e;
-      if (nextRound <= Number(e.rodadaFim)) return e;
-      return { ...e, ativo: false };
-    });
-    const remindersNow = (state.lembretes || []).filter((l) => reminderRound(l) === nextRound);
-    remindersNow.forEach((l) => onNotify?.(`Lembrete (Rod ${nextRound}): ${l.texto || "(sem texto)"}`, "info"));
-    saveEffects(effects);
-  };
-
-  const toggleEffectAtivo = (id, ativo) => {
-    const updated = (charEffects || []).map((x) => {
-      if (x.id !== id) return x;
-      if (!ativo) return { ...x, ativo: false };
-      const duration = parseDurationRounds(x.duracao);
-      if (!duration) return { ...x, ativo: true, rodadaInicio: state.rodadaAtual, rodadaFim: null, duracaoRolada: null };
-      if (duration.rolled) onNotify?.(`${x.nome || "Efeito"}: duração rolada ${duration.source} = ${duration.rolled} rodadas.`, "info");
-      return {
-        ...x,
-        ativo: true,
-        rodadaInicio: state.rodadaAtual,
-        rodadaFim: state.rodadaAtual + duration.rounds,
-        duracaoRolada: duration.rolled,
-      };
-    });
-    saveEffects(updated);
-  };
-
-  const proxRodada = () => {
-    const nextRound = state.rodadaAtual + 1;
-    const recursos = (state.recursos || []).map((r) => ({ ...r, atual: Number(outputs[r.id]?.max ?? r.max) }));
-    saveCombate({ rodadaAtual: nextRound, recursos });
-    applyRoundTick(nextRound);
-    onNotify?.("Nova rodada: recursos resetados para o máximo.", "info");
-  };
-
-  const ensureItemEffects = () => {
-    const invEffects = (ficha.inventario || []).flatMap((entry) => ((entry.item || {}).efeitos || []).filter((ef) => ef?.origemEffectId).map((ef) => ({ ef, item: entry.item || {} })));
-    const existingKeys = new Set((charEffects || []).map((e) => `${e.origemEffectId || ""}::${e.origemItem || ""}`));
-    const additions = [];
-    invEffects.forEach(({ ef, item }) => {
-      const tpl = (efeitosCaldeirao || []).find((x) => x.id === ef.origemEffectId) || ef;
-      if ((tpl.alvo || "Portador") !== "Portador") return;
-      const key = `${tpl.id || ef.origemEffectId}::${item.nome || ""}`;
-      if (existingKeys.has(key)) return;
-      additions.push(instantiateEffectFromTemplate(tpl, { rodadaInicio: state.rodadaAtual, origemItem: item.nome || "Item", ativo: false, sinalizar: false }));
-    });
-    if (additions.length) saveEffects([...(charEffects || []), ...additions]);
-  };
-
-  const getPortY = (index) => 22 + index * 20;
-  const getPortLabel = (port) => ({ atual: "atual", max: "máx", val: "valor", value: "valor", sum: "soma", cor: "cor", zero: "zero", a: "A", b: "B", c: "C", trueValue: "true", falseValue: "false", qty: "qtd", faces: "dado", bonus: "bônus", critMin: "crit min", critMax: "crit max", critValue: "valor crit", failValue: "valor falha", crit: "crítico", ifTrue: "if true", ifFalse: "if false" }[port] || port);
-  const getLinkColor = (port, fromNode) => {
-    if (port === "cor") return outputs[fromNode?.id || ""]?.cor || fromNode?.cor || "#95a5a6";
-    if (port === "zero") return "#f39c12";
-    if (port === "crit") return "#ff5f7a";
-    return "#7dd3fc";
-  };
-
-  const clientToWorld = (clientX, clientY) => {
-    if (!canvasWrapRef.current) return { x: 0, y: 0 };
-    const r = canvasWrapRef.current.getBoundingClientRect();
-    return { x: (clientX - r.left - viewport.x) / viewport.zoom, y: (clientY - r.top - viewport.y) / viewport.zoom };
-  };
-
-  const beginLinkDrag = (from, e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const mouse = clientToWorld(e.clientX, e.clientY);
-    setLinkDrag({ from, mouse });
-  };
-
-  const completeLinkDrop = (to) => {
-    if (!linkDrag) return;
-    const fromNode = allNodes.find((n) => n.id === linkDrag.from.id);
-    const toNode = allNodes.find((n) => n.id === to.id);
-    if (!fromNode || !toNode || !canLink(fromNode, linkDrag.from.port, toNode, to.port)) {
-      onNotify?.("Erro: esse node não pode ser ligado a um node desse tipo.", "error");
-      setLinkDrag(null);
-      return;
-    }
-    const filtered = links.filter((l) => !(l.to.id === to.id && l.to.port === to.port));
-    saveCombate({ nodeLinks: [...filtered, { id: uid(), from: linkDrag.from, to }] });
-    setLinkDrag(null);
-  };
-
-  const startUnlinkDrag = (to, e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const existing = links.find((l) => l.to.id === to.id && l.to.port === to.port);
-    if (!existing) return;
-    saveCombate({ nodeLinks: links.filter((l) => l.id !== existing.id) });
-    const mouse = clientToWorld(e.clientX, e.clientY);
-    setLinkDrag({ from: existing.from, mouse });
-  };
-
-  const onWheelCanvas = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const dir = e.deltaY > 0 ? -0.08 : 0.08;
-    setViewport((p) => ({ ...p, zoom: Math.max(0.45, Math.min(2.2, Number((p.zoom + dir).toFixed(2)))) }));
-  };
-
-
-
-  const snapValue = (v, e) => (e?.altKey ? Math.round(v / 16) * 16 : Number(v.toFixed(2)));
-  const duplicateNode = (n) => {
-    setFlash((p) => ({ ...p, [n.id]: "dup" }));
-    setTimeout(() => setFlash((p) => ({ ...p, [n.id]: null })), 220);
-    if (n.kind === "resource") saveCombate({ recursos: [...(state.recursos || []), { ...n, id: uid(), x: (n.x || 0) + 24, y: (n.y || 0) + 24, nome: `${n.nome} (cópia)` }] });
-    else if (n.kind === "status") saveCombate({ statusNodes: [...(state.statusNodes || []), { ...n, id: uid(), x: (n.x || 0) + 24, y: (n.y || 0) + 24, nome: `${n.nome} (cópia)` }] });
-    else saveCombate({ genericNodes: [...(state.genericNodes || []), { ...n, id: uid(), x: (n.x || 0) + 24, y: (n.y || 0) + 24, label: `${n.label || n.nodeType} (cópia)` }] });
-  };
-  const deleteNode = (n) => {
-    setFlash((p) => ({ ...p, [n.id]: "del" }));
-    setTimeout(() => {
-      if (n.kind === "resource") saveCombate({ recursos: (state.recursos || []).filter((x) => x.id !== n.id), nodeLinks: links.filter((l) => l.from.id !== n.id && l.to.id !== n.id) });
-      else if (n.kind === "status") saveCombate({ statusNodes: (state.statusNodes || []).filter((x) => x.id !== n.id), nodeLinks: links.filter((l) => l.from.id !== n.id && l.to.id !== n.id) });
-      else saveCombate({ genericNodes: (state.genericNodes || []).filter((x) => x.id !== n.id), nodeLinks: links.filter((l) => l.from.id !== n.id && l.to.id !== n.id) });
-      setSelectedNodes((ids) => ids.filter((id) => id !== n.id));
-    }, 170);
-  };
-
-  const onCanvasMouseDown = (e) => {
-    if (e.button === 1) {
-      e.preventDefault();
-      dragRef.current = { kind: "pan", startX: e.clientX, startY: e.clientY, viewX: viewport.x, viewY: viewport.y };
-      return;
-    }
-    if (e.button === 0 && !e.target.closest("[data-node-card=\"1\"]")) {
-      const m = clientToWorld(e.clientX, e.clientY);
-      dragRef.current = { kind: "marquee", start: m };
-      setMarquee({ x: m.x, y: m.y, w: 0, h: 0 });
-      if (!e.shiftKey) setSelectedNodes([]);
-    }
-  };
-
-  const onNodeMouseDown = (node, e) => {
-    if (e.button !== 0) return;
-    if (e.target.closest("button,input,select,textarea")) return;
-    e.preventDefault();
-    const baseSelection = selectedNodesRef.current;
-    setSelectedNodes((ids) => (e.shiftKey ? (ids.includes(node.id) ? ids.filter((x) => x !== node.id) : [...ids, node.id]) : (ids.includes(node.id) ? ids : [node.id])));
-    const movingIds = (baseSelection.includes(node.id) && !e.shiftKey) ? baseSelection : [node.id];
-    const startNodes = movingIds.map((id) => { const n = allNodes.find((x) => x.id === id); return { id, x: n?.x || 0, y: n?.y || 0 }; });
-    dragRef.current = { kind: "node", ids: movingIds, startX: e.clientX, startY: e.clientY, startNodes };
-  };
-
-  useEffect(() => {
-    const onMove = (e) => {
-      if (linkDrag) {
-        setLinkDrag((p) => (p ? { ...p, mouse: clientToWorld(e.clientX, e.clientY) } : p));
-      }
-      const d = dragRef.current;
-      if (!d) return;
-      if (d.kind === "pan") {
-        setViewport((p) => ({ ...p, x: d.viewX + (e.clientX - d.startX), y: d.viewY + (e.clientY - d.startY) }));
-        return;
-      }
-      if (d.kind === "marquee") {
-        const m = clientToWorld(e.clientX, e.clientY);
-        const x = Math.min(d.start.x, m.x); const y = Math.min(d.start.y, m.y);
-        const w = Math.abs(m.x - d.start.x); const h = Math.abs(m.y - d.start.y);
-        setMarquee({ x, y, w, h });
-        const ids = allNodes.filter((n) => (n.x || 0) + 220 >= x && (n.x || 0) <= x + w && (n.y || 0) + 120 >= y && (n.y || 0) <= y + h).map((n) => n.id);
-        if (e.shiftKey) {
-          const merged = Array.from(new Set([...(selectedNodesRef.current || []), ...ids]));
-          setSelectedNodes(merged);
-        } else {
-          setSelectedNodes(ids);
-        }
-        return;
-      }
-      const dx = (e.clientX - d.startX) / viewport.zoom;
-      const dy = (e.clientY - d.startY) / viewport.zoom;
-      const changedByKind = { resource: [], status: [], generic: [] };
-      (d.startNodes || []).forEach((s0) => {
-        const patch = { x: snapValue(s0.x + dx, e), y: snapValue(s0.y + dy, e) };
-        const node = allNodes.find((n) => n.id === s0.id);
-        if (!node || (node.x === patch.x && node.y === patch.y)) return;
-        changedByKind[node.kind].push({ id: s0.id, patch });
-      });
-      if (changedByKind.resource.length) {
-        const mp = new Map(changedByKind.resource.map((x) => [x.id, x.patch]));
-        saveCombate({ recursos: (state.recursos || []).map((r) => (mp.has(r.id) ? { ...r, ...mp.get(r.id) } : r)) });
-      }
-      if (changedByKind.status.length) {
-        const mp = new Map(changedByKind.status.map((x) => [x.id, x.patch]));
-        saveCombate({ statusNodes: (state.statusNodes || []).map((r) => (mp.has(r.id) ? { ...r, ...mp.get(r.id) } : r)) });
-      }
-      if (changedByKind.generic.length) {
-        const mp = new Map(changedByKind.generic.map((x) => [x.id, x.patch]));
-        saveCombate({ genericNodes: (state.genericNodes || []).map((r) => (mp.has(r.id) ? { ...r, ...mp.get(r.id) } : r)) });
-      }
-    };
-    const onUp = () => {
-      dragRef.current = null;
-      setLinkDrag(null);
-      setMarquee(null);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, [viewport.zoom, allNodes, linkDrag, state]);
-
-
-  const moveSelectedNodes = (dx, dy) => {
-    if (!selectedNodes.length) return;
-    const selectedSet = new Set(selectedNodes);
-    const res = (state.recursos || []).map((n) => (selectedSet.has(n.id) ? { ...n, x: Math.round((n.x || 0) + dx), y: Math.round((n.y || 0) + dy) } : n));
-    const sts = (state.statusNodes || []).map((n) => (selectedSet.has(n.id) ? { ...n, x: Math.round((n.x || 0) + dx), y: Math.round((n.y || 0) + dy) } : n));
-    const gen = (state.genericNodes || []).map((n) => (selectedSet.has(n.id) ? { ...n, x: Math.round((n.x || 0) + dx), y: Math.round((n.y || 0) + dy) } : n));
-    saveCombate({ recursos: res, statusNodes: sts, genericNodes: gen });
-  };
-
-  const deleteSelectedNodes = () => {
-    if (!selectedNodesRef.current.length) return;
-    const selectedSet = new Set(selectedNodesRef.current);
-    saveCombate({
-      recursos: (state.recursos || []).filter((x) => !selectedSet.has(x.id)),
-      statusNodes: (state.statusNodes || []).filter((x) => !selectedSet.has(x.id)),
-      genericNodes: (state.genericNodes || []).filter((x) => !selectedSet.has(x.id)),
-      nodeLinks: links.filter((l) => !selectedSet.has(l.from.id) && !selectedSet.has(l.to.id)),
-    });
-    setSelectedNodes([]);
-  };
-
-  const copySelectedNodes = () => {
-    const selectedSet = new Set(selectedNodesRef.current);
-    const pack = allNodes.filter((n) => selectedSet.has(n.id)).map((n) => ({ ...n }));
-    setClipboardNodes(pack);
-  };
-
-  const pasteClipboardNodes = () => {
-    if (!clipboardNodes.length) return;
-    const minX = Math.min(...clipboardNodes.map((n) => n.x || 0));
-    const minY = Math.min(...clipboardNodes.map((n) => n.y || 0));
-    const center = getCanvasCenterWorld();
-    const deltaX = center.x - minX;
-    const deltaY = center.y - minY;
-    const added = clipboardNodes.map((n) => {
-      const id = uid();
-      return {
-        ...n,
-        id,
-        x: Math.round((n.x || 0) + deltaX),
-        y: Math.round((n.y || 0) + deltaY),
-      };
-    });
-    saveCombate({
-      recursos: [...(state.recursos || []), ...added.filter((n) => n.kind === "resource")],
-      statusNodes: [...(state.statusNodes || []), ...added.filter((n) => n.kind === "status")],
-      genericNodes: [...(state.genericNodes || []), ...added.filter((n) => n.kind === "generic")],
-    });
-    setSelectedNodes(added.map((n) => n.id));
-  };
-
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key.toLowerCase() === String(createNodeHotkey || "a").toLowerCase()) {
-        if (!isCanvasHot) return;
-        if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
-        e.preventDefault();
-        setNodePickerOpen(true);
-        return;
-      }
-      if (e.key === "Delete" && selectedNodes.length) {
-        e.preventDefault();
-        deleteSelectedNodes();
-      }
-      if (e.ctrlKey && e.key.toLowerCase() === "d" && selectedNodes.length) {
-        e.preventDefault();
-        selectedNodes.forEach((id) => { const n = allNodes.find((x) => x.id === id); if (n) duplicateNode(n); });
-      }
-      if (e.ctrlKey && e.key.toLowerCase() === "c" && selectedNodes.length) {
-        e.preventDefault();
-        copySelectedNodes();
-      }
-      if (e.ctrlKey && e.key.toLowerCase() === "v" && clipboardNodes.length) {
-        e.preventDefault();
-        pasteClipboardNodes();
-      }
-      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key) && selectedNodes.length) {
-        e.preventDefault();
-        const step = e.shiftKey ? 16 : 4;
-        if (e.key === "ArrowUp") moveSelectedNodes(0, -step);
-        if (e.key === "ArrowDown") moveSelectedNodes(0, step);
-        if (e.key === "ArrowLeft") moveSelectedNodes(-step, 0);
-        if (e.key === "ArrowRight") moveSelectedNodes(step, 0);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [selectedNodes, allNodes, state, isCanvasHot, clipboardNodes, createNodeHotkey]);
-
-  useEffect(() => {
-    selectedNodesRef.current = selectedNodes;
-  }, [selectedNodes]);
-
-  useEffect(() => {
-    const onFs = () => setIsFullscreen(document.fullscreenElement === fullscreenRootRef.current);
-    document.addEventListener("fullscreenchange", onFs);
-    return () => document.removeEventListener("fullscreenchange", onFs);
-  }, []);
-
-  useEffect(() => {
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const sync = () => setReduceMotion(media.matches);
-    sync();
-    media.addEventListener?.("change", sync);
-    return () => media.removeEventListener?.("change", sync);
-  }, []);
-
-  const onCanvasEnter = () => { document.body.style.overflow = "hidden"; setIsCanvasHot(true); };
-  const onCanvasLeave = () => { document.body.style.overflow = ""; dragRef.current = null; setIsCanvasHot(false); };
-
-  const getCanvasCenterWorld = () => {
-    if (!canvasWrapRef.current) return { x: Math.round((420 - viewport.x) / viewport.zoom), y: Math.round((220 - viewport.y) / viewport.zoom) };
-    const rect = canvasWrapRef.current.getBoundingClientRect();
+function normalizeCombateState(combate = {}) {
+  const fromOld = Array.isArray(combate?.recursos) ? combate.recursos : [];
+  const resourceByCode = new Map(fromOld.map((r) => [String(r.nome || r.codigo || "").toUpperCase(), r]));
+  const base = CORE_RESOURCES.map((core) => {
+    const old = resourceByCode.get(core.codigo);
     return {
-      x: Math.round((rect.width / 2 - viewport.x - 110 * viewport.zoom) / viewport.zoom),
-      y: Math.round((rect.height / 2 - viewport.y - 60 * viewport.zoom) / viewport.zoom),
+      id: old?.id || uid(),
+      codigo: core.codigo,
+      nome: core.nome,
+      cor: old?.cor || core.cor,
+      shape: old?.slotShape || old?.shape || core.shape,
+      total: Number(old?.max ?? old?.total ?? core.total),
+      atual: Number(old?.atual ?? old?.max ?? old?.total ?? core.total),
     };
+  });
+  const customs = fromOld
+    .filter((r) => !CORE_RESOURCES.some((c) => c.codigo === String(r.nome || r.codigo || "").toUpperCase()))
+    .map((r) => ({
+      id: r.id || uid(),
+      codigo: String(r.nome || r.codigo || "").toUpperCase() || "NOVO",
+      nome: r.descricao || String(r.nome || r.codigo || "Recurso"),
+      cor: r.cor || "#7f8c8d",
+      shape: r.slotShape || r.shape || "square",
+      total: Number(r.max ?? r.total ?? 0),
+      atual: Number(r.atual ?? r.max ?? r.total ?? 0),
+    }));
+
+  return {
+    rodadaAtual: Number(combate?.rodadaAtual || 0),
+    lembretes: Array.isArray(combate?.lembretes) ? combate.lembretes : [],
+    logs: Array.isArray(combate?.logs) ? combate.logs : [],
+    pendingSkillIds: Array.isArray(combate?.pendingSkillIds) ? combate.pendingSkillIds : [],
+    recursos: [...base, ...customs],
+  };
+}
+
+function skillFromEntry(entry) {
+  return entry?.effectiveSkill || entry?.skill || entry || {};
+}
+
+function parseSkillCosts(skill) {
+  return (skill?.custos || []).map((c) => ({
+    codigo: String(c.codigo || "").toUpperCase(),
+    quantidade: Math.max(0, Number(c.quantidade || 0)),
+  })).filter((c) => c.codigo && c.quantidade > 0);
+}
+
+function shapeView(shape, color) {
+  if (shape === "triangle") {
+    return <span style={{ width: 0, height: 0, borderLeft: "9px solid transparent", borderRight: "9px solid transparent", borderBottom: `16px solid ${color}` }} />;
+  }
+  if (shape === "hex") {
+    return <span style={{ width: 16, height: 16, background: color, clipPath: "polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%)" }} />;
+  }
+  return <span style={{ width: 16, height: 16, borderRadius: SHAPE[shape] || "5px", background: color }} />;
+}
+
+export function TabCombate({ ficha, onUpdate, onNotify }) {
+  const [query, setQuery] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [skillModal, setSkillModal] = useState(null);
+  const [effectsOpen, setEffectsOpen] = useState(false);
+  const [remindersOpen, setRemindersOpen] = useState(false);
+  const [effectDetail, setEffectDetail] = useState(null);
+
+  const combate = useMemo(() => normalizeCombateState(ficha?.combate || {}), [ficha?.combate]);
+  const assigned = useMemo(() => (ficha?.skills || []).map((entry) => ({ entry, skill: skillFromEntry(entry) })), [ficha?.skills]);
+  const filteredSkills = useMemo(() => assigned.filter(({ skill }) => (`${skill.nome || ""} ${skill.descricao || ""} ${(skill.custos || []).map((c) => c.codigo).join(" ")}`).toLowerCase().includes(query.toLowerCase())), [assigned, query]);
+
+  const activeEffects = useMemo(() => (ficha?.modificadores?.efeitos || []).filter((e) => e.ativo !== false), [ficha?.modificadores?.efeitos]);
+
+  const pendingEntries = useMemo(() => assigned.filter(({ entry }) => combate.pendingSkillIds.includes(entry.id)), [assigned, combate.pendingSkillIds]);
+
+  const previewCosts = useMemo(() => {
+    const sum = {};
+    pendingEntries.forEach(({ skill }) => {
+      parseSkillCosts(skill).forEach((c) => { sum[c.codigo] = (sum[c.codigo] || 0) + c.quantidade; });
+    });
+    return sum;
+  }, [pendingEntries]);
+
+  const byResource = new Map((combate.recursos || []).map((r) => [r.codigo, r]));
+  const byStatus = new Map(Object.entries(ficha?.status || {}).map(([k, v]) => [k.toUpperCase(), v]));
+  const resolveCode = (code) => (code === "CONSC" ? "CONS" : code);
+
+  const canCloseRound = Object.entries(previewCosts).every(([rawCode, qtd]) => {
+    const code = resolveCode(rawCode);
+    const res = byResource.get(code);
+    if (res) return Number(res.atual || 0) >= qtd;
+    const st = byStatus.get(code);
+    if (st) return Number(st.val || 0) >= qtd;
+    return false;
+  });
+
+  const saveCombate = (patch) => onUpdate({ combate: { ...(ficha.combate || {}), ...patch } });
+
+  const updateResource = (id, patch) => saveCombate({ recursos: combate.recursos.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
+
+  const toggleSkill = (id) => {
+    const list = combate.pendingSkillIds.includes(id)
+      ? combate.pendingSkillIds.filter((x) => x !== id)
+      : [...combate.pendingSkillIds, id];
+    saveCombate({ pendingSkillIds: list });
   };
 
-  const openNodeType = (type) => {
-    setNodePickerOpen(false);
-    setEditing({ kind: null, id: null });
-    const c = getCanvasCenterWorld();
-    if (type === "Recurso") { setResourceEditorData({ ...defaultResourceForm(), ...c }); setResourceEditorOpen(true); return; }
-    if (type === "Barra de Status") { setStatusEditorData({ ...defaultStatusForm(), ...c }); setStatusEditorOpen(true); return; }
-    setGenericEditorData({ ...defaultGenericForm(type), ...c });
-    setGenericEditorOpen(true);
+  const addLog = (mensagem) => {
+    saveCombate({ logs: [{ id: uid(), rodada: combate.rodadaAtual, mensagem, em: Date.now() }, ...(combate.logs || [])].slice(0, 120) });
   };
 
-  const saveResourceEditor = () => {
-    const p = { ...resourceEditorData, max: Math.max(0, Number(resourceEditorData.max) || 0), atual: Math.max(0, Math.min(Number(resourceEditorData.atual) || 0, Math.max(0, Number(resourceEditorData.max) || 0))) };
-    if (!editing.id) { const c = getCanvasCenterWorld(); saveCombate({ recursos: [...(state.recursos || []), { id: uid(), ...c, ...p }] }); }
-    else updateResourceById(editing.id, p);
-    setResourceEditorOpen(false);
+  const closeRound = () => {
+    if (!canCloseRound) {
+      onNotify?.("Custos excedem os recursos/status atuais.", "error");
+      return;
+    }
+    const newResources = combate.recursos.map((r) => {
+      const spend = previewCosts[r.codigo] || 0;
+      return { ...r, atual: Math.max(0, Number(r.atual || 0) - spend) };
+    });
+    const nextStatus = { ...(ficha.status || {}) };
+    Object.entries(previewCosts).forEach(([rawCode, qtd]) => {
+      const code = resolveCode(rawCode);
+      if (!nextStatus[code]) return;
+      nextStatus[code] = { ...nextStatus[code], val: Math.max(0, Number(nextStatus[code].val || 0) - qtd) };
+    });
+    const usedNames = pendingEntries.map(({ skill }) => skill.nome || "Skill").join(", ");
+    onUpdate({ status: nextStatus, combate: { ...(ficha.combate || {}), recursos: newResources, rodadaAtual: combate.rodadaAtual + 1, pendingSkillIds: [] } });
+    addLog(`Rodada ${combate.rodadaAtual + 1}: ${usedNames || "sem skills"}.`);
+    onNotify?.("Rodada avançada com sucesso.", "success");
   };
 
-  const saveStatusEditor = () => {
-    const p = { ...statusEditorData, sigla: String(statusEditorData.sigla || "NOV").toUpperCase(), cor2: statusEditorData.cor2 || "#f1c40f", max: Math.max(1, Number(statusEditorData.max || 1)), val: Math.max(0, Math.min(Number(statusEditorData.val || 0), Math.max(1, Number(statusEditorData.max || 1)))) };
-    if (!editing.id) { const c = getCanvasCenterWorld(); saveCombate({ statusNodes: [...(state.statusNodes || []), { id: uid(), ...c, ...p }] }); }
-    else updateStatusById(editing.id, p);
-    setStatusEditorOpen(false);
+  const setStatusValue = (key, field, value) => {
+    const curr = ficha?.status?.[key] || { val: 0, max: 1 };
+    const patch = { ...curr, [field]: value };
+    if (field === "max") patch.val = Math.min(Number(patch.val || 0), Number(value || 1));
+    onUpdate({ status: { ...(ficha.status || {}), [key]: patch } });
   };
 
-  const saveGenericEditor = () => {
-    const p = { ...genericEditorData };
-    if (!editing.id) { const c = getCanvasCenterWorld(); saveCombate({ genericNodes: [...(state.genericNodes || []), { id: uid(), ...c, ...p }] }); }
-    else updateGenericById(editing.id, p);
-    setGenericEditorOpen(false);
-  };
-
-  const toggleFullscreen = async () => {
-    if (!fullscreenRootRef.current) return;
-    if (document.fullscreenElement === fullscreenRootRef.current) await document.exitFullscreen();
-    else await fullscreenRootRef.current.requestFullscreen();
+  const addReminder = () => {
+    const next = [{ id: uid(), texto: "Novo lembrete", lembrarNaRodada: combate.rodadaAtual + 1, tipo: "naRodada" }, ...(combate.lembretes || [])];
+    saveCombate({ lembretes: next });
   };
 
   return (
-    <>
-      <style>{`@keyframes canvasGlow {0%{background-position:0% 40%}50%{background-position:100% 60%}100%{background-position:0% 40%}} @keyframes nodePop {0%{transform:translateY(0)}50%{transform:translateY(-1px)}100%{transform:translateY(0)}} @keyframes linkPulse {0%{filter:drop-shadow(0 0 0 #7dd3fc)}50%{filter:drop-shadow(0 0 6px #7dd3fc)}100%{filter:drop-shadow(0 0 0 #7dd3fc)}} @keyframes resourcePulse {0%{box-shadow:0 0 0 rgba(255,255,255,0)}50%{box-shadow:0 0 8px rgba(255,255,255,.35)}100%{box-shadow:0 0 0 rgba(255,255,255,0)}} @media (prefers-reduced-motion: reduce){*{animation-duration:0.001ms !important; animation-iteration-count:1 !important; transition-duration:0.001ms !important;}}`}</style>
-    <div ref={fullscreenRootRef} style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 12, padding: 12, position: "relative", minHeight: undefined }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <span style={{ fontFamily: "'Cinzel',serif", color: G.gold, letterSpacing: 2 }}>◈ COMBATE</span>
-        {!isFullscreen && <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <HoverButton onClick={() => setRodada(state.rodadaAtual - 1)}>&lt;</HoverButton>
-          <span style={{ fontFamily: "monospace", color: "#8ec8ff" }}>Rodada {state.rodadaAtual}</span>
-          <HoverButton onClick={() => setRodada(state.rodadaAtual + 1)}>&gt;</HoverButton>
-          <HoverButton onClick={proxRodada}>Próx</HoverButton>
-        </div>}
-      </div>
+    <div style={{ display: "grid", gridTemplateColumns: "320px 1fr 360px", gap: 12, height: "100%" }}>
+      <div style={{ border: `1px solid ${G.border}`, borderRadius: 10, padding: 10, background: G.bg2, display: "grid", gridTemplateRows: "auto auto 1fr auto" }}>
+        <div style={{ fontFamily: "'Cinzel',serif", color: G.gold, fontSize: 13, letterSpacing: 2 }}>Rodadas</div>
+        <div style={{ color: "#c8b188", marginBottom: 6 }}>Atual: <b>{combate.rodadaAtual}</b></div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+          <HoverButton style={btnStyle({ flex: 1 })} onClick={closeRound}>Próxima rodada</HoverButton>
+          <HoverButton style={btnStyle({ borderColor: "#6b5b35", color: "#d7c193" })} onClick={() => setRemindersOpen(true)}>Lembretes</HoverButton>
+          <HoverButton style={btnStyle({ borderColor: "#55739a", color: "#9dcbff" })} onClick={() => setEffectsOpen(true)}>Efeitos</HoverButton>
+        </div>
 
-      <div style={{ display: "flex", gap: 6, marginBottom: 10, opacity: isFullscreen ? 0.9 : 1 }}>
-        {["recursos", "efeitos", "lembretes"].map((aba) => {
-          const hasAlert = aba === "lembretes" ? activeLembretes.length > 0 : aba === "efeitos" ? notifyingEffects.length > 0 : false;
-          return <button key={aba} onClick={() => setTab(aba)} style={{ ...btnStyle({ padding: "6px 12px" }), borderColor: state.abaAtiva === aba ? "#5dade266" : undefined, color: state.abaAtiva === aba ? "#b6ddff" : undefined, position: "relative" }}>{aba[0].toUpperCase() + aba.slice(1)}{hasAlert && <span style={{ position: "absolute", top: -6, right: -6, color: "#ff4d6d" }}>❗</span>}</button>;
-        })}
-      </div>
-
-      {state.abaAtiva === "recursos" && (
-        <div>
-          {!isFullscreen && <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <HoverButton onClick={() => setNodePickerOpen(true)}>{`+ Novo Nó (${String(createNodeHotkey || "a").toUpperCase()})`}</HoverButton>
-            <HoverButton onClick={() => saveCombate({ recursos: (state.recursos || []).map((r) => ({ ...r, atual: Number(outputs[r.id]?.max ?? r.max) })) })} style={btnStyle({ borderColor: "#2ecc7144", color: "#7cf0b3" })}>Resetar Recursos</HoverButton>
-            <HoverButton onClick={toggleFullscreen} style={btnStyle({ borderColor: "#3498db55", color: "#8fc8ff" })}>⛶</HoverButton>
-          </div>}
-
-          <div
-            ref={canvasWrapRef}
-            onWheel={onWheelCanvas}
-            onMouseDown={onCanvasMouseDown}
-            onMouseEnter={onCanvasEnter}
-            onMouseLeave={onCanvasLeave}
-            style={{ border: "1px solid #2a2a2a", borderRadius: 12, background: "radial-gradient(circle at 20% 20%, #14203a 0, #0b101d 45%, #07090f 100%)", backgroundSize: "120% 120%", animation: reduceMotion ? "none" : "canvasGlow 9s ease-in-out infinite", height: isFullscreen ? "100vh" : 340, overflow: "hidden", position: "relative", cursor: "grab", transition: "all .2s ease" }}
-          >
-            {isFullscreen && <div style={{ position: "absolute", top: 10, right: 10, zIndex: 30, display: "flex", gap: 6, alignItems: "center", background: "#05070bcc", border: "1px solid #335", borderRadius: 10, padding: "6px 8px" }}>
-              <HoverButton onClick={() => setNodePickerOpen(true)} style={btnStyle({ padding: "5px 8px" })}>{`+ Nó (${String(createNodeHotkey || "a").toUpperCase()})`}</HoverButton>
-              <HoverButton onClick={() => setRodada(state.rodadaAtual - 1)} style={btnStyle({ padding: "5px 8px" })}>&lt;</HoverButton>
-              <span style={{ fontFamily: "monospace", color: "#8ec8ff", minWidth: 72, textAlign: "center" }}>Rod {state.rodadaAtual}</span>
-              <HoverButton onClick={() => setRodada(state.rodadaAtual + 1)} style={btnStyle({ padding: "5px 8px" })}>&gt;</HoverButton>
-              <HoverButton onClick={proxRodada} style={btnStyle({ padding: "5px 8px" })}>Próx</HoverButton>
-              <HoverButton onClick={() => saveCombate({ recursos: (state.recursos || []).map((r) => ({ ...r, atual: Number(outputs[r.id]?.max ?? r.max) })) })} style={btnStyle({ borderColor: "#2ecc7144", color: "#7cf0b3", padding: "5px 8px" })}>Reset</HoverButton>
-              <HoverButton onClick={toggleFullscreen} style={btnStyle({ borderColor: "#3498db55", color: "#8fc8ff", padding: "5px 8px" })}>🡼</HoverButton>
-            </div>}
-
-            {marquee && <div style={{ position: "absolute", left: marquee.x * viewport.zoom + viewport.x, top: marquee.y * viewport.zoom + viewport.y, width: marquee.w * viewport.zoom, height: marquee.h * viewport.zoom, border: "1px dashed #7dd3fc", background: "#7dd3fc22", pointerEvents: "none", zIndex: 40 }} />}
-            <div style={{ position: "absolute", left: 10, bottom: 10, fontFamily: "monospace", fontSize: 10, color: "#8ea2bd", zIndex: 41, background: "#05070bb8", border: "1px solid #2a3f5f", borderRadius: 8, padding: "4px 8px" }}>
-              {`Atalhos: ${String(createNodeHotkey || "a").toUpperCase()} novo nó · Ctrl+C/Ctrl+V copiar/colar · Delete apagar`}
-            </div>
-            <div style={{ position: "absolute", right: 10, bottom: 10, width: 180, height: 120, border: "1px solid #345", background: "#05070bcc", borderRadius: 8, zIndex: 40, overflow: "hidden" }}><div style={{ position: "absolute", inset: 0 }}>{allNodes.map((n) => <div key={`m-${n.id}`} style={{ position: "absolute", left: ((n.x||0)/2000)*180, top: ((n.y||0)/1400)*120, width: 10, height: 6, background: "#9fb3c8aa", borderRadius: 3 }} />)}<div style={{ position: "absolute", left: ((-viewport.x/viewport.zoom)/2000)*180, top: ((-viewport.y/viewport.zoom)/1400)*120, width: (canvasWrapRef.current?.clientWidth||300)/viewport.zoom/2000*180, height: (canvasWrapRef.current?.clientHeight||200)/viewport.zoom/1400*120, border: "1px solid #7dd3fc" }} /></div></div>
-            <div style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`, transformOrigin: "top left", width: 2000, height: 1400, position: "relative" }}>
-              <svg style={{ position: "absolute", inset: 0, width: 2000, height: 1400, pointerEvents: "none", overflow: "visible" }}>
-                {links.map((l) => {
-                  const from = allNodes.find((n) => n.id === l.from.id);
-                  const to = allNodes.find((n) => n.id === l.to.id);
-                  if (!from || !to) return null;
-                  const fromPorts = getOutputPorts(from);
-                  const toPorts = getInputPorts(to);
-                  const fromIndex = Math.max(0, fromPorts.indexOf(l.from.port));
-                  const toIndex = Math.max(0, toPorts.indexOf(l.to.port));
-                  const y1 = (from.y || 0) + getPortY(fromIndex);
-                  const y2 = (to.y || 0) + getPortY(toIndex);
-                  const x1 = (from.x || 0) + 222;
-                  const x2 = (to.x || 0) - 2;
-                  const lane = ((links.findIndex((x) => x.id === l.id) % 5) - 2) * 8;
-                  const c1 = x1 + Math.max(24, Math.abs(x2 - x1) * 0.32);
-                  const c2 = x2 - Math.max(24, Math.abs(x2 - x1) * 0.32);
-                  const pathD = `M ${x1} ${y1} C ${c1} ${y1 + lane}, ${c2} ${y2 - lane}, ${x2} ${y2}`;
-                  const stroke = getLinkColor(l.from.port, from);
-                  return (
-                    <g key={l.id}>
-                      <line x1={x1 - 5} y1={y1} x2={x1 + 1} y2={y1} stroke="#000" strokeWidth="4" />
-                      <line x1={x2 - 1} y1={y2} x2={x2 + 5} y2={y2} stroke="#000" strokeWidth="4" />
-                      <path d={pathD} stroke="#000" fill="none" strokeWidth="6" strokeLinecap="round" />
-                      <path d={pathD} stroke={stroke} fill="none" strokeWidth="3" strokeLinecap="round" />
-                    </g>
-                  );
-                })}
-                {linkDrag && (() => {
-                  const from = allNodes.find((n) => n.id === linkDrag.from.id);
-                  if (!from) return null;
-                  const fromPorts = getOutputPorts(from);
-                  const fromIndex = Math.max(0, fromPorts.indexOf(linkDrag.from.port));
-                  const x1 = (from.x || 0) + 222;
-                  const y1 = (from.y || 0) + getPortY(fromIndex);
-                  const x2 = linkDrag.mouse.x;
-                  const y2 = linkDrag.mouse.y;
-                  const c1 = x1 + 28;
-                  const c2 = x2 - 28;
-                  const d = `M ${x1} ${y1} C ${c1} ${y1}, ${c2} ${y2}, ${x2} ${y2}`;
-                  const stroke = getLinkColor(linkDrag.from.port, from);
-                  return <g><path d={d} stroke="#000" fill="none" strokeWidth="6" strokeLinecap="round" strokeDasharray="6 4" /><path d={d} stroke={stroke} fill="none" strokeWidth="3" strokeLinecap="round" strokeDasharray="6 4" /></g>;
-                })()}
-              </svg>
-              <div style={{ position: "absolute", left: 1000, top: 0, width: 1, height: 1400, background: "#ffffff14" }} />
-              <div style={{ position: "absolute", left: 0, top: 700, width: 2000, height: 1, background: "#ffffff14" }} />
-              {allNodes.map((n) => {
-                const out = outputs[n.id] || {};
-                const cor = out.cor || n.cor || "#95a5a6";
-                const inputPorts = getInputPorts(n);
-                const outputPorts = getOutputPorts(n);
-                const incomingValue = links.find((l) => l.to.id === n.id && l.to.port === "value");
-                const hasInputLink = (port) => links.some((l) => l.to.id === n.id && l.to.port === port);
-                return (
-                  <div data-node-card="1" key={n.id} role="group" aria-label={`Nó ${n.kind} ${n.nome || n.label || n.nodeType || "sem nome"}`} tabIndex={0} onMouseDown={(e) => onNodeMouseDown(n, e)} style={{ position: "absolute", left: n.x || 0, top: n.y || 0, width: 220, border: `1px solid ${selectedNodes.includes(n.id) ? "#7dd3fc" : cor+"77"}`, borderRadius: 12, background: "#000000bb", padding: 8, boxShadow: flash[n.id] === "del" ? "0 0 20px #ff4d6d" : flash[n.id] === "dup" ? "0 0 20px #7cf0b3" : (selectedNodes.includes(n.id) ? "0 0 16px #7dd3fc66" : "0 0 18px #000"), transform: flash[n.id] === "dup" ? "scale(1.03)" : flash[n.id] === "del" ? "scale(0.96) rotate(-1deg)" : "none", userSelect: "none", animation: reduceMotion ? "none" : "nodePop 4s ease-in-out infinite", transition: "all .18s ease", outline: selectedNodes.includes(n.id) ? "2px solid #7dd3fc66" : "none" }}>
-                    <div style={{ position: "absolute", left: -8, top: 14, display: "grid", gap: 4 }}>
-                      {inputPorts.map((p, i) => {
-                        const linked = links.some((l) => l.to.id === n.id && l.to.port === p);
-                        return (
-                          <div key={p} style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", height: 18 }}>
-                            <button onMouseDown={(e) => startUnlinkDrag({ id: n.id, port: p }, e)} onMouseUp={(e) => { e.stopPropagation(); completeLinkDrop({ id: n.id, port: p }); }} style={{ width: 14, height: 14, borderRadius: "50%", border: `1px solid ${cor}aa`, background: linked ? `radial-gradient(circle at 35% 35%, #fff, ${cor})` : "radial-gradient(circle at 35% 35%, #242b38, #10131a)", boxShadow: linked ? `0 0 6px ${cor}` : "inset 0 0 0 1px #000", cursor: "crosshair", transition: "all .15s ease" }} title={`Input: ${getPortLabel(p)}`} aria-label={`Entrada ${getPortLabel(p)} do nó ${n.nome || n.label || n.nodeType || "sem nome"}`} />
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div style={{ position: "absolute", right: -8, top: 14, display: "grid", gap: 4 }}>
-                      {outputPorts.map((p) => {
-                        const active = linkDrag?.from?.id === n.id && linkDrag?.from?.port === p;
-                        return (
-                          <div key={p} style={{ display: "flex", alignItems: "center", height: 18 }}>
-                            <button onMouseDown={(e) => beginLinkDrag({ id: n.id, port: p }, e)} style={{ width: 14, height: 14, borderRadius: "50%", border: `1px solid ${cor}aa`, background: active ? `radial-gradient(circle at 35% 35%, #fff, ${cor})` : "radial-gradient(circle at 35% 35%, #f0f3ff, #1b2030)", boxShadow: active ? `0 0 8px ${cor}` : "inset 0 0 0 1px #000", cursor: "grab", transition: "all .15s ease" }} title={`Output: ${getPortLabel(p)}`} aria-label={`Saída ${getPortLabel(p)} do nó ${n.nome || n.label || n.nodeType || "sem nome"}`} />
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 5, alignItems: "center", marginBottom: 6 }}>
-                      <div style={{ color: cor, fontFamily: "'Cinzel',serif", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.kind === "resource" ? n.nome : n.kind === "status" ? `${n.nome} (${n.sigla})` : (n.label || n.nodeType)}</div>
-                      <button onClick={() => setMinNodes((p) => ({ ...p, [n.id]: !p[n.id] }))} style={btnStyle({ padding: "2px 6px", borderRadius: 999, fontSize: 11 })}>{minNodes[n.id] ? "▣" : "▤"}</button>
-                      <button onClick={() => {
-                        duplicateNode(n)
-                      }} style={btnStyle({ padding: "2px 6px", borderRadius: 999, fontSize: 11 })}>⎘</button>
-                    </div>
-
-                    {!minNodes[n.id] && <div style={{ display: "grid", gap: 4, marginBottom: 6 }}>
-                      {n.kind === "resource" && <><input value={n.nome || ""} onChange={(e) => updateResourceById(n.id, { nome: e.target.value })} style={inpStyle()} /><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}><input type="number" value={Number(n.max || 0)} onChange={(e) => updateResourceById(n.id, { max: Math.max(0, Number(e.target.value) || 0) })} style={inpStyle()} /><input type="number" value={Number(n.atual || 0)} onChange={(e) => updateResourceById(n.id, { atual: Math.max(0, Number(e.target.value) || 0) })} style={inpStyle()} /></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}><select value={n.slotShape || "square"} onChange={(e) => updateResourceById(n.id, { slotShape: e.target.value })} style={inpStyle()}>{SHAPES.map((x) => <option key={x} value={x}>{x}</option>)}</select><input type="color" value={n.cor || "#95a5a6"} onChange={(e) => updateResourceById(n.id, { cor: e.target.value })} style={{ ...inpStyle(), height: 32 }} /></div></>}
-                      {n.kind === "status" && <><div style={{ display: "grid", gridTemplateColumns: "1fr 72px", gap: 4 }}><input value={n.nome || ""} onChange={(e) => updateStatusById(n.id, { nome: e.target.value })} style={inpStyle()} /><input value={n.sigla || ""} onChange={(e) => updateStatusById(n.id, { sigla: e.target.value.toUpperCase() })} style={inpStyle()} /></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}><input type="color" value={n.cor || "#f39c12"} onChange={(e) => updateStatusById(n.id, { cor: e.target.value })} style={{ ...inpStyle(), height: 32 }} /><input type="color" value={n.cor2 || "#f1c40f"} onChange={(e) => updateStatusById(n.id, { cor2: e.target.value })} style={{ ...inpStyle(), height: 32 }} /></div></>}
-                      {n.kind === "generic" && <input value={n.label || ""} onChange={(e) => updateGenericById(n.id, { label: e.target.value })} style={inpStyle()} />}
-                    </div>}
-
-                    {n.kind === "resource" && (() => {
-                      const maxLinked = hasInputLink("max");
-                      const atualLinked = hasInputLink("atual");
-                      const max = Math.max(0, Number(out.max ?? n.max ?? 0));
-                      const atual = Math.max(0, Math.min(max, Number(out.value ?? n.atual ?? 0)));
-                      const hover = hoverSlot[n.id];
-                      const preview = Number.isInteger(hover) ? hover + 1 : atual;
-                      const gasto = Math.max(0, atual - preview);
-                      return (
-                        <>
-                          <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                            {Array.from({ length: max }).map((_, i) => {
-                              const on = i < preview;
-                              const style = { width: 18, height: 18, border: `1px solid ${cor}`, background: on ? cor : "#151515", opacity: on ? 1 : 0.35, borderRadius: n.slotShape === "circle" ? "50%" : n.slotShape === "triangle" ? 0 : 4, clipPath: n.slotShape === "triangle" ? "polygon(50% 0, 0 100%, 100% 100%)" : undefined };
-                              return <button key={i} type="button" aria-label={`Slot ${i + 1} de ${max} em ${n.nome || "recurso"}`} disabled={atualLinked} onMouseEnter={() => setHoverSlot((p) => ({ ...p, [n.id]: i }))} onMouseLeave={() => setHoverSlot((p) => ({ ...p, [n.id]: null }))} onClick={() => {
-                                if (atualLinked) return;
-                                if (atual === 1 && i === 0) updateResourceById(n.id, { atual: 0 });
-                                else if (i === atual - 1) updateResourceById(n.id, { atual: Math.max(0, i) });
-                                else updateResourceById(n.id, { atual: i + 1 });
-                              }} style={{ ...style, cursor: atualLinked ? "not-allowed" : "pointer", animation: !reduceMotion && on ? "resourcePulse 2.6s ease-in-out infinite" : "none", transition: "transform .14s ease, opacity .2s ease, background .2s ease", transform: hover === i ? "scale(1.08)" : "scale(1)" }} />;
-                            })}
-                          </div>
-                          <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10, color: G.muted }}>{atual}/{max} · gasto previsto: {gasto}{maxLinked ? " · máx via link" : ""}{atualLinked ? " · atual via link" : ""}</div>
-                        </>
-                      );
-                    })()}
-
-                    {n.kind === "status" && (() => {
-                      const max = Math.max(1, Number(out.max ?? n.max ?? 1));
-                      const val = Math.max(0, Math.min(max, Number(out.value ?? n.val ?? 0)));
-                      return (
-                        <>
-                          {!minNodes[n.id] && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 4 }}>
-                            <input type="number" disabled={hasInputLink("val")} value={val} min={0} max={max} onChange={(e) => updateStatusById(n.id, { val: Math.max(0, Math.min(max, Number(e.target.value) || 0)) })} style={inpStyle()} />
-                            <input type="number" disabled={hasInputLink("max")} value={max} min={1} onChange={(e) => updateStatusById(n.id, { max: Math.max(1, Number(e.target.value) || 1) })} style={inpStyle()} />
-                          </div>}
-                          <div style={{ height: 10, borderRadius: 5, background: "#111", overflow: "hidden", border: "1px solid #000" }}><div style={{ width: `${(val / max) * 100}%`, height: "100%", background: `linear-gradient(90deg, ${cor}, ${out.cor2 || n.cor2 || "#f1c40f"})` }} /></div>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginTop: 4, fontFamily: "monospace", fontSize: 10, color: G.muted }}><span>valor: {val}/{max}</span><span style={{ textAlign: "right" }}>{Math.round((val / max) * 100)}%</span></div>
-                          <div style={{ marginTop: 2, fontFamily: "monospace", fontSize: 10, color: G.muted }}>zero output: {Number(out.zero || 0)}</div>
-                        </>
-                      );
-                    })()}
-
-                    {n.kind === "generic" && (
-                      <>
-                        {minNodes[n.id] && n.nodeType === "dice" && <button onClick={() => { const q = Math.max(1, Number(n.qty || 1)); const d = Math.max(2, Number(n.faces || 20)); let natural = 0; for (let i = 0; i < q; i += 1) { const r = 1 + Math.floor(Math.random() * d); if (r > natural) natural = r; } updateGenericById(n.id, { lastRoll: natural }); }} style={btnStyle({ padding: "4px 8px" })}>Rolar</button>}
-                        {!minNodes[n.id] && <>
-                        {n.nodeType === "value" && <><input type="number" disabled={!!incomingValue || !!n.sourcePath || hasInputLink("value")} value={Number(n.value || 0)} onChange={(e) => updateGenericById(n.id, { value: Number(e.target.value) || 0 })} style={inpStyle()} /><input value={n.expr || ""} onChange={(e) => updateGenericById(n.id, { expr: e.target.value })} placeholder="Expr: 10+2*3" style={inpStyle()} /></>}
-                        {n.nodeType === "comment" && <div style={{ padding: 6, borderRadius: 6, background: Number(out.value || 0) > 0 ? "#f1c40f22" : "#111", boxShadow: Number(out.value || 0) > 0 ? "0 0 12px #f1c40f99" : "none", color: G.text, minHeight: 34 }}>{n.text || "Comentário"}</div>}
-                        {n.nodeType === "math" && <select value={n.op || "+"} onChange={(e) => updateGenericById(n.id, { op: e.target.value })} style={inpStyle()}><option>+</option><option>-</option><option>*</option><option>/</option></select>}
-                        {n.nodeType === "conditional" && <><select value={n.cmp || ">"} onChange={(e) => updateGenericById(n.id, { cmp: e.target.value })} style={inpStyle()}><option value=">">{">"}</option><option value="<">{"<"}</option><option value="=">{"="}</option></select><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}><input type="number" value={Number(n.trueValue || 0)} onChange={(e) => updateGenericById(n.id, { trueValue: Number(e.target.value) || 0 })} style={inpStyle()} /><input type="number" value={Number(n.falseValue || 0)} onChange={(e) => updateGenericById(n.id, { falseValue: Number(e.target.value) || 0 })} style={inpStyle()} /></div></>}
-                        {n.nodeType === "logic" && <><select value={n.logic || "if"} onChange={(e) => updateGenericById(n.id, { logic: e.target.value })} style={inpStyle()}><option value="if">if</option><option value="or">or</option><option value="xor">xor</option><option value="and">and</option><option value="not">not</option><option value="else">else</option></select><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}><input type="number" value={Number(n.ifTrue || 1)} onChange={(e) => updateGenericById(n.id, { ifTrue: Number(e.target.value) || 0 })} style={inpStyle()} /><input type="number" value={Number(n.ifFalse || 0)} onChange={(e) => updateGenericById(n.id, { ifFalse: Number(e.target.value) || 0 })} style={inpStyle()} /></div></>}
-                        {n.nodeType === "color" && <input type="color" value={n.color || "#95a5a6"} onChange={(e) => updateGenericById(n.id, { color: e.target.value })} style={{ ...inpStyle(), height: 34 }} />}
-                        {n.nodeType === "receiver" && <div style={{ display: "grid", gap: 4 }}><input value={n.receiverKey || "DET"} onChange={(e) => updateGenericById(n.id, { receiverKey: String(e.target.value || "").toUpperCase() })} style={inpStyle()} /><input value={n.equation || "0"} onChange={(e) => updateGenericById(n.id, { equation: e.target.value })} style={inpStyle()} /><div style={{ fontFamily: "monospace", fontSize: 10, color: G.muted }}>sinais[{String(n.receiverKey || "").toUpperCase()}]={Number(receiverSignals[String(n.receiverKey || "").toUpperCase()] || 0)} | out: {Number(out.value || 0)}</div></div>}
-                        {n.nodeType === "dice" && <div style={{ display: "grid", gap: 4 }}>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-                            <input type="number" disabled={hasInputLink("qty")} value={Number(n.qty || 1)} onChange={(e) => updateGenericById(n.id, { qty: Math.max(1, Number(e.target.value) || 1) })} style={inpStyle()} />
-                            <button onClick={() => {
-                              const q = Math.max(1, Number(n.qty || 1));
-                              const d = Math.max(2, Number(n.faces || 20));
-                              let total = 0; let natural = 0;
-                              for (let i = 0; i < q; i += 1) { const r = 1 + Math.floor(Math.random() * d); total += r; if (r > natural) natural = r; }
-                              updateGenericById(n.id, { lastRoll: natural, rolledTotal: total });
-                            }} style={btnStyle({ padding: "4px 8px" })}>Rolar</button>
-                          </div>
-                          <div style={{ fontFamily: "monospace", fontSize: 10, color: G.muted }}>d{Number(n.faces || 20)} + {Number(n.bonus || 0)} | nat: {Number(n.lastRoll || 0)} | out: {Number(out.value || 0)} | crit: {Number(out.crit || 0)}</div>
-                        </div>}
-                        </>}
-                        <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10, color: G.muted }}>out: {String(out.value ?? out.cor ?? 0)}{out.crit !== undefined ? ` · crit: ${String(out.crit)}` : ""}</div>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+        <div style={{ border: "1px solid #3f3121", borderRadius: 8, padding: 8, background: "#0d0a07", overflow: "auto" }}>
+          <div style={{ color: "#c8b188", fontFamily: "monospace", fontSize: 11, marginBottom: 6 }}>Efeitos ativos</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {activeEffects.map((ef) => (
+              <button
+                key={ef.id}
+                title={`${ef.nome || "Efeito"} · duração: ${ef.duracao || ef.duracaoRodadas || "?"} rodadas`}
+                onClick={() => setEffectDetail(ef)}
+                style={{ width: 34, height: 34, borderRadius: 8, border: "1px solid #5f4f31", background: "#1a130b", color: "#f2ddb8", cursor: "pointer" }}
+              >
+                {ef.icone || (ef.nome || "E").slice(0, 1).toUpperCase()}
+              </button>
+            ))}
+            {activeEffects.length === 0 && <span style={{ color: G.muted, fontSize: 11, fontFamily: "monospace" }}>Sem efeitos ativos.</span>}
           </div>
         </div>
-      )}
 
-      {state.abaAtiva === "efeitos" && (
-        <div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto auto", gap: 6, marginBottom: 8 }}>
-            <select defaultValue="" onChange={(ev) => {
-              const ref = (efeitosCaldeirao || []).find((x) => x.id === ev.target.value);
-              if (!ref) return;
-              const next = instantiateEffectFromTemplate(ref, { rodadaInicio: state.rodadaAtual, ativo: false });
-              saveEffects([next, ...(charEffects || [])]);
-              ev.target.value = "";
-            }} style={inpStyle()}><option value="">Adicionar efeito do Caldeirão...</option>{(efeitosCaldeirao || []).map((ef) => <option key={ef.id} value={ef.id}>{ef.nome} · {ef.efeitoMecanico || "—"}</option>)}</select>
-            <HoverButton onClick={() => onOpenCaldeirao?.()}>Criar no Caldeirão</HoverButton>
-            <HoverButton onClick={() => saveEffects([instantiateEffectFromTemplate(makeDefaultEffect(), { nome: "Novo efeito local", origem: "Local", origemDetalhe: "Combate", ativo: false, rodadaInicio: state.rodadaAtual, sinalizar: false }), ...(charEffects || [])])} style={btnStyle({ borderColor: "#8e44ad55", color: "#dcb3ff" })}>Criar local</HoverButton>
-            <HoverButton onClick={ensureItemEffects} style={btnStyle({ borderColor: "#2ecc7144", color: "#7cf0b3" })}>Sincronizar itens</HoverButton>
-            <HoverButton onClick={() => saveEffects([...(charEffects || [])])}>Atualizar</HoverButton>
-          </div>
-          {(charEffects || []).map((e) => {
-            const isCollapsed = collapsed[e.id] ?? true;
+        <div style={{ marginTop: 10, border: "1px solid #3f3121", borderRadius: 8, padding: 8, background: "#0d0a07", minHeight: 120, overflow: "auto" }}>
+          <div style={{ color: "#c8b188", fontFamily: "monospace", fontSize: 11, marginBottom: 6 }}>Logs e situações</div>
+          {(combate.logs || []).slice(0, 12).map((log) => <div key={log.id} style={{ color: "#d7c8ae", fontFamily: "monospace", fontSize: 11, marginBottom: 3 }}>[R{log.rodada}] {log.mensagem}</div>)}
+          {(combate.logs || []).length === 0 && <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Sem eventos recentes.</div>}
+        </div>
+      </div>
+
+      <div style={{ border: `1px solid ${G.border}`, borderRadius: 10, background: G.bg2, padding: 10, display: "grid", gridTemplateRows: "auto auto 1fr" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8, marginBottom: 10 }}>
+          {CORE_STATUS.map((st) => {
+            const status = ficha?.status?.[st.key] || { val: 0, max: 1 };
+            const pct = Math.max(0, Math.min(100, (Number(status.val || 0) / Math.max(1, Number(status.max || 1))) * 100));
             return (
-              <div key={e.id} style={{ border: "1px solid #2a2a2a", borderRadius: 10, padding: 8, marginBottom: 8, background: "#0a0a0a", display: "grid", gap: 6 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "24px 80px 24px 24px 1fr auto auto", gap: 6, alignItems: "center" }}>
-                  <input type="checkbox" checked={e.ativo !== false} onChange={(ev) => toggleEffectAtivo(e.id, ev.target.checked)} />
-                  <select value={e.tipo || "Buff"} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, tipo: ev.target.value } : x))} style={inpStyle()}><option>Buff</option><option>Debuff</option><option>Efeito</option></select>
-                  <button onClick={() => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, sinalizar: !(x.sinalizar !== false) } : x))} style={btnStyle({ padding: "2px 6px", borderRadius: 999, fontSize: 11 })}>{e.sinalizar !== false ? "🔔" : "🔕"}</button>
-                  <button onClick={() => setCollapsed((p) => ({ ...p, [e.id]: !isCollapsed }))} style={btnStyle({ padding: "2px 6px", borderRadius: 999, fontSize: 11 })}>{isCollapsed ? "▸" : "▾"}</button>
-                  <input value={e.nome || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, nome: ev.target.value } : x))} style={inpStyle()} />
-                  <HoverButton onClick={() => saveEffects([{ ...e, id: uid(), nome: `${e.nome || "Efeito"} (cópia)` }, ...(charEffects || [])])}>⎘</HoverButton>
-                  <HoverButton onClick={() => saveEffects(charEffects.filter((x) => x.id !== e.id))} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c" })}>✕</HoverButton>
+              <div key={st.key} style={{ border: "1px solid #52422b", borderRadius: 8, background: "#0d0a07", padding: 6 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", color: st.cor, fontFamily: "monospace", fontSize: 11 }}>
+                  <span>{st.label}</span>
+                  <span>{status.val}/{status.max}</span>
                 </div>
-
-                {isCollapsed ? (
-                  <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>{e.tipo || "—"} · {e.nome || "Sem nome"} · {e.efeitoMecanico || e.efeito || "—"}{Number.isFinite(Number(e.rodadaFim)) ? ` · até rodada ${Number(e.rodadaFim)}` : ""}</div>
-                ) : (
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <textarea value={e.descricao || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, descricao: ev.target.value } : x))} rows={2} style={inpStyle({ resize: "vertical" })} placeholder="Descrição" />
-                    <input value={e.efeitoMecanico || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, efeitoMecanico: ev.target.value } : x))} style={inpStyle()} placeholder="Efeito mecânico" />
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                      <input value={e.duracao || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, duracao: ev.target.value } : x))} style={inpStyle()} placeholder="Duração" />
-                      <select value={e.alvo || "Portador"} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, alvo: ev.target.value } : x))} style={inpStyle()}>
-                        <option>Portador</option><option>Alvo</option><option>Área</option><option>Condição</option><option>Todos</option>
-                      </select>
-                    </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-                      <select value={String(e.eterno === true)} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, eterno: ev.target.value === "true" } : x))} style={inpStyle()}><option value="false">Não eterno</option><option value="true">Eterno</option></select>
-                      <select value={String(e.removivel === true)} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, removivel: ev.target.value === "true" } : x))} style={inpStyle()}><option value="false">Não removível</option><option value="true">Removível</option></select>
-                      <input value={e.condicaoRemocao || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, condicaoRemocao: ev.target.value } : x))} style={inpStyle()} placeholder="Condição remoção" />
-                    </div>
-                    <input value={e.frase || ""} onChange={(ev) => saveEffects(charEffects.map((x) => x.id === e.id ? { ...x, frase: ev.target.value } : x))} style={inpStyle()} placeholder="Frase/nota" />
-                  </div>
-                )}
+                <div style={{ height: 7, borderRadius: 4, background: "#221a12", margin: "5px 0" }}><div style={{ width: `${pct}%`, height: "100%", background: st.cor, borderRadius: 4 }} /></div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                  <input type="number" min={0} value={status.val} onChange={(e) => setStatusValue(st.key, "val", Math.max(0, Number(e.target.value) || 0))} style={inpStyle({ padding: "3px 5px", fontSize: 10 })} />
+                  <input type="number" min={1} value={status.max} onChange={(e) => setStatusValue(st.key, "max", Math.max(1, Number(e.target.value) || 1))} style={inpStyle({ padding: "3px 5px", fontSize: 10 })} />
+                </div>
               </div>
             );
           })}
         </div>
-      )}
 
-      {state.abaAtiva === "lembretes" && (
-        <div style={{ display: "grid", gap: 8 }}>
-          <HoverButton onClick={() => saveCombate({ lembretes: [...(state.lembretes || []), { id: uid(), texto: "Novo lembrete", criadoNaRodada: state.rodadaAtual, lembrarEm: 1, lembrarNaRodada: state.rodadaAtual + 1, tipo: "emX" }] })}>+ Novo Lembrete</HoverButton>
-          {(state.lembretes || []).map((l) => (
-            <div key={l.id} style={{ border: "1px solid #2a2a2a", borderRadius: 10, background: "#0a0a0a", padding: 8, display: "grid", gap: 6 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 130px auto", gap: 6, alignItems: "center" }}>
-                <input value={l.texto || ""} onChange={(e) => saveCombate({ lembretes: (state.lembretes || []).map((x) => x.id === l.id ? { ...x, texto: e.target.value } : x) })} style={inpStyle()} placeholder="Texto do lembrete" />
-                <select value={l.tipo || "emX"} onChange={(e) => saveCombate({ lembretes: (state.lembretes || []).map((x) => x.id === l.id ? { ...x, tipo: e.target.value } : x) })} style={inpStyle()}>
-                  <option value="emX">Em X rodadas</option>
-                  <option value="naRodada">Na rodada</option>
-                </select>
-                {(l.tipo || "emX") === "naRodada" ? (
-                  <input type="number" value={Number(l.lembrarNaRodada || state.rodadaAtual)} onChange={(e) => saveCombate({ lembretes: (state.lembretes || []).map((x) => x.id === l.id ? { ...x, lembrarNaRodada: Number(e.target.value) || 0 } : x) })} style={inpStyle()} />
-                ) : (
-                  <input type="number" min={1} value={Number(l.lembrarEm || 1)} onChange={(e) => saveCombate({ lembretes: (state.lembretes || []).map((x) => x.id === l.id ? { ...x, lembrarEm: Math.max(1, Number(e.target.value) || 1) } : x) })} style={inpStyle()} />
-                )}
-                <HoverButton onClick={() => saveCombate({ lembretes: (state.lembretes || []).filter((x) => x.id !== l.id) })} style={btnStyle({ borderColor: "#e74c3c44", color: "#e74c3c" })}>✕</HoverButton>
+        <div style={{ border: "1px solid #52422b", borderRadius: 8, background: "#0d0a07", padding: 8, marginBottom: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <div style={{ color: G.gold, fontFamily: "'Cinzel',serif", fontSize: 12 }}>Recursos</div>
+            <HoverButton style={btnStyle({ padding: "4px 8px", borderColor: "#695532", color: "#e2c38a" })} onClick={() => setSettingsOpen(true)}>Configurações</HoverButton>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+            {(combate.recursos || []).map((r) => (
+              <div key={r.id} style={{ border: "1px solid #534124", borderRadius: 8, padding: 6, minWidth: 120 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#e7d5b1", fontFamily: "monospace", fontSize: 11 }}>{shapeView(r.shape, r.cor)} {r.codigo}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginTop: 4 }}>
+                  <input type="number" min={0} value={r.atual} onChange={(e) => updateResource(r.id, { atual: Math.max(0, Number(e.target.value) || 0) })} style={inpStyle({ padding: "3px 5px", fontSize: 10 })} />
+                  <input type="number" min={0} value={r.total} onChange={(e) => updateResource(r.id, { total: Math.max(0, Number(e.target.value) || 0) })} style={inpStyle({ padding: "3px 5px", fontSize: 10 })} />
+                </div>
               </div>
-              <div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>Dispara na rodada: {reminderRound(l)}</div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      )}
 
-      {nodePickerOpen && <Modal title="Novo Nó" onClose={() => setNodePickerOpen(false)}><div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(120px, 1fr))", gap: 8 }}>{NODE_TYPES.map((t) => <button key={t} onClick={() => openNodeType(t)} style={btnStyle()}>{t}</button>)}</div></Modal>}
+        <div style={{ border: "1px solid #52422b", borderRadius: 8, background: "#0d0a07", padding: 8 }}>
+          <div style={{ color: "#d6bb89", fontFamily: "monospace", fontSize: 11, marginBottom: 6 }}>Prévia de custos selecionados</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+            {Object.entries(previewCosts).map(([code, val]) => (
+              <span key={code} style={{ padding: "2px 8px", borderRadius: 999, background: "#2f2416", border: "1px solid #5f4f31", color: "#f0d7ab", fontFamily: "monospace", fontSize: 11 }}>{val}{code}</span>
+            ))}
+            {Object.keys(previewCosts).length === 0 && <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Nenhum custo selecionado.</span>}
+          </div>
+          <div style={{ color: canCloseRound ? "#8ef7a9" : "#ff8f8f", fontFamily: "monospace", fontSize: 11 }}>{canCloseRound ? "Pronto para avançar rodada." : "Custos inválidos para rodada atual."}</div>
+        </div>
+      </div>
 
-      {resourceEditorOpen && <Modal title={editing.id ? "Configurar Recurso" : "Novo Recurso"} onClose={() => setResourceEditorOpen(false)}><div style={{ display: "grid", gap: 8 }}><input value={resourceEditorData.nome || ""} onChange={(e) => setResourceEditorData((p) => ({ ...p, nome: e.target.value }))} placeholder="Nome" style={inpStyle()} /><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><input type="color" value={resourceEditorData.cor || "#95a5a6"} onChange={(e) => setResourceEditorData((p) => ({ ...p, cor: e.target.value }))} style={{ ...inpStyle(), height: 38 }} /><input value={resourceEditorData.descricao || ""} onChange={(e) => setResourceEditorData((p) => ({ ...p, descricao: e.target.value }))} placeholder="Descrição" style={inpStyle()} /></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><input type="number" min={0} value={Number(resourceEditorData.max || 0)} onChange={(e) => setResourceEditorData((p) => ({ ...p, max: Math.max(0, Number(e.target.value) || 0) }))} style={inpStyle()} /><input type="number" min={0} value={Number(resourceEditorData.atual || 0)} onChange={(e) => setResourceEditorData((p) => ({ ...p, atual: Math.max(0, Number(e.target.value) || 0) }))} style={inpStyle()} /></div><select value={resourceEditorData.slotShape || "square"} onChange={(e) => setResourceEditorData((p) => ({ ...p, slotShape: e.target.value }))} style={inpStyle()}>{SHAPES.map((x) => <option key={x} value={x}>{x}</option>)}</select><div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><button onClick={() => setResourceEditorOpen(false)} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button><button onClick={saveResourceEditor} style={btnStyle()}>Salvar</button></div></div></Modal>}
+      <div style={{ border: `1px solid ${G.border}`, borderRadius: 10, background: G.bg2, padding: 10, display: "grid", gridTemplateRows: "auto 1fr" }}>
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ color: G.gold, fontFamily: "'Cinzel',serif", fontSize: 13 }}>Skills atribuídas</div>
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Pesquisar skill..." style={inpStyle({ marginTop: 6 })} />
+        </div>
+        <div style={{ overflow: "auto", display: "grid", gap: 6 }}>
+          {filteredSkills.map(({ entry, skill }) => {
+            const selected = combate.pendingSkillIds.includes(entry.id);
+            const costs = parseSkillCosts(skill);
+            return (
+              <div key={entry.id} style={{ border: `1px solid ${selected ? "#9f7a3a" : "#443621"}`, borderRadius: 8, padding: 7, background: selected ? "#22190f" : "#0d0a07" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
+                  <button onClick={() => toggleSkill(entry.id)} style={{ background: "transparent", border: "none", color: "#f1dfbe", textAlign: "left", cursor: "pointer", fontFamily: "'Cinzel',serif", fontSize: 12 }}>{selected ? "✓ " : ""}{skill.nome || "Skill"}</button>
+                  <HoverButton style={btnStyle({ padding: "2px 7px", borderColor: "#6f5a34", color: "#d8bf8b" })} onClick={() => setSkillModal(skill)}>Detalhes</HoverButton>
+                </div>
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>
+                  {costs.map((c) => <span key={`${entry.id}-${c.codigo}`} style={{ fontSize: 10, fontFamily: "monospace", padding: "1px 6px", borderRadius: 999, background: "#2f2416", border: "1px solid #5f4f31", color: "#f0d7ab" }}>{c.quantidade}{c.codigo}</span>)}
+                  {costs.length === 0 && <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 10 }}>Sem custo</span>}
+                </div>
+              </div>
+            );
+          })}
+          {filteredSkills.length === 0 && <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 12 }}>Nenhuma skill encontrada.</div>}
+        </div>
+      </div>
 
-      {statusEditorOpen && <Modal title={editing.id ? "Configurar Barra de Status" : "Nova Barra de Status"} onClose={() => setStatusEditorOpen(false)}><div style={{ display: "grid", gap: 8 }}><input value={statusEditorData.nome || ""} onChange={(e) => setStatusEditorData((p) => ({ ...p, nome: e.target.value }))} placeholder="Nome" style={inpStyle()} /><input value={statusEditorData.sigla || ""} onChange={(e) => setStatusEditorData((p) => ({ ...p, sigla: e.target.value.toUpperCase() }))} placeholder="Sigla" style={inpStyle()} /><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><input type="number" value={Number(statusEditorData.max || 1)} onChange={(e) => setStatusEditorData((p) => ({ ...p, max: Math.max(1, Number(e.target.value) || 1) }))} style={inpStyle()} /><input type="number" value={Number(statusEditorData.val || 0)} onChange={(e) => setStatusEditorData((p) => ({ ...p, val: Math.max(0, Number(e.target.value) || 0) }))} style={inpStyle()} /></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><input type="color" value={statusEditorData.cor || "#f39c12"} onChange={(e) => setStatusEditorData((p) => ({ ...p, cor: e.target.value }))} style={{ ...inpStyle(), height: 38 }} /><input type="color" value={statusEditorData.cor2 || "#f1c40f"} onChange={(e) => setStatusEditorData((p) => ({ ...p, cor2: e.target.value }))} style={{ ...inpStyle(), height: 38 }} /></div><div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><button onClick={() => setStatusEditorOpen(false)} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button><button onClick={saveStatusEditor} style={btnStyle()}>Salvar</button></div></div></Modal>}
+      {settingsOpen && <SettingsModal combate={combate} onClose={() => setSettingsOpen(false)} onSave={(next) => saveCombate({ recursos: next })} onAddStatus={(payload) => {
+        onUpdate({ status: { ...(ficha.status || {}), [payload.codigo]: { val: payload.val, max: payload.max } } });
+        onNotify?.(`Barra ${payload.codigo} adicionada em Informações.`, "success");
+      }} />}
 
-      {genericEditorOpen && <Modal title={editing.id ? "Configurar Node Genérico" : "Novo Node Genérico"} onClose={() => setGenericEditorOpen(false)}><div style={{ display: "grid", gap: 8 }}><input value={genericEditorData.label || ""} onChange={(e) => setGenericEditorData((p) => ({ ...p, label: e.target.value }))} placeholder="Rótulo" style={inpStyle()} />{genericEditorData.nodeType === "value" && <><input type="number" value={Number(genericEditorData.value || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, value: Number(e.target.value) || 0 }))} style={inpStyle()} /><select value={genericEditorData.sourcePath || ""} onChange={(e) => setGenericEditorData((p) => ({ ...p, sourcePath: e.target.value }))} style={inpStyle()}><option value="">Puxar valor: nenhum</option>{fichaValueOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></>}{genericEditorData.nodeType === "math" && <select value={genericEditorData.op || "+"} onChange={(e) => setGenericEditorData((p) => ({ ...p, op: e.target.value }))} style={inpStyle()}><option>+</option><option>-</option><option>*</option><option>/</option></select>}{genericEditorData.nodeType === "conditional" && <><select value={genericEditorData.cmp || ">"} onChange={(e) => setGenericEditorData((p) => ({ ...p, cmp: e.target.value }))} style={inpStyle()}><option value=">">{">"}</option><option value="<">{"<"}</option><option value="=">{"="}</option></select><input type="number" value={Number(genericEditorData.trueValue || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, trueValue: Number(e.target.value) || 0 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.falseValue || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, falseValue: Number(e.target.value) || 0 }))} style={inpStyle()} /></>}{genericEditorData.nodeType === "color" && <input type="color" value={genericEditorData.color || "#95a5a6"} onChange={(e) => setGenericEditorData((p) => ({ ...p, color: e.target.value }))} style={{ ...inpStyle(), height: 38 }} />}{genericEditorData.nodeType === "comment" && <textarea value={genericEditorData.text || ""} onChange={(e) => setGenericEditorData((p) => ({ ...p, text: e.target.value }))} rows={3} style={inpStyle()} />}{genericEditorData.nodeType === "receiver" && <><input value={genericEditorData.receiverKey || "DET"} onChange={(e) => setGenericEditorData((p) => ({ ...p, receiverKey: String(e.target.value || "").toUpperCase() }))} placeholder="Chave (ex: DET)" style={inpStyle()} /><input value={genericEditorData.equation || "0"} onChange={(e) => setGenericEditorData((p) => ({ ...p, equation: e.target.value }))} placeholder="Equação base (ex: +2+1-3)" style={inpStyle()} /><div style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>Recebe sinais dos efeitos pela chave e soma com entradas A/B/C + equação.</div></>}{genericEditorData.nodeType === "logic" && <><select value={genericEditorData.logic || "if"} onChange={(e) => setGenericEditorData((p) => ({ ...p, logic: e.target.value }))} style={inpStyle()}><option value="if">if</option><option value="or">or</option><option value="xor">xor</option><option value="and">and</option><option value="not">not</option><option value="else">else</option></select><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><input type="number" value={Number(genericEditorData.ifTrue || 1)} onChange={(e) => setGenericEditorData((p) => ({ ...p, ifTrue: Number(e.target.value) || 0 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.ifFalse || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, ifFalse: Number(e.target.value) || 0 }))} style={inpStyle()} /></div></>}{genericEditorData.nodeType === "dice" && <><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><input type="number" value={Number(genericEditorData.qty || 1)} onChange={(e) => setGenericEditorData((p) => ({ ...p, qty: Math.max(1, Number(e.target.value) || 1) }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.faces || 20)} onChange={(e) => setGenericEditorData((p) => ({ ...p, faces: Math.max(2, Number(e.target.value) || 2) }))} style={inpStyle()} /></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><input type="number" value={Number(genericEditorData.critMin || 20)} onChange={(e) => setGenericEditorData((p) => ({ ...p, critMin: Number(e.target.value) || 1 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.critMax || 20)} onChange={(e) => setGenericEditorData((p) => ({ ...p, critMax: Number(e.target.value) || 1 }))} style={inpStyle()} /></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}><input type="number" value={Number(genericEditorData.bonus || 0)} onChange={(e) => setGenericEditorData((p) => ({ ...p, bonus: Number(e.target.value) || 0 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.critValue || 1)} onChange={(e) => setGenericEditorData((p) => ({ ...p, critValue: Number(e.target.value) || 0 }))} style={inpStyle()} /><input type="number" value={Number(genericEditorData.failValue || -1)} onChange={(e) => setGenericEditorData((p) => ({ ...p, failValue: Number(e.target.value) || 0 }))} style={inpStyle()} /></div></>}<div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><button onClick={() => setGenericEditorOpen(false)} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button><button onClick={saveGenericEditor} style={btnStyle()}>Salvar</button></div></div></Modal>}
+      {effectsOpen && <EffectsModal effects={ficha?.modificadores?.efeitos || []} onClose={() => setEffectsOpen(false)} onChange={(next) => onUpdate({ modificadores: { ...(ficha.modificadores || {}), efeitos: next } })} />}
+
+      {remindersOpen && <RemindersModal lembretes={combate.lembretes || []} rodadaAtual={combate.rodadaAtual} onClose={() => setRemindersOpen(false)} onChange={(next) => saveCombate({ lembretes: next })} onAdd={addReminder} />}
+
+      {effectDetail && <EffectDetailsModal effect={effectDetail} onClose={() => setEffectDetail(null)} />}
+      {skillModal && <Modal title={`Skill: ${skillModal.nome || "Sem nome"}`} onClose={() => setSkillModal(null)} wide><SkillDetalhe skill={skillModal} /></Modal>}
     </div>
-    </>
+  );
+}
+
+function SettingsModal({ combate, onClose, onSave, onAddStatus }) {
+  const [list, setList] = useState(combate.recursos || []);
+  const [resourceDraft, setResourceDraft] = useState({ codigo: "", nome: "", cor: "#e0b44c", shape: "square", total: 1, atual: 1 });
+  const [statusDraft, setStatusDraft] = useState({ codigo: "DET", nome: "Determinação", val: 10, max: 10 });
+
+  return (
+    <Modal title="Configurações de Combate" onClose={onClose} wide>
+      <div style={{ display: "grid", gap: 12 }}>
+        <div style={{ border: "1px solid #3d2f1f", borderRadius: 8, padding: 10 }}>
+          <div style={{ color: G.gold, marginBottom: 6, fontFamily: "'Cinzel',serif" }}>Novo recurso personalizado</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px 100px 90px 90px auto", gap: 6 }}>
+            <input value={resourceDraft.codigo} onChange={(e) => setResourceDraft((p) => ({ ...p, codigo: e.target.value.toUpperCase() }))} placeholder="Código" style={inpStyle()} />
+            <input value={resourceDraft.nome} onChange={(e) => setResourceDraft((p) => ({ ...p, nome: e.target.value }))} placeholder="Nome" style={inpStyle()} />
+            <input type="color" value={resourceDraft.cor} onChange={(e) => setResourceDraft((p) => ({ ...p, cor: e.target.value }))} style={inpStyle({ padding: 2 })} />
+            <select value={resourceDraft.shape} onChange={(e) => setResourceDraft((p) => ({ ...p, shape: e.target.value }))} style={inpStyle()}><option value="square">Quadrado</option><option value="circle">Círculo</option><option value="triangle">Triângulo</option><option value="hex">Hexágono</option></select>
+            <input type="number" value={resourceDraft.atual} onChange={(e) => setResourceDraft((p) => ({ ...p, atual: Number(e.target.value) || 0 }))} style={inpStyle()} />
+            <input type="number" value={resourceDraft.total} onChange={(e) => setResourceDraft((p) => ({ ...p, total: Number(e.target.value) || 0 }))} style={inpStyle()} />
+            <HoverButton onClick={() => {
+              if (!resourceDraft.codigo.trim()) return;
+              setList((prev) => [...prev, { id: uid(), ...resourceDraft }]);
+              setResourceDraft({ codigo: "", nome: "", cor: "#e0b44c", shape: "square", total: 1, atual: 1 });
+            }} style={btnStyle()}>Adicionar</HoverButton>
+          </div>
+        </div>
+
+        <div style={{ border: "1px solid #3d2f1f", borderRadius: 8, padding: 10 }}>
+          <div style={{ color: G.gold, marginBottom: 6, fontFamily: "'Cinzel',serif" }}>Barra de status personalizada (linkada à aba Informações)</div>
+          <div style={{ display: "grid", gridTemplateColumns: "130px 1fr 90px 90px auto", gap: 6 }}>
+            <input value={statusDraft.codigo} onChange={(e) => setStatusDraft((p) => ({ ...p, codigo: e.target.value.toUpperCase() }))} style={inpStyle()} />
+            <input value={statusDraft.nome} onChange={(e) => setStatusDraft((p) => ({ ...p, nome: e.target.value }))} style={inpStyle()} />
+            <input type="number" value={statusDraft.val} onChange={(e) => setStatusDraft((p) => ({ ...p, val: Number(e.target.value) || 0 }))} style={inpStyle()} />
+            <input type="number" value={statusDraft.max} onChange={(e) => setStatusDraft((p) => ({ ...p, max: Number(e.target.value) || 1 }))} style={inpStyle()} />
+            <HoverButton onClick={() => onAddStatus(statusDraft)} style={btnStyle({ borderColor: "#4e7c59", color: "#98e7ad" })}>Adicionar</HoverButton>
+          </div>
+        </div>
+
+        <div style={{ maxHeight: 250, overflow: "auto", display: "grid", gap: 4 }}>
+          {list.map((r) => <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px 100px 90px 90px auto", gap: 6 }}>
+            <input value={r.codigo} onChange={(e) => setList((prev) => prev.map((x) => x.id === r.id ? { ...x, codigo: e.target.value.toUpperCase() } : x))} style={inpStyle()} />
+            <input value={r.nome} onChange={(e) => setList((prev) => prev.map((x) => x.id === r.id ? { ...x, nome: e.target.value } : x))} style={inpStyle()} />
+            <input type="color" value={r.cor} onChange={(e) => setList((prev) => prev.map((x) => x.id === r.id ? { ...x, cor: e.target.value } : x))} style={inpStyle({ padding: 2 })} />
+            <select value={r.shape} onChange={(e) => setList((prev) => prev.map((x) => x.id === r.id ? { ...x, shape: e.target.value } : x))} style={inpStyle()}><option value="square">Quadrado</option><option value="circle">Círculo</option><option value="triangle">Triângulo</option><option value="hex">Hexágono</option></select>
+            <input type="number" value={r.atual} onChange={(e) => setList((prev) => prev.map((x) => x.id === r.id ? { ...x, atual: Number(e.target.value) || 0 } : x))} style={inpStyle()} />
+            <input type="number" value={r.total} onChange={(e) => setList((prev) => prev.map((x) => x.id === r.id ? { ...x, total: Number(e.target.value) || 0 } : x))} style={inpStyle()} />
+            <HoverButton onClick={() => setList((prev) => prev.filter((x) => x.id !== r.id))} style={btnStyle({ borderColor: "#87413a", color: "#ff9990" })}>✕</HoverButton>
+          </div>)}
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <HoverButton onClick={onClose} style={btnStyle({ borderColor: "#4f4f4f", color: "#b8b8b8" })}>Fechar</HoverButton>
+          <HoverButton onClick={() => { onSave(list); onClose(); }} style={btnStyle()}>Salvar</HoverButton>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function EffectsModal({ effects, onClose, onChange }) {
+  return (
+    <Modal title="Efeitos e compatibilidade" onClose={onClose} wide>
+      <div style={{ display: "grid", gap: 8 }}>
+        {(effects || []).map((ef) => (
+          <div key={ef.id} style={{ display: "grid", gridTemplateColumns: "1fr 100px auto", gap: 8, border: "1px solid #2f2f2f", borderRadius: 8, padding: 8 }}>
+            <div>
+              <div style={{ color: "#f0dfc2", fontFamily: "'Cinzel',serif" }}>{ef.nome || "Efeito"}</div>
+              <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>{ef.efeito || ef.efeitosMecanicos || ef.efeitoMecanico || "Sem descrição"}</div>
+            </div>
+            <select value={ef.ativo === false ? "off" : "on"} onChange={(e) => onChange((effects || []).map((x) => x.id === ef.id ? { ...x, ativo: e.target.value === "on" } : x))} style={inpStyle()}>
+              <option value="on">Ativo</option>
+              <option value="off">Inativo</option>
+            </select>
+            <HoverButton onClick={() => onChange((effects || []).filter((x) => x.id !== ef.id))} style={btnStyle({ borderColor: "#87413a", color: "#ff9990" })}>Remover</HoverButton>
+          </div>
+        ))}
+        {(effects || []).length === 0 && <div style={{ color: G.muted, fontFamily: "monospace" }}>Sem efeitos anexados.</div>}
+      </div>
+    </Modal>
+  );
+}
+
+function RemindersModal({ lembretes, rodadaAtual, onChange, onClose, onAdd }) {
+  return (
+    <Modal title="Lembretes" onClose={onClose} wide>
+      <div style={{ display: "grid", gap: 8 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Rodada atual: {rodadaAtual}</div>
+          <HoverButton onClick={onAdd} style={btnStyle({ padding: "4px 10px" })}>+ Lembrete</HoverButton>
+        </div>
+        {(lembretes || []).map((l) => (
+          <div key={l.id} style={{ display: "grid", gridTemplateColumns: "1fr 140px auto", gap: 6 }}>
+            <input value={l.texto || ""} onChange={(e) => onChange((lembretes || []).map((x) => x.id === l.id ? { ...x, texto: e.target.value } : x))} style={inpStyle()} />
+            <input type="number" value={l.lembrarNaRodada || rodadaAtual} onChange={(e) => onChange((lembretes || []).map((x) => x.id === l.id ? { ...x, lembrarNaRodada: Number(e.target.value) || rodadaAtual, tipo: "naRodada" } : x))} style={inpStyle()} />
+            <HoverButton onClick={() => onChange((lembretes || []).filter((x) => x.id !== l.id))} style={btnStyle({ borderColor: "#87413a", color: "#ff9990" })}>✕</HoverButton>
+          </div>
+        ))}
+      </div>
+    </Modal>
   );
 }
