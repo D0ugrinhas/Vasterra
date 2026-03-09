@@ -17,6 +17,13 @@ const STATUS_ALIAS = {
   CONS: "CONS", CONSCIENCIA: "CONS", CONSCIÊNCIA: "CONS",
 };
 
+const RESOURCE_ALIAS = {
+  ACO: "ACO", ACAO: "ACO", AÇÃO: "ACO",
+  MOV: "MOV", MOVIMENTO: "MOV",
+  REA: "REA", REACAO: "REA", REAÇÃO: "REA",
+  ESF: "ESF", ESFORCO: "ESF", ESFORÇO: "ESF",
+};
+
 const BODY_ALIAS = {
   OSSOS: "ossos", OSSO: "ossos",
   MUSCULOS: "musculos", MUSCULO: "musculos",
@@ -41,7 +48,8 @@ function detectStatusTarget(code, canonical) {
 
 
 function resolveMechanicalRaw(it = {}) {
-  return it.efeitosMecanicos || it.efeitoMecanico || it.efeito || it.valor || "";
+  if (Array.isArray(it.efeitosMecanicos) && it.efeitosMecanicos.length) return it.efeitosMecanicos;
+  return it.efeitoMecanico || it.efeito || it.valor || "";
 }
 
 export function parseMechanicalEffect(raw = "") {
@@ -56,6 +64,22 @@ export function parseMechanicalEffect(raw = "") {
   const attr = ATTR_ALIAS[code];
   if (attr) return { scope: "atributos", key: attr, value, isPct, target: "base", raw: `${value >= 0 ? "+" : ""}${value}${isPct ? "%" : ""}${attr}` };
 
+  for (const alias of Object.keys(RESOURCE_ALIAS)) {
+    const canonical = RESOURCE_ALIAS[alias];
+    if (!code.startsWith(alias)) continue;
+    const target = detectStatusTarget(code, alias);
+    if (!target) continue;
+    const resolvedTarget = target === "base" ? "current" : target;
+    return {
+      scope: "recursos",
+      key: canonical,
+      value,
+      isPct,
+      target: resolvedTarget,
+      raw: `${value >= 0 ? "+" : ""}${value}${isPct ? "%" : ""}${canonical}${resolvedTarget === "current" ? "" : "MAX"}`,
+    };
+  }
+
   for (const alias of Object.keys(STATUS_ALIAS)) {
     const canonical = STATUS_ALIAS[alias];
     if (!code.startsWith(alias)) continue;
@@ -66,7 +90,7 @@ export function parseMechanicalEffect(raw = "") {
       key: canonical,
       value,
       isPct,
-      target,
+      target: target === "base" ? "current" : target,
       raw: `${value >= 0 ? "+" : ""}${value}${isPct ? "%" : ""}${canonical}${target === "current" ? "ATUAL" : target === "max" ? "MAX" : ""}`,
     };
   }
@@ -77,11 +101,11 @@ export function parseMechanicalEffect(raw = "") {
   const ess = ESSENCIA_ALIAS[code];
   if (ess) return { scope: "essencia", key: ess, value, isPct, target: "base", raw: `${value >= 0 ? "+" : ""}${value}${isPct ? "%" : ""}${ess}` };
 
-  const genericStatus = code.match(/^([A-Z0-9]{2,6})(ATUAL|CURRENT|MAX|MAXIMO)?$/);
+  const genericStatus = code.match(/^([A-Z0-9]{2,5})(ATUAL|CURRENT|MAX|MAXIMO)?$/);
   if (genericStatus) {
     const key = genericStatus[1];
     const suffix = genericStatus[2] || "";
-    const target = suffix === "ATUAL" || suffix === "CURRENT" ? "current" : (suffix === "MAX" || suffix === "MAXIMO" ? "max" : "base");
+    const target = suffix === "ATUAL" || suffix === "CURRENT" ? "current" : (suffix === "MAX" || suffix === "MAXIMO" ? "max" : "current");
     return { scope: "status", key, value, isPct, target, raw: `${value >= 0 ? "+" : ""}${value}${isPct ? "%" : ""}${key}${target === "current" ? "ATUAL" : target === "max" ? "MAX" : ""}` };
   }
 
@@ -147,6 +171,19 @@ export function aggregateStatusModifiers(mods = []) {
     });
   });
   return status;
+}
+
+export function aggregateResourceModifiers(mods = []) {
+  const resources = {};
+  (mods || []).forEach((m) => {
+    if (m?.ativo === false) return;
+    parseMechanicalEffects(resolveMechanicalRaw(m)).forEach((parsed) => {
+      if (!parsed || parsed.scope !== "recursos" || parsed.isPct) return;
+      if (!resources[parsed.key]) resources[parsed.key] = { current: 0, max: 0 };
+      resources[parsed.key][parsed.target === "max" ? "max" : "current"] += parsed.value;
+    });
+  });
+  return resources;
 }
 
 export function normalizePericiaKey(label = "") {

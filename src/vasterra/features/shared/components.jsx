@@ -84,6 +84,10 @@ export function StatusBar({ sigla, nome, cor, val, max, onVal, onMax }) {
 export function EffectDetailsModal({ effect, onClose }) {
   if (!effect) return null;
   const effectImgSrc = effect.iconeModo === "upload" ? effect.iconeData : effect.iconeModo === "url" ? effect.iconeUrl : "";
+  const mechanicalRaw = Array.isArray(effect?.efeitosMecanicos) && effect.efeitosMecanicos.length
+    ? effect.efeitosMecanicos
+    : (effect?.efeitoMecanico || effect?.efeito || effect?.valor || "");
+  const parsedMechanical = parseMechanicalEffects(mechanicalRaw);
   return (
     <Modal title={`Efeito: ${effect.nome || "Sem nome"}`} onClose={onClose} wide>
       <div style={{ display: "grid", gap: 10 }}>
@@ -97,12 +101,12 @@ export function EffectDetailsModal({ effect, onClose }) {
           {effect.tipo || "—"} · {effect.rank || "Sem rank"}
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {parseMechanicalEffects(effect.efeitosMecanicos || effect.efeitoMecanico || effect.efeito || effect.valor || "").map((m, idx) => (
+          {parsedMechanical.map((m, idx) => (
             <span key={`${m.raw}-${idx}`} style={{ padding: "3px 8px", borderRadius: 999, border: "1px solid #2f4f66", background: "#0a1a24", color: "#8fd2ff", fontFamily: "monospace", fontSize: 11 }}>
               {m.raw}
             </span>
           ))}
-          {parseMechanicalEffects(effect.efeitosMecanicos || effect.efeitoMecanico || effect.efeito || effect.valor || "").length === 0 && (
+          {parsedMechanical.length === 0 && (
             <span style={{ fontFamily: "monospace", fontSize: 11, color: G.muted }}>Sem efeito mecânico</span>
           )}
         </div>

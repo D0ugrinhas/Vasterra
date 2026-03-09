@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { uid } from "../../../core/factories";
 import { instantiateEffectFromTemplate, parseMechanicalEffects } from "../../../core/effects";
-import { aggregateStatusModifiers } from "../../../core/effects";
+import { aggregateModifiers, aggregateResourceModifiers, aggregateStatusModifiers } from "../../../core/effects";
+import { normalizePericiaKey } from "../../../core/effects";
 import { buildFormulaVars, evaluateStatusFormula, getMechanicalText, parseDurationRounds, toNumber } from "./combate/utils";
 import { RANK_COR } from "../../../data/gameData";
 import { G, btnStyle, inpStyle } from "../../../ui/theme";
@@ -206,6 +207,69 @@ function shouldTriggerReminder(reminder, rodadaAtual, rodadaAnterior) {
   return rodadaAtual === target;
 }
 
+function rollDiceExpression(raw = "") {
+  const input = String(raw || "").trim();
+  if (!input) return null;
+  const expr = input.replace(/\s+/g, "");
+  if (!/^[0-9dD+\-*/().]+$/.test(expr)) return null;
+  const parts = [];
+  const rolledExpr = expr.replace(/(\d*)d(\d+)/gi, (full, qtyRaw, facesRaw) => {
+    const qty = Math.max(1, Number(qtyRaw || 1));
+    const faces = Math.max(2, Number(facesRaw || 2));
+    const rolls = [];
+    let sum = 0;
+    for (let i = 0; i < qty; i += 1) {
+      const one = 1 + Math.floor(Math.random() * faces);
+      rolls.push(one);
+      sum += one;
+    }
+    parts.push({ token: `${qty}d${faces}`, rolls, sum });
+    return String(sum);
+  });
+  try {
+    const total = Number(Function(`"use strict"; return (${rolledExpr});`)());
+    if (!Number.isFinite(total)) return null;
+    return { total, expr: rolledExpr, parts };
+  } catch {
+    return null;
+  }
+}
+
+function resolveNarrativeEffectMessage(raw = "") {
+  const source = String(raw || "").trim();
+  if (!source) return "";
+  const quoted = [...source.matchAll(/"([^"]+)"/g)].map((m) => String(m[1] || "").trim()).filter(Boolean);
+  const expressionMatch = source.match(/\(([^)]+)\)/);
+  const expressionRaw = expressionMatch?.[1]?.trim() || "";
+  const outside = source
+    .replace(/"[^"]*"/g, " ")
+    .replace(/\(([^)]+)\)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const text = [...quoted, outside].filter(Boolean).join(" ").trim();
+
+  if (!expressionRaw) return text || source;
+  const roll = rollDiceExpression(expressionRaw);
+  if (!roll) return text || source;
+
+  const detailDice = roll.parts.map((p) => `${p.token}=${p.rolls.join("+")}`).join("; ");
+  const detail = `${detailDice}${roll.expr !== String(roll.total) ? ` => ${roll.expr}` : ""}`;
+  return `${roll.total}${text ? ` ${text}` : ""}${detail ? ` ((${detail}))` : ""}`;
+}
+
+function parseExpressionValue(raw, fallback, context = {}) {
+  const v = Number(raw);
+  if (Number.isFinite(v)) return v;
+  const txt = String(raw || "").trim();
+  if (!txt) return fallback;
+  if (/\d+d\d+/i.test(txt)) {
+    const dice = parseDurationRounds({ duracaoExpressao: txt });
+    if (Number.isFinite(dice)) return dice;
+  }
+  const expr = evaluateStatusFormula(txt, context);
+  return Number.isFinite(expr) ? expr : fallback;
+}
+
 export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags = [], onNotify }) {
   const [query, setQuery] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -224,30 +288,92 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
 
   const activeEffects = useMemo(() => (Array.isArray(ficha?.modificadores?.efeitos) ? ficha.modificadores.efeitos : []).filter((e) => e && e.ativo !== false), [ficha?.modificadores?.efeitos]);
   const activeStatusMods = useMemo(() => { try { return aggregateStatusModifiers(activeEffects); } catch { return {}; } }, [activeEffects]);
+  const activeResourceMods = useMemo(() => { try { return aggregateResourceModifiers(activeEffects); } catch { return {}; } }, [activeEffects]);
+  const activeAttrMods = useMemo(() => { try { return aggregateModifiers(activeEffects, "atributos"); } catch { return {}; } }, [activeEffects]);
+  const activePericiaMods = useMemo(() => {
+    const out = {};
+    activeEffects.forEach((m) => {
+      const mechanicalRaw = Array.isArray(m?.efeitosMecanicos) && m.efeitosMecanicos.length
+        ? m.efeitosMecanicos
+        : (m?.efeitoMecanico || m?.efeito || m?.valor || "");
+      parseMechanicalEffects(mechanicalRaw).forEach((parsed) => {
+        if (!parsed || parsed.scope !== "pericias" || parsed.isPct) return;
+        out[parsed.key] = (out[parsed.key] || 0) + Number(parsed.value || 0);
+      });
+    });
+    return out;
+  }, [activeEffects]);
   const pendingCounts = combate.pendingSkillCounts && Object.keys(combate.pendingSkillCounts).length ? combate.pendingSkillCounts : Object.fromEntries((combate.pendingSkillIds || []).map((id) => [id, 1]));
   const pendingEntries = useMemo(() => assigned.filter(({ entry }) => Number(pendingCounts[entry.id] || 0) > 0).map((x) => ({ ...x, count: Math.max(1, Number(pendingCounts[x.entry.id] || 1)) })), [assigned, pendingCounts]);
 
+  const formulaFicha = useMemo(() => ({
+    ...(ficha || {}),
+    atributos: Object.fromEntries(Object.entries(ficha?.atributos || {}).map(([k, v]) => [k, { ...(v || {}), val: Number(v?.val || 0) + Number(activeAttrMods[k] || 0) }])),
+    pericias: Object.fromEntries(Object.entries(ficha?.pericias || {}).map(([k, v]) => {
+      const code = normalizePericiaKey(k);
+      return [k, Number(v || 0) + Number(activePericiaMods[code] || 0)];
+    })),
+  }), [ficha, activeAttrMods, activePericiaMods]);
+
+  const computedStatusBase = useMemo(() => {
+    const statusEntries = Object.entries(ficha?.status || {});
+    const allStatusKeys = Array.from(new Set([
+      ...statusEntries.map(([k]) => String(k || "").toUpperCase()),
+      ...Object.keys(combate.statusMeta || {}).map((k) => String(k || "").toUpperCase()),
+    ])).filter(Boolean);
+    const base = Object.fromEntries(allStatusKeys.map((code) => {
+      const fromStatus = statusEntries.find(([k]) => String(k || "").toUpperCase() === code)?.[1] || {};
+      return [code, { val: Number(fromStatus?.val || 0), max: Math.max(1, Number(fromStatus?.max || 1)) }];
+    }));
+    let next = { ...base };
+    for (let i = 0; i < 2; i += 1) {
+      const vars = buildFormulaVars(formulaFicha, next);
+      (combate.recursos || []).forEach((r) => {
+        const code = String(r.codigo || "").toUpperCase();
+        vars[code] = Number(r.atual || 0);
+        vars[code.toLowerCase()] = Number(r.atual || 0);
+        vars[`${code}MAX`] = Number(r.total || 0);
+        vars[`${code.toLowerCase()}max`] = Number(r.total || 0);
+      });
+      allStatusKeys.forEach((code) => {
+        const curr = next[code] || { val: 0, max: 1 };
+        const meta = combate.statusMeta?.[code] || {};
+        const maxEval = evaluateStatusFormula(meta.maxFormula, { vars });
+        const max = Math.max(1, Math.floor(Number.isFinite(maxEval) ? maxEval : Number(curr.max || 1)));
+        const valEval = evaluateStatusFormula(meta.valFormula, { vars, x: max });
+        const rawVal = Number.isFinite(valEval) ? valEval : Number(curr.val || 0);
+        next[code] = { ...curr, max, val: Math.max(0, Math.min(max, Math.floor(rawVal))) };
+      });
+    }
+    return next;
+  }, [ficha?.status, formulaFicha, combate.statusMeta, combate.recursos]);
+
   const combatStatus = useMemo(() => {
     const out = {};
-    Object.entries(ficha?.status || {}).forEach(([key, data]) => {
+    Object.entries(computedStatusBase || {}).forEach(([key, data]) => {
       const code = key.toUpperCase();
       const mods = activeStatusMods[code] || { base: 0, current: 0, max: 0 };
       const baseVal = Number(data?.val || 0);
       const baseMax = Math.max(1, Number(data?.max || 1));
-      const max = Math.max(1, Math.floor(baseMax + mods.base + mods.max));
+      const overflowMax = Math.max(0, Math.floor(mods.base + mods.current));
+      const max = Math.max(1, Math.floor(baseMax + mods.max + overflowMax));
       const val = Math.max(0, Math.min(max, Math.floor(baseVal + mods.base + mods.current)));
-      out[code] = { baseVal, baseMax, val, max, mods };
+      out[code] = { baseVal, baseMax, val, max, mods, overflowMax };
     });
     return out;
-  }, [ficha?.status, activeStatusMods]);
+  }, [computedStatusBase, activeStatusMods]);
 
   const statusDefs = useMemo(() => {
-    const all = Object.keys(ficha?.status || {}).map((key) => {
-      const up = key.toUpperCase();
-      const fromCombate = combate.statusMeta?.[up] || combate.statusMeta?.[key] || {};
+    const allCodes = Array.from(new Set([
+      ...Object.keys(ficha?.status || {}).map((key) => String(key || "").toUpperCase()),
+      ...Object.keys(combate.statusMeta || {}).map((key) => String(key || "").toUpperCase()),
+    ])).filter(Boolean);
+    const all = allCodes.map((up) => {
+      const existingKey = Object.keys(ficha?.status || {}).find((k) => String(k || "").toUpperCase() === up) || up;
+      const fromCombate = combate.statusMeta?.[up] || {};
       const base = CORE_STATUS_META[up] || {};
       return {
-        key,
+        key: existingKey,
         code: up,
         label: fromCombate.label || base.label || up,
         cor: fromCombate.cor || base.cor || "#9ca3af",
@@ -274,14 +400,26 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     return sum;
   }, [pendingEntries]);
 
+  const effectiveResources = useMemo(() => Object.fromEntries(
+    (combate.recursos || []).map((r) => {
+      const code = String(r.codigo || "").toUpperCase();
+      const mods = activeResourceMods[code] || { current: 0, max: 0 };
+      const baseTotal = Math.max(0, Number(r.total || 0));
+      const overflowMax = Math.max(0, Math.floor(mods.current));
+      const total = Math.max(0, Math.floor(baseTotal + mods.max + overflowMax));
+      const current = Math.max(0, Math.min(total, Math.floor(Number(r.atual || 0) + mods.current)));
+      return [code, { ...r, codigo: code, total, atual: current, mods, overflowMax }];
+    }),
+  ), [combate.recursos, activeResourceMods]);
+
   const previewRemainingByResource = useMemo(() => Object.fromEntries(
-    (combate.recursos || []).map((r) => [
+    Object.values(effectiveResources).map((r) => [
       r.codigo,
       Math.max(0, Number(r.atual || 0) - Number(previewCosts[r.codigo] || 0)),
     ]),
-  ), [combate.recursos, previewCosts]);
+  ), [effectiveResources, previewCosts]);
 
-  const byResource = new Map((combate.recursos || []).map((r) => [r.codigo, r]));
+  const byResource = new Map(Object.values(effectiveResources).map((r) => [r.codigo, r]));
   const byStatus = new Map(Object.entries(combatStatus || {}).map(([k, v]) => [k.toUpperCase(), v]));
   const resolveCode = (code) => (code === "CONSC" ? "CONS" : code);
 
@@ -364,14 +502,18 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     }
 
     const nextRound = combate.rodadaAtual + 1;
-    const nextResources = combate.recursos.map((r) => ({ ...r, atual: Math.max(0, Number(r.total || 0)) }));
+    const nextResources = combate.recursos.map((r) => {
+      const code = String(r.codigo || "").toUpperCase();
+      const effective = effectiveResources[code];
+      return { ...r, atual: Math.max(0, Number(effective?.total ?? r.total ?? 0)) };
+    });
     const nextStatus = { ...(ficha.status || {}) };
     const statusLogs = [];
     const resourceLogs = [];
 
     Object.entries(previewCosts).forEach(([rawCode, qtd]) => {
       const code = resolveCode(rawCode);
-      const resource = combate.recursos.find((r) => r.codigo === code);
+      const resource = effectiveResources[code];
       if (resource) {
         const prevVal = Number(resource.atual || 0);
         const total = Math.max(0, Number(resource.total || 0));
@@ -405,13 +547,8 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
       .map((ef) => ({ ef, raw: String(getMechanicalText(ef) || "").trim() }))
       .filter(({ raw }) => raw && parseMechanicalEffects(raw).length === 0);
     effectMessages.forEach(({ ef, raw }) => {
-      const rolled = raw.replace(/(\d*)d(\d+)/gi, (_, a, b) => {
-        const qtd = Math.max(1, Number(a || 1));
-        const faces = Math.max(2, Number(b || 2));
-        let total = 0;
-        for (let i = 0; i < qtd; i += 1) total += 1 + Math.floor(Math.random() * faces);
-        return String(total);
-      });
+      const rolled = resolveNarrativeEffectMessage(raw);
+      if (!rolled) return;
       const msg = `${ef.nome || "Efeito"}: ${rolled}`;
       nextLogs = addLog(msg, nextRound, nextLogs, { kind: "effect", effectId: ef.id, text: rolled });
       onNotify?.(`✨ ${msg}`, "info");
@@ -436,12 +573,23 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     updateResourceById(resource.id, { atual: Math.max(0, Math.min(Number(resource.total || 0), next)) });
   };
 
-  const setStatusValue = (key, field, value) => {
+  const setStatusValue = (key, field, effectiveValue) => {
     const curr = ficha?.status?.[key] || { val: 0, max: 1 };
-    const patch = { ...curr, [field]: value };
-    if (field === "max") patch.val = Math.min(Number(patch.val || 0), Number(value || 1));
-    if (field === "val") patch.val = Math.max(0, Math.min(Number(value || 0), Number(curr.max || 1)));
-    onUpdate({ status: { ...(ficha.status || {}), [key]: patch } });
+    const code = String(key || "").toUpperCase();
+    const runtime = combatStatus[code] || { mods: { base: 0, current: 0, max: 0 }, overflowMax: 0 };
+    const mods = runtime.mods || { base: 0, current: 0, max: 0 };
+    const baseShift = Number(mods.base || 0) + Number(mods.current || 0);
+    const maxShift = Number(mods.max || 0) + Number(runtime.overflowMax || 0);
+    if (field === "max") {
+      const nextBaseMax = Math.max(1, Math.floor(Number(effectiveValue || 1) - maxShift));
+      const nextBaseVal = Math.max(0, Math.min(nextBaseMax, Number(curr.val || 0)));
+      onUpdate({ status: { ...(ficha.status || {}), [key]: { ...curr, max: nextBaseMax, val: nextBaseVal } } });
+      return;
+    }
+    const nextEffectiveMax = Math.max(1, Math.floor(Number(runtime.max || curr.max || 1)));
+    const clampedEffectiveVal = Math.max(0, Math.min(nextEffectiveMax, Number(effectiveValue || 0)));
+    const nextBaseVal = Math.max(0, Math.min(Number(curr.max || 1), Math.floor(clampedEffectiveVal - baseShift)));
+    onUpdate({ status: { ...(ficha.status || {}), [key]: { ...curr, val: nextBaseVal } } });
   };
 
   const addReminder = () => {
@@ -579,7 +727,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
             <HoverButton style={btnStyle({ padding: "4px 8px", borderColor: "#695532", color: "#e2c38a" })} onClick={() => setSettingsOpen(true)}>Configurações</HoverButton>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 8 }}>
-            {(combate.recursos || []).map((r) => {
+            {Object.values(effectiveResources).map((r) => {
               const spendPreview = previewCosts[r.codigo] || 0;
               const previewRemaining = previewRemainingByResource[r.codigo] ?? Number(r.atual || 0);
               return (
@@ -637,7 +785,15 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
             const src = skillIconSrc(skill);
             const rankCor = RANK_COR[skill.rank] || skill.cor || "#93a6bf";
             return (
-              <button key={entry.id} className="skill-row" onClick={() => toggleSkill(entry.id)} style={{ border: `1px solid ${selected ? "#9f7a3a" : "#443621"}`, borderRadius: 10, padding: 8, background: selected ? "#231a10" : "#0d0a07", transition: "all .2s", textAlign: "left", cursor: "pointer" }}>
+              <div
+                key={entry.id}
+                className="skill-row"
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleSkill(entry.id)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleSkill(entry.id); } }}
+                style={{ border: `1px solid ${selected ? "#9f7a3a" : "#443621"}`, borderRadius: 10, padding: 8, background: selected ? "#231a10" : "#0d0a07", transition: "all .2s", textAlign: "left", cursor: "pointer" }}
+              >
                 <div style={{ display: "grid", gridTemplateColumns: "44px 1fr auto", gap: 8, alignItems: "center" }}>
                   <div style={{ width: 44, height: 44, borderRadius: 8, border: "1px solid #6b5431", display: "grid", placeItems: "center", background: "#1d1409", overflow: "hidden" }}>
                     {src ? <ImageViewport src={src} alt={skill?.nome || "Skill"} size={40} radius={6} adjust={skill?.iconeAjuste} /> : <span style={{ fontSize: 18 }}>{skill?.icone || "?"}</span>}
@@ -663,7 +819,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
                   })}
                   {costs.length === 0 && <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 10 }}>Sem custo</span>}
                 </div>
-              </button>
+              </div>
             );
           })}
           {filteredSkills.length === 0 && <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 12 }}>Nenhuma skill encontrada.</div>}
@@ -674,6 +830,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
         combate={combate}
         statusDefs={statusDefs}
         ficha={ficha}
+        formulaFicha={formulaFicha}
         onClose={() => setSettingsOpen(false)}
         onSave={(payload) => {
           onUpdate({
@@ -695,7 +852,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
 
       {resourceModal && (
         <ResourceQuickModal
-          resource={combate.recursos.find((r) => r.id === resourceModal.id) || resourceModal}
+          resource={effectiveResources[String(resourceModal.codigo || "").toUpperCase()] || combate.recursos.find((r) => r.id === resourceModal.id) || resourceModal}
           previewCost={previewCosts[resourceModal.codigo] || 0}
           onClose={() => setResourceModal(null)}
           onToggle={(idx) => {
@@ -709,7 +866,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
 
       {statusModal && (
         <StatusQuickModal
-          status={ficha?.status?.[statusModal.key] || { val: 0, max: 1 }}
+          status={combatStatus[statusModal.code] || ficha?.status?.[statusModal.key] || { val: 0, max: 1 }}
           statusDef={statusModal}
           previewCost={(previewCosts[statusModal.code] || previewCosts[statusModal.label] || 0)}
           onClose={() => setStatusModal(null)}
@@ -810,26 +967,122 @@ function StatusQuickModal({ status, statusDef, previewCost, onClose, onApply, on
   );
 }
 
-function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
+function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSave }) {
   const [list, setList] = useState(combate.recursos || []);
-  const [statusMeta, setStatusMeta] = useState(combate.statusMeta || {});
+  const [statusMeta, setStatusMeta] = useState(() => {
+    const base = combate.statusMeta || {};
+    const fromDefs = Object.fromEntries((statusDefs || []).map((s) => [s.code, { label: s.label, cor: s.cor }]));
+    return { ...fromDefs, ...base };
+  });
   const [statusState, setStatusState] = useState(ficha?.status || {});
+  const [statusInput, setStatusInput] = useState(() => Object.fromEntries(Object.entries(ficha?.status || {}).map(([k, v]) => [k, { val: String(v?.val ?? 0), max: String(v?.max ?? 1) }])));
   const [resourceDraft, setResourceDraft] = useState({ codigo: "", nome: "", cor: "#e0b44c", shape: "square", total: 1, atual: 1 });
-  const [statusDraft, setStatusDraft] = useState({ codigo: "DET", label: "Determinação", cor: "#8dc2ff", val: 10, max: 10 });
+  const [statusDraft, setStatusDraft] = useState({ codigo: "DET", label: "Determinação", cor: "#8dc2ff", maxFormula: "10", valFormula: "x" });
+  const [statusEditor, setStatusEditor] = useState(null);
 
-  const formulaVars = useMemo(() => buildFormulaVars(ficha, statusState), [ficha, statusState]);
+  const formulaBaseFicha = formulaFicha || ficha;
+  const buildVars = (currStatus = statusState) => {
+    const vars = buildFormulaVars(formulaBaseFicha, currStatus);
+    (list || []).forEach((r) => {
+      const code = String(r.codigo || "").toUpperCase();
+      if (!code) return;
+      vars[code] = Number(r.atual || 0);
+      vars[code.toLowerCase()] = Number(r.atual || 0);
+      vars[`${code}MAX`] = Number(r.total || 0);
+      vars[`${code.toLowerCase()}max`] = Number(r.total || 0);
+    });
+    return vars;
+  };
+  const formulaVars = useMemo(() => buildVars(statusState), [formulaBaseFicha, statusState, list]);
   const formulaSuggestions = useMemo(() => Object.keys(formulaVars).sort().map((k) => ({ key: k, value: formulaVars[k] })), [formulaVars]);
 
+  const localStatusDefs = useMemo(() => {
+    const allCodes = Array.from(new Set([
+      ...Object.keys(statusState || {}).map((k) => String(k).toUpperCase()),
+      ...Object.keys(statusMeta || {}).map((k) => String(k).toUpperCase()),
+    ]));
+    return allCodes.map((code) => {
+      const key = Object.keys(statusState || {}).find((k) => String(k).toUpperCase() === code) || code;
+      const base = (statusDefs || []).find((s) => s.code === code) || { label: code, cor: "#9ca3af" };
+      const meta = statusMeta?.[code] || {};
+      return { key, code, label: meta.label || base.label || code, cor: meta.cor || base.cor || "#9ca3af" };
+    }).sort((a, b) => {
+      const ia = (statusDefs || []).findIndex((x) => x.code === a.code);
+      const ib = (statusDefs || []).findIndex((x) => x.code === b.code);
+      if (ia === -1 && ib === -1) return a.code.localeCompare(b.code);
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    });
+  }, [statusDefs, statusMeta, statusState]);
+
+  const recomputeStatusByFormula = (baseStatus, nextMeta, defs = localStatusDefs) => {
+    let next = { ...(baseStatus || {}) };
+    for (let i = 0; i < 2; i += 1) {
+      const vars = buildVars(next);
+      (defs || []).forEach((s) => {
+        const meta = nextMeta?.[s.code] || {};
+        const curr = next[s.key] || { val: 0, max: 1 };
+        const maxEval = evaluateStatusFormula(meta.maxFormula, { vars });
+        const max = Math.max(1, Math.floor(Number.isFinite(maxEval) ? maxEval : Number(curr.max || 1)));
+        const valEval = evaluateStatusFormula(meta.valFormula, { vars, x: max });
+        const rawVal = Number.isFinite(valEval) ? valEval : Number(curr.val || 0);
+        next[s.key] = { ...curr, max, val: Math.max(0, Math.min(max, Math.floor(rawVal))) };
+      });
+    }
+    return next;
+  };
+
+  const statusEditorPreview = useMemo(() => {
+    if (!statusEditor) return null;
+    const draftCode = String(statusEditor.draft?.code || "").trim().toUpperCase();
+    if (!draftCode) return null;
+
+    const tempMeta = {
+      ...(statusMeta || {}),
+      [draftCode]: {
+        ...(statusMeta?.[draftCode] || {}),
+        label: statusEditor.draft.label || draftCode,
+        cor: statusEditor.draft.cor || "#9ca3af",
+        maxFormula: statusEditor.draft.maxFormula || "",
+        valFormula: statusEditor.draft.valFormula || "",
+      },
+    };
+
+    const existing = statusState?.[draftCode] || {};
+    const tempStatus = {
+      ...(statusState || {}),
+      [draftCode]: {
+        val: Math.max(0, Number(existing.val ?? statusEditor.draft.initialVal ?? 0) || 0),
+        max: Math.max(1, Number(existing.max ?? statusEditor.draft.initialMax ?? 1) || 1),
+      },
+    };
+
+    const tempDefs = localStatusDefs.some((s) => s.code === draftCode)
+      ? localStatusDefs
+      : [...localStatusDefs, { key: draftCode, code: draftCode, label: statusEditor.draft.label || draftCode, cor: statusEditor.draft.cor || "#9ca3af" }];
+
+    return recomputeStatusByFormula(tempStatus, tempMeta, tempDefs);
+  }, [statusEditor, statusMeta, statusState, localStatusDefs, formulaBaseFicha, list]);
+
   const applyStatusFormula = (code, nextMeta) => {
-    const key = statusDefs.find((s) => s.code === code)?.key || code;
+    const key = localStatusDefs.find((s) => s.code === code)?.key || code;
     const current = { ...(statusState[key] || { val: 0, max: 1 }) };
-    const vars = buildFormulaVars(ficha, statusState);
+    const vars = buildVars(statusState);
     const x = evaluateStatusFormula(nextMeta.maxFormula, { vars }) ?? Number(current.max || 1);
     const max = Math.max(1, Math.floor(x));
     const valExpr = evaluateStatusFormula(nextMeta.valFormula, { vars, x: max });
     const val = Math.max(0, Math.min(max, Math.floor(valExpr ?? Number(current.val || 0))));
     setStatusState((p) => ({ ...p, [key]: { ...(p[key] || {}), max, val } }));
+    setStatusInput((p) => ({ ...p, [key]: { val: String(val), max: String(max) } }));
   };
+
+  useEffect(() => {
+    setStatusState((prev) => {
+      const next = recomputeStatusByFormula(prev, statusMeta, localStatusDefs);
+      return JSON.stringify(next) === JSON.stringify(prev) ? prev : next;
+    });
+  }, [formulaBaseFicha, localStatusDefs, statusMeta, list]);
 
   return (
     <Modal title="Configurações de Combate" onClose={onClose} wide>
@@ -852,34 +1105,32 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
         </div>
 
         <div style={{ border: "1px solid #3d2f1f", borderRadius: 8, padding: 10 }}>
-          <div style={{ color: G.gold, marginBottom: 6, fontFamily: "'Cinzel',serif" }}>Barras de status (nome/cor + valores)</div>
-          <div style={{ display: "grid", gap: 6, maxHeight: 230, overflow: "auto" }}>
-            {statusDefs.map((s) => {
+          <div style={{ color: G.gold, marginBottom: 6, fontFamily: "'Cinzel',serif" }}>Barras de status</div>
+          <div style={{ display: "grid", gap: 8, maxHeight: 260, overflow: "auto" }}>
+            {localStatusDefs.map((s) => {
               const meta = statusMeta[s.code] || { label: s.label, cor: s.cor };
               const st = statusState[s.key] || { val: 0, max: 1 };
               return (
-                <div key={s.key} style={{ display: "grid", gridTemplateColumns: "120px 1fr 90px 90px 60px", gap: 6 }}>
-                  <input value={s.code} disabled style={inpStyle({ opacity: .65 })} />
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 46px", gap: 6 }}>
-                    <input value={meta.label || s.label} onChange={(e) => setStatusMeta((p) => ({ ...p, [s.code]: { ...(p[s.code] || {}), label: e.target.value, cor: (p[s.code]?.cor || s.cor) } }))} style={inpStyle()} />
-                    <input type="color" value={meta.cor || s.cor} onChange={(e) => setStatusMeta((p) => ({ ...p, [s.code]: { ...(p[s.code] || {}), label: (p[s.code]?.label || s.label), cor: e.target.value } }))} style={inpStyle({ padding: 2 })} />
+                <div key={s.key} style={{ border: "1px solid #3f3121", borderRadius: 8, padding: 8, background: "#120f0b", display: "grid", gap: 6 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontFamily: "monospace", color: meta.cor || s.cor }}>{s.code}</span>
+                      <span style={{ color: "#e7d5b1", fontFamily: "monospace", fontSize: 11 }}>{meta.label || s.label}</span>
+                      <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>{st.val}/{st.max}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <HoverButton onClick={() => setStatusEditor({ mode: "edit", status: s, draft: { code: s.code, label: meta.label || s.label, cor: meta.cor || s.cor, initialVal: st.val, initialMax: st.max, maxFormula: meta.maxFormula || "", valFormula: meta.valFormula || "" } })} style={btnStyle({ padding: "4px 8px", borderColor: "#4b6b8a", color: "#98cfff" })}>Editar</HoverButton>
+                      <HoverButton onClick={() => setStatusEditor({ mode: "duplicate", status: s, draft: { code: `${s.code}_2`, label: `${meta.label || s.label} Cópia`, cor: meta.cor || s.cor, initialVal: st.val, initialMax: st.max, maxFormula: meta.maxFormula || "", valFormula: meta.valFormula || "" } })} style={btnStyle({ padding: "4px 8px", borderColor: "#6b5a34", color: "#d8bf8b" })}>Duplicar</HoverButton>
+                      <HoverButton onClick={() => {
+                        setStatusState((p) => { const n = { ...p }; delete n[s.key]; return n; });
+                        setStatusMeta((p) => { const n = { ...p }; delete n[s.code]; return n; });
+                        setStatusInput((p) => { const n = { ...p }; delete n[s.key]; return n; });
+                      }} style={btnStyle({ padding: "4px 8px", borderColor: "#87413a", color: "#ff9990" })}>Excluir</HoverButton>
+                    </div>
                   </div>
-                  <input type="number" value={st.val} onChange={(e) => setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || { val: 0, max: 1 }), val: Number(e.target.value) || 0 } }))} style={inpStyle()} />
-                  <input type="number" value={st.max} onChange={(e) => setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || { val: 0, max: 1 }), max: Math.max(1, Number(e.target.value) || 1) } }))} style={inpStyle()} />
-                  <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 11, alignSelf: "center" }}>{s.code}</span>
-                  <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, background: "#12100c", border: "1px solid #3f3121", borderRadius: 8, padding: 6 }}>
-                    <div style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:6 }}><FormulaInput
-                      value={meta.maxFormula || ""}
-                      onChange={(val) => { const metaNext = { ...(statusMeta[s.code] || {}), maxFormula: val, valFormula: (statusMeta[s.code]?.valFormula || "") }; setStatusMeta((p) => ({ ...p, [s.code]: metaNext })); applyStatusFormula(s.code, metaNext); }}
-                      suggestions={formulaSuggestions}
-                      placeholder="MAX: ex ((vigor / 2) * (vit / 6) + 1) + (vontade * (mentalidade * 4))"
-                    /><HoverButton onClick={() => { const roll = parseDurationRounds({ duracaoExpressao: meta.maxFormula || "" }); if (roll > 0) setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || {}), max: roll, val: Math.min(roll, Number(p[s.key]?.val || 0)) } })); }} style={btnStyle({ padding:"4px 8px", borderColor:"#6a5a33", color:"#e3c88f" })}>🎲</HoverButton></div>
-                    <div style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:6 }}><FormulaInput
-                      value={meta.valFormula || ""}
-                      onChange={(val) => { const metaNext = { ...(statusMeta[s.code] || {}), valFormula: val, maxFormula: (statusMeta[s.code]?.maxFormula || "") }; setStatusMeta((p) => ({ ...p, [s.code]: metaNext })); applyStatusFormula(s.code, metaNext); }}
-                      suggestions={formulaSuggestions}
-                      placeholder="ATUAL: ex ((vit / 2) + x)"
-                    /><HoverButton onClick={() => { const roll = parseDurationRounds({ duracaoExpressao: meta.valFormula || "" }); if (roll > 0) setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || {}), val: Math.max(0, Math.min(Number(p[s.key]?.max || 1), roll)) } })); }} style={btnStyle({ padding:"4px 8px", borderColor:"#6a5a33", color:"#e3c88f" })}>🎲</HoverButton></div>
+                  <div style={{ display: "flex", gap: 8, color: G.muted, fontFamily: "monospace", fontSize: 10, flexWrap: "wrap" }}>
+                    <span>MAX: {meta.maxFormula || "—"}</span>
+                    <span>ATUAL: {meta.valFormula || "—"}</span>
                   </div>
                 </div>
               );
@@ -888,17 +1139,33 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
 
           <div style={{ marginTop: 8, borderTop: "1px solid #3d2f1f", paddingTop: 8 }}>
             <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 11, marginBottom: 6 }}>Adicionar nova barra</div>
-            <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 56px 80px 80px auto", gap: 6 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 56px 1fr 1fr auto", gap: 6 }}>
               <input value={statusDraft.codigo} onChange={(e) => setStatusDraft((p) => ({ ...p, codigo: e.target.value.toUpperCase() }))} style={inpStyle()} placeholder="Cód" />
               <input value={statusDraft.label} onChange={(e) => setStatusDraft((p) => ({ ...p, label: e.target.value }))} style={inpStyle()} placeholder="Nome" />
               <input type="color" value={statusDraft.cor} onChange={(e) => setStatusDraft((p) => ({ ...p, cor: e.target.value }))} style={inpStyle({ padding: 2 })} />
-              <input type="number" value={statusDraft.val} onChange={(e) => setStatusDraft((p) => ({ ...p, val: Number(e.target.value) || 0 }))} style={inpStyle()} />
-              <input type="number" value={statusDraft.max} onChange={(e) => setStatusDraft((p) => ({ ...p, max: Math.max(1, Number(e.target.value) || 1) }))} style={inpStyle()} />
+              <FormulaInput value={statusDraft.maxFormula || ""} onChange={(v) => setStatusDraft((p) => ({ ...p, maxFormula: v }))} suggestions={formulaSuggestions} placeholder="Fórmula do MAX" />
+              <FormulaInput value={statusDraft.valFormula || ""} onChange={(v) => setStatusDraft((p) => ({ ...p, valFormula: v }))} suggestions={formulaSuggestions} placeholder="Fórmula do ATUAL" />
               <HoverButton onClick={() => {
                 const key = statusDraft.codigo.trim().toUpperCase();
                 if (!key) return;
-                setStatusState((p) => ({ ...p, [key]: { val: statusDraft.val, max: statusDraft.max } }));
-                setStatusMeta((p) => ({ ...p, [key]: { label: statusDraft.label || key, cor: statusDraft.cor } }));
+                const nextMeta = {
+                  ...(statusMeta || {}),
+                  [key]: {
+                    ...(statusMeta?.[key] || {}),
+                    label: statusDraft.label || key,
+                    cor: statusDraft.cor,
+                    maxFormula: statusDraft.maxFormula || "",
+                    valFormula: statusDraft.valFormula || "",
+                  },
+                };
+                const seeded = { ...(statusState || {}), [key]: { ...(statusState?.[key] || {}), val: 0, max: 1 } };
+                const nextDefs = localStatusDefs.some((s) => s.code === key)
+                  ? localStatusDefs
+                  : [...localStatusDefs, { key, code: key, label: statusDraft.label || key, cor: statusDraft.cor || "#9ca3af" }];
+                const recomputed = recomputeStatusByFormula(seeded, nextMeta, nextDefs);
+                setStatusMeta(nextMeta);
+                setStatusState(recomputed);
+                setStatusInput((p) => ({ ...p, [key]: { val: String(recomputed[key]?.val ?? 0), max: String(recomputed[key]?.max ?? 1) } }));
               }} style={btnStyle({ borderColor: "#4e7c59", color: "#98e7ad" })}>Adicionar</HoverButton>
             </div>
           </div>
@@ -921,9 +1188,75 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
         <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 10 }}>Autocomplete: ↑/↓ navega, Enter completa variável (VIG, FOR, est, laminas_grandes...).</div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <HoverButton onClick={onClose} style={btnStyle({ borderColor: "#4f4f4f", color: "#b8b8b8" })}>Fechar</HoverButton>
-          <HoverButton onClick={() => { onSave({ recursos: list, statusMeta, status: statusState }); onClose(); }} style={btnStyle()}>Salvar</HoverButton>
+          <HoverButton onClick={() => {
+            const nextStatus = recomputeStatusByFormula(statusState, statusMeta, localStatusDefs);
+            onSave({ recursos: list, statusMeta, status: nextStatus });
+            onClose();
+          }} style={btnStyle()}>Salvar</HoverButton>
         </div>
       </div>
+      {statusEditor && (
+        <Modal title={`${statusEditor.mode === "duplicate" ? "Duplicar" : "Editar"} barra: ${statusEditor.status?.code || "Status"}`} onClose={() => setStatusEditor(null)}>
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 56px", gap: 6 }}>
+              <input value={statusEditor.draft.code} onChange={(e) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, code: e.target.value.toUpperCase() } }))} style={inpStyle()} />
+              <input value={statusEditor.draft.label} onChange={(e) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, label: e.target.value } }))} style={inpStyle()} />
+              <input type="color" value={statusEditor.draft.cor} onChange={(e) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, cor: e.target.value } }))} style={inpStyle({ padding: 2 })} />
+            </div>
+            <FormulaInput value={statusEditor.draft.maxFormula || ""} onChange={(v) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, maxFormula: v } }))} suggestions={formulaSuggestions} placeholder="Fórmula do MAX" />
+            <FormulaInput value={statusEditor.draft.valFormula || ""} onChange={(v) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, valFormula: v } }))} suggestions={formulaSuggestions} placeholder="Fórmula do ATUAL" />
+            {statusEditorPreview?.[String(statusEditor.draft.code || "").trim().toUpperCase()] && (
+              <div style={{ color: "#9fe3a1", fontFamily: "monospace", fontSize: 11 }}>
+                Prévia: {statusEditorPreview[String(statusEditor.draft.code || "").trim().toUpperCase()].val}/{statusEditorPreview[String(statusEditor.draft.code || "").trim().toUpperCase()].max}
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <HoverButton onClick={() => setStatusEditor(null)} style={btnStyle({ borderColor: "#4f4f4f", color: "#b8b8b8" })}>Cancelar</HoverButton>
+              <HoverButton onClick={() => {
+                const code = String(statusEditor.draft.code || "").trim().toUpperCase();
+                if (!code) return;
+                const exists = localStatusDefs.some((x) => x.code === code);
+                if (statusEditor.mode === "duplicate" && exists) return;
+                const oldCode = statusEditor.status.code;
+                const oldKey = statusEditor.status.key;
+                const key = code;
+
+                const nextStatusMeta = { ...(statusMeta || {}) };
+                if (code !== oldCode) delete nextStatusMeta[oldCode];
+                nextStatusMeta[code] = {
+                  ...(nextStatusMeta[code] || {}),
+                  label: statusEditor.draft.label || code,
+                  cor: statusEditor.draft.cor,
+                  maxFormula: statusEditor.draft.maxFormula || "",
+                  valFormula: statusEditor.draft.valFormula || "",
+                };
+
+                const nextStatusState = { ...(statusState || {}) };
+                if (code !== oldCode || key !== oldKey) delete nextStatusState[oldKey];
+                const seedCurrent = statusState?.[key] || {};
+                nextStatusState[key] = {
+                  val: Math.max(0, Number(seedCurrent.val ?? statusEditor.draft.initialVal ?? 0) || 0),
+                  max: Math.max(1, Number(seedCurrent.max ?? statusEditor.draft.initialMax ?? 1) || 1),
+                };
+
+                const nextDefsBase = localStatusDefs.filter((s) => s.code !== oldCode);
+                const nextDefs = [...nextDefsBase, { key, code, label: statusEditor.draft.label || code, cor: statusEditor.draft.cor || "#9ca3af" }];
+
+                const recomputed = recomputeStatusByFormula(nextStatusState, nextStatusMeta, nextDefs);
+                setStatusMeta(nextStatusMeta);
+                setStatusState(recomputed);
+                setStatusInput((p) => {
+                  const next = { ...(p || {}) };
+                  if (code !== oldCode || key !== oldKey) delete next[oldKey];
+                  next[key] = { val: String(recomputed[key]?.val ?? 0), max: String(recomputed[key]?.max ?? 1) };
+                  return next;
+                });
+                setStatusEditor(null);
+              }} style={btnStyle()}>Salvar</HoverButton>
+            </div>
+          </div>
+        </Modal>
+      )}
     </Modal>
   );
 }
