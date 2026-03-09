@@ -97,3 +97,16 @@ export function buildFormulaVars(ficha = {}, statusState = {}) {
 
   return vars;
 }
+
+export function appendResourceFormulaVars(vars = {}, resources = []) {
+  const next = { ...(vars || {}) };
+  (resources || []).forEach((r) => {
+    const code = String(r?.codigo || "").toUpperCase();
+    if (!code) return;
+    next[code] = Number(r?.atual || 0);
+    next[code.toLowerCase()] = Number(r?.atual || 0);
+    next[`${code}MAX`] = Number(r?.total || 0);
+    next[`${code.toLowerCase()}max`] = Number(r?.total || 0);
+  });
+  return next;
+}

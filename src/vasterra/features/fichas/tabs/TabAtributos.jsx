@@ -106,17 +106,22 @@ export function TabAtributos({ ficha, onUpdate, arsenal = [], prestigios = {} })
     onUpdate({ periciaPrestigios: { ...(ficha.periciaPrestigios || {}), [skillName]: next } });
   };
 
-  const periciaDelta = (nome) => {
-    const key = normalizePericiaKey(nome);
-    return mergedMods.reduce((sum, m) => {
-      if (m?.ativo === false) return sum;
+  const periciaDeltas = useMemo(() => {
+    const out = {};
+    mergedMods.forEach((m) => {
+      if (m?.ativo === false) return;
       const mechanicalRaw = Array.isArray(m?.efeitosMecanicos) && m.efeitosMecanicos.length
         ? m.efeitosMecanicos
         : (m?.efeitoMecanico || m?.efeito || m?.valor || "");
-      const parsedList = parseMechanicalEffects(mechanicalRaw);
-      return sum + parsedList.reduce((acc, parsed) => (!parsed || parsed.scope !== "pericias" || parsed.isPct ? acc : parsed.key === key ? acc + parsed.value : acc), 0);
-    }, 0);
-  };
+      parseMechanicalEffects(mechanicalRaw).forEach((parsed) => {
+        if (!parsed || parsed.scope !== "pericias" || parsed.isPct) return;
+        out[parsed.key] = Number(out[parsed.key] || 0) + Number(parsed.value || 0);
+      });
+    });
+    return out;
+  }, [mergedMods]);
+
+  const periciaDelta = (nome) => Number(periciaDeltas[normalizePericiaKey(nome)] || 0);
 
   const getPrestigioInfo = (skill) => getEffectivePrestigio({ tree: prestigios?.[skill], ficha, unlockedIds: ficha.periciaPrestigios?.[skill] || [], skillName: skill });
 

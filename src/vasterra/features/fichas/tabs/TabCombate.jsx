@@ -3,7 +3,7 @@ import { uid } from "../../../core/factories";
 import { instantiateEffectFromTemplate, parseMechanicalEffects } from "../../../core/effects";
 import { aggregateModifiers, aggregateResourceModifiers, aggregateStatusModifiers } from "../../../core/effects";
 import { normalizePericiaKey } from "../../../core/effects";
-import { buildFormulaVars, evaluateStatusFormula, getMechanicalText, parseDurationRounds, toNumber } from "./combate/utils";
+import { appendResourceFormulaVars, buildFormulaVars, evaluateStatusFormula, getMechanicalText, parseDurationRounds, toNumber } from "./combate/utils";
 import { RANK_COR } from "../../../data/gameData";
 import { G, btnStyle, inpStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
@@ -327,14 +327,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     }));
     let next = { ...base };
     for (let i = 0; i < 2; i += 1) {
-      const vars = buildFormulaVars(formulaFicha, next);
-      (combate.recursos || []).forEach((r) => {
-        const code = String(r.codigo || "").toUpperCase();
-        vars[code] = Number(r.atual || 0);
-        vars[code.toLowerCase()] = Number(r.atual || 0);
-        vars[`${code}MAX`] = Number(r.total || 0);
-        vars[`${code.toLowerCase()}max`] = Number(r.total || 0);
-      });
+      const vars = appendResourceFormulaVars(buildFormulaVars(formulaFicha, next), combate.recursos || []);
       allStatusKeys.forEach((code) => {
         const curr = next[code] || { val: 0, max: 1 };
         const meta = combate.statusMeta?.[code] || {};
@@ -982,16 +975,7 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
 
   const formulaBaseFicha = formulaFicha || ficha;
   const buildVars = (currStatus = statusState) => {
-    const vars = buildFormulaVars(formulaBaseFicha, currStatus);
-    (list || []).forEach((r) => {
-      const code = String(r.codigo || "").toUpperCase();
-      if (!code) return;
-      vars[code] = Number(r.atual || 0);
-      vars[code.toLowerCase()] = Number(r.atual || 0);
-      vars[`${code}MAX`] = Number(r.total || 0);
-      vars[`${code.toLowerCase()}max`] = Number(r.total || 0);
-    });
-    return vars;
+    return appendResourceFormulaVars(buildFormulaVars(formulaBaseFicha, currStatus), list || []);
   };
   const formulaVars = useMemo(() => buildVars(statusState), [formulaBaseFicha, statusState, list]);
   const formulaSuggestions = useMemo(() => Object.keys(formulaVars).sort().map((k) => ({ key: k, value: formulaVars[k] })), [formulaVars]);
@@ -1065,24 +1049,16 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
     return recomputeStatusByFormula(tempStatus, tempMeta, tempDefs);
   }, [statusEditor, statusMeta, statusState, localStatusDefs, formulaBaseFicha, list]);
 
-  const applyStatusFormula = (code, nextMeta) => {
-    const key = localStatusDefs.find((s) => s.code === code)?.key || code;
-    const current = { ...(statusState[key] || { val: 0, max: 1 }) };
-    const vars = buildVars(statusState);
-    const x = evaluateStatusFormula(nextMeta.maxFormula, { vars }) ?? Number(current.max || 1);
-    const max = Math.max(1, Math.floor(x));
-    const valExpr = evaluateStatusFormula(nextMeta.valFormula, { vars, x: max });
-    const val = Math.max(0, Math.min(max, Math.floor(valExpr ?? Number(current.val || 0))));
-    setStatusState((p) => ({ ...p, [key]: { ...(p[key] || {}), max, val } }));
-    setStatusInput((p) => ({ ...p, [key]: { val: String(val), max: String(max) } }));
-  };
-
   useEffect(() => {
     setStatusState((prev) => {
       const next = recomputeStatusByFormula(prev, statusMeta, localStatusDefs);
       return JSON.stringify(next) === JSON.stringify(prev) ? prev : next;
     });
   }, [formulaBaseFicha, localStatusDefs, statusMeta, list]);
+
+  useEffect(() => {
+    setStatusInput(Object.fromEntries(Object.entries(statusState || {}).map(([k, v]) => [k, { val: String(v?.val ?? 0), max: String(v?.max ?? 1) }])));
+  }, [statusState]);
 
   return (
     <Modal title="Configurações de Combate" onClose={onClose} wide>
