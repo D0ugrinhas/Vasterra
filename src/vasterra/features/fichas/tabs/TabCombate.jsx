@@ -986,17 +986,22 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
   const formulaSuggestions = useMemo(() => Object.keys(formulaVars).sort().map((k) => ({ key: k, value: formulaVars[k] })), [formulaVars]);
 
   const localStatusDefs = useMemo(() => {
-    const baseOrder = (statusDefs || []).map((s) => s.code);
     const allCodes = Array.from(new Set([
       ...Object.keys(statusState || {}).map((k) => String(k).toUpperCase()),
       ...Object.keys(statusMeta || {}).map((k) => String(k).toUpperCase()),
-      ...baseOrder,
     ]));
     return allCodes.map((code) => {
       const key = Object.keys(statusState || {}).find((k) => String(k).toUpperCase() === code) || code;
       const base = (statusDefs || []).find((s) => s.code === code) || { label: code, cor: "#9ca3af" };
       const meta = statusMeta?.[code] || {};
       return { key, code, label: meta.label || base.label || code, cor: meta.cor || base.cor || "#9ca3af" };
+    }).sort((a, b) => {
+      const ia = (statusDefs || []).findIndex((x) => x.code === a.code);
+      const ib = (statusDefs || []).findIndex((x) => x.code === b.code);
+      if (ia === -1 && ib === -1) return a.code.localeCompare(b.code);
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
     });
   }, [statusDefs, statusMeta, statusState]);
 
@@ -1047,6 +1052,20 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
 
     return recomputeStatusByFormula(tempStatus, tempMeta, tempDefs);
   }, [statusEditor, statusMeta, statusState, localStatusDefs, formulaBaseFicha, list]);
+
+  useEffect(() => {
+    if (!statusEditor) return;
+    const code = String(statusEditor.draft?.code || "").trim().toUpperCase();
+    const result = statusEditorPreview?.[code];
+    if (!result) return;
+    setStatusEditor((prev) => {
+      if (!prev) return prev;
+      const currVal = Number(prev.draft?.val || 0);
+      const currMax = Number(prev.draft?.max || 1);
+      if (currVal === Number(result.val || 0) && currMax === Number(result.max || 1)) return prev;
+      return { ...prev, draft: { ...prev.draft, val: Number(result.val || 0), max: Number(result.max || 1) } };
+    });
+  }, [statusEditorPreview, statusEditor]);
 
   const applyStatusFormula = (code, nextMeta) => {
     const key = localStatusDefs.find((s) => s.code === code)?.key || code;
