@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { uid } from "../../../core/factories";
 import { instantiateEffectFromTemplate } from "../../../core/effects";
 import { aggregateStatusModifiers } from "../../../core/effects";
+import { buildFormulaVars, evaluateStatusFormula, getMechanicalText, parseDurationRounds, toNumber } from "./combate/utils";
 import { RANK_COR } from "../../../data/gameData";
 import { G, btnStyle, inpStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
@@ -30,101 +31,6 @@ const CORE_STATUS_META = {
   SAN: { label: "SAN", cor: "#c15cff" },
   CONS: { label: "CONSC", cor: "#50c5aa" },
 };
-
-function toNumber(v, fallback = 0) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-
-
-function getMechanicalText(effect = {}) {
-  if (Array.isArray(effect?.efeitosMecanicos) && effect.efeitosMecanicos.length) return effect.efeitosMecanicos.join(", ");
-  return effect?.efeitoMecanico || effect?.efeito || effect?.valor || "";
-}
-function effectIconSrc(effect = {}) {
-  if (effect.iconeModo === "url" && effect.iconeUrl) return effect.iconeUrl;
-  if (effect.iconeModo === "upload" && effect.iconeData) return effect.iconeData;
-  return "";
-}
-
-function parseDurationRounds(effect) {
-  if (effect?.duracaoRolada != null && Number(effect?.duracaoRolada) > 0) {
-    return Math.max(0, Math.floor(Number(effect?.duracaoRolada)));
-  }
-  const raw = String(effect?.duracaoExpressao ?? effect?.duracao ?? effect?.duracaoRodadas ?? "").trim();
-  if (!raw) return 0;
-  const normalized = raw.toLowerCase().replace(/rodadas?/g, "").replace(/\s+/g, "").replace(/,/g, ".");
-  if (!normalized) return 0;
-  if (/^[+-]?\d+(\.\d+)?$/.test(normalized)) return Math.max(0, Math.floor(Number(normalized)));
-  const diceRegex = /(\d*)d(\d+)/g;
-  let expr = normalized;
-  let m;
-  while ((m = diceRegex.exec(normalized)) !== null) {
-    const qtd = Math.max(1, Number(m[1] || 1));
-    const faces = Math.max(2, Number(m[2] || 2));
-    let total = 0;
-    for (let i = 0; i < qtd; i += 1) total += 1 + Math.floor(Math.random() * faces);
-    expr = expr.replace(m[0], String(total));
-  }
-  if (!/^[0-9+\-*/().]+$/.test(expr)) return 0;
-  try {
-    const val = Function(`"use strict"; return (${expr});`)();
-    return Math.max(0, Math.floor(Number(val) || 0));
-  } catch {
-    return 0;
-  }
-}
-
-function evaluateStatusFormula(expression, context = {}) {
-  const raw = String(expression || "").trim();
-  if (!raw) return null;
-  const normalized = raw
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\^/g, "**");
-  if (!/^[a-z0-9_+\-*/().\s]+$/.test(normalized)) return null;
-  const vars = {
-    x: Number(context.x || 0),
-    ...Object.fromEntries(Object.entries(context.vars || {}).map(([k, v]) => [String(k).toLowerCase(), Number(v || 0)])),
-  };
-  try {
-    const keys = Object.keys(vars);
-    const values = keys.map((k) => vars[k]);
-    const fn = Function(...keys, `return (${normalized});`);
-    const value = Number(fn(...values));
-    return Number.isFinite(value) ? value : null;
-  } catch {
-    return null;
-  }
-}
-
-
-
-function buildFormulaVars(ficha = {}, statusState = {}) {
-  const vars = {};
-  Object.entries(ficha?.atributos || {}).forEach(([k, v]) => { vars[String(k).toLowerCase()] = Number(v || 0); });
-  const attrAlias = {
-    forca: "for", força: "for", vigor: "vig", destreza: "des", agilidade: "des",
-    constituicao: "const", constituição: "const", inteligencia: "int", inteligência: "int",
-    sabedoria: "sab", carisma: "car", mentalidade: "ment", vontade: "vont",
-  };
-  Object.entries(attrAlias).forEach(([alias, source]) => { vars[alias] = Number(vars[source] || 0); });
-
-  Object.entries(ficha?.pericias || {}).forEach(([k, v]) => {
-    const key = String(k).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-    if (key) vars[key] = Number(v || 0);
-  });
-
-  Object.entries(statusState || {}).forEach(([k, v]) => {
-    vars[k.toLowerCase()] = Number(v?.val || 0);
-    vars[k.toUpperCase()] = Number(v?.val || 0);
-    vars[`${k.toLowerCase()}max`] = Number(v?.max || 0);
-    vars[`${k.toUpperCase()}MAX`] = Number(v?.max || 0);
-  });
-  return vars;
-}
 
 function FormulaInput({ value, onChange, placeholder, suggestions = [] }) {
   const [open, setOpen] = useState(false);
@@ -273,6 +179,16 @@ function ResourcePip({ active, willSpend = false, color, shape = "square", onCli
   );
 }
 
+
+function shouldTriggerReminder(reminder, rodadaAtual, rodadaAnterior) {
+  const mode = reminder?.modo || reminder?.tipo || "naRodada";
+  const every = Math.max(1, Number(reminder?.aCada || reminder?.valor || 1));
+  const target = Number(reminder?.rodadaAlvo ?? reminder?.lembrarNaRodada ?? 0);
+  if (mode === "emX") return rodadaAtual === rodadaAnterior + Math.max(1, Number(reminder?.emX || reminder?.valor || 1));
+  if (mode === "cadaX") return rodadaAtual > 0 && rodadaAtual % every === 0;
+  return rodadaAtual === target;
+}
+
 export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags = [], onNotify }) {
   const [query, setQuery] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -282,6 +198,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
   const [effectDetail, setEffectDetail] = useState(null);
   const [resourceModal, setResourceModal] = useState(null);
   const [statusModal, setStatusModal] = useState(null);
+  const [logDetail, setLogDetail] = useState(null);
 
   const combate = useMemo(() => normalizeCombateState(ficha?.combate || {}), [ficha?.combate]);
   const tagsById = useMemo(() => Object.fromEntries((skillTags || []).map((t) => [t.id, t])), [skillTags]);
@@ -449,6 +366,13 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     else nextLogs = addLog("Recursos resetados para o máximo.", nextRound, nextLogs, { kind: "resource" });
     if (statusLogs.length) nextLogs = addLog("Status atualizados.", nextRound, nextLogs, { kind: "status", changes: statusLogs });
 
+    const remindersTriggered = (combate.lembretes || []).filter((r) => shouldTriggerReminder(r, nextRound, combate.rodadaAtual));
+    remindersTriggered.forEach((r) => {
+      const msg = `${r.nome || "Lembrete"}: ${r.texto || r.descricao || "Sem descrição"}`;
+      nextLogs = addLog(msg, nextRound, nextLogs, { kind: "reminder", reminder: r });
+      onNotify?.(`⏰ ${msg}`, "info");
+    });
+
     onUpdate({
       status: nextStatus,
       combate: { ...(ficha.combate || {}), recursos: nextResources, rodadaAtual: nextRound, pendingSkillIds: [], logs: nextLogs },
@@ -477,7 +401,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
   };
 
   const addReminder = () => {
-    const next = [{ id: uid(), texto: "Novo lembrete", lembrarNaRodada: combate.rodadaAtual + 1, tipo: "naRodada" }, ...(combate.lembretes || [])];
+    const next = [{ id: uid(), nome: "Novo lembrete", descricao: "", texto: "", modo: "naRodada", rodadaAlvo: combate.rodadaAtual + 1, aCada: 1, emX: 1 }, ...(combate.lembretes || [])];
     saveCombate({ lembretes: next });
   };
 
@@ -551,7 +475,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
             <div key={`rod-${group.rodada}`} style={{ marginBottom: 8 }}>
               <div style={{ color: "#e0bd84", fontFamily: "'Cinzel',serif", fontSize: 12, marginBottom: 4, borderBottom: "1px dashed #5d4728" }}>Rodada {group.rodada}</div>
               {group.items.map((log) => (
-                <div key={log.id} className="combat-log-item">
+                <button key={log.id} className="combat-log-item" onClick={() => setLogDetail(log)} style={{ textAlign: "left", cursor: "pointer" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", color: "#bca57a", fontFamily: "monospace", fontSize: 10 }}>
                     <span>{log.kind === "resource" ? "Recursos" : log.kind === "status" ? "Status" : "Evento"}</span>
                     <span>{new Date(log.em || Date.now()).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
@@ -572,7 +496,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
                       {log.changes.map((it, i) => <span key={`${log.id}-r-${i}`} style={{ color: "#9fd39f", fontFamily: "monospace", fontSize: 10 }}>{it.code}: -{it.spent} ↺ {it.maxAfter}</span>)}
                     </div>
                   )}
-                </div>
+                </button>
               ))}
             </div>
           ))}
@@ -758,6 +682,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
         />
       )}
 
+      {logDetail && <Modal title={`Log R${logDetail.rodada}`} onClose={() => setLogDetail(null)}><div style={{ display: "grid", gap: 8 }}><div style={{ color: "#f2dfbe", fontFamily: "monospace" }}>{logDetail.mensagem}</div><pre style={{ margin:0, whiteSpace:"pre-wrap", color:"#b7c6dd", fontFamily:"monospace", fontSize:11 }}>{JSON.stringify(logDetail, null, 2)}</pre></div></Modal>}
       {effectDetail && <EffectDetailsModal effect={effectDetail} onClose={() => setEffectDetail(null)} />}
       {skillModal && <Modal title={`Skill: ${skillModal.nome || "Sem nome"}`} onClose={() => setSkillModal(null)} wide><SkillDetalhe skill={skillModal} tagsById={tagsById} /></Modal>}
     </div>
@@ -850,18 +775,15 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
   const formulaVars = useMemo(() => buildFormulaVars(ficha, statusState), [ficha, statusState]);
   const formulaSuggestions = useMemo(() => Object.keys(formulaVars).sort(), [formulaVars]);
 
-  const recalcStatusFormulas = () => {
-    const next = { ...(statusState || {}) };
-    Object.keys(next).forEach((key) => {
-      const code = key.toUpperCase();
-      const meta = statusMeta[code] || {};
-      const x = evaluateStatusFormula(meta.maxFormula, { vars: formulaVars }) ?? Number(next[key]?.max || 1);
-      const max = Math.max(1, Math.floor(x));
-      const valExpr = evaluateStatusFormula(meta.valFormula, { vars: formulaVars, x: max });
-      const val = Math.max(0, Math.min(max, Math.floor(valExpr ?? Number(next[key]?.val || 0))));
-      next[key] = { ...(next[key] || {}), max, val };
-    });
-    setStatusState(next);
+  const applyStatusFormula = (code, nextMeta) => {
+    const key = statusDefs.find((s) => s.code === code)?.key || code;
+    const current = { ...(statusState[key] || { val: 0, max: 1 }) };
+    const vars = buildFormulaVars(ficha, statusState);
+    const x = evaluateStatusFormula(nextMeta.maxFormula, { vars }) ?? Number(current.max || 1);
+    const max = Math.max(1, Math.floor(x));
+    const valExpr = evaluateStatusFormula(nextMeta.valFormula, { vars, x: max });
+    const val = Math.max(0, Math.min(max, Math.floor(valExpr ?? Number(current.val || 0))));
+    setStatusState((p) => ({ ...p, [key]: { ...(p[key] || {}), max, val } }));
   };
 
   return (
@@ -901,18 +823,18 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
                   <input type="number" value={st.max} onChange={(e) => setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || { val: 0, max: 1 }), max: Math.max(1, Number(e.target.value) || 1) } }))} style={inpStyle()} />
                   <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 11, alignSelf: "center" }}>{s.code}</span>
                   <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, background: "#12100c", border: "1px solid #3f3121", borderRadius: 8, padding: 6 }}>
-                    <FormulaInput
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:6 }}><FormulaInput
                       value={meta.maxFormula || ""}
-                      onChange={(val) => setStatusMeta((p) => ({ ...p, [s.code]: { ...(p[s.code] || {}), maxFormula: val } }))}
+                      onChange={(val) => { const metaNext = { ...(statusMeta[s.code] || {}), maxFormula: val, valFormula: (statusMeta[s.code]?.valFormula || "") }; setStatusMeta((p) => ({ ...p, [s.code]: metaNext })); applyStatusFormula(s.code, metaNext); }}
                       suggestions={formulaSuggestions}
                       placeholder="MAX: ex ((vigor / 2) * (vit / 6) + 1) + (vontade * (mentalidade * 4))"
-                    />
-                    <FormulaInput
+                    /><HoverButton onClick={() => { const roll = parseDurationRounds({ duracaoExpressao: meta.maxFormula || "" }); if (roll > 0) setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || {}), max: roll, val: Math.min(roll, Number(p[s.key]?.val || 0)) } })); }} style={btnStyle({ padding:"4px 8px", borderColor:"#6a5a33", color:"#e3c88f" })}>🎲</HoverButton></div>
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:6 }}><FormulaInput
                       value={meta.valFormula || ""}
-                      onChange={(val) => setStatusMeta((p) => ({ ...p, [s.code]: { ...(p[s.code] || {}), valFormula: val } }))}
+                      onChange={(val) => { const metaNext = { ...(statusMeta[s.code] || {}), valFormula: val, maxFormula: (statusMeta[s.code]?.maxFormula || "") }; setStatusMeta((p) => ({ ...p, [s.code]: metaNext })); applyStatusFormula(s.code, metaNext); }}
                       suggestions={formulaSuggestions}
                       placeholder="ATUAL: ex ((vit / 2) + x)"
-                    />
+                    /><HoverButton onClick={() => { const roll = parseDurationRounds({ duracaoExpressao: meta.valFormula || "" }); if (roll > 0) setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || {}), val: Math.max(0, Math.min(Number(p[s.key]?.max || 1), roll)) } })); }} style={btnStyle({ padding:"4px 8px", borderColor:"#6a5a33", color:"#e3c88f" })}>🎲</HoverButton></div>
                   </div>
                 </div>
               );
@@ -953,7 +875,6 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
 
         <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 10 }}>Autocomplete: ↑/↓ navega, Enter completa variável (VIG, FOR, est, laminas_grandes...).</div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <HoverButton onClick={recalcStatusFormulas} style={btnStyle({ borderColor: "#4a6a8b", color: "#9cc8ff" })}>Recalcular fórmulas</HoverButton>
           <HoverButton onClick={onClose} style={btnStyle({ borderColor: "#4f4f4f", color: "#b8b8b8" })}>Fechar</HoverButton>
           <HoverButton onClick={() => { onSave({ recursos: list, statusMeta, status: statusState }); onClose(); }} style={btnStyle()}>Salvar</HoverButton>
         </div>
@@ -1048,7 +969,7 @@ function EffectsModal({ efeitos, biblioteca, rodadaAtual, onClose, onChange }) {
 }
 
 function RemindersModal({ lembretes, rodadaAtual, onChange, onClose, onAdd }) {
-  const sorted = [...(lembretes || [])].sort((a, b) => Number(a.lembrarNaRodada || 0) - Number(b.lembrarNaRodada || 0));
+  const sorted = [...(lembretes || [])].sort((a, b) => Number((a.rodadaAlvo ?? a.lembrarNaRodada) || 0) - Number((b.rodadaAlvo ?? b.lembrarNaRodada) || 0));
 
   return (
     <Modal title="Lembretes" onClose={onClose} wide>
@@ -1059,15 +980,26 @@ function RemindersModal({ lembretes, rodadaAtual, onChange, onClose, onAdd }) {
         </div>
         <div style={{ maxHeight: "54vh", overflow: "auto", display: "grid", gap: 6 }}>
           {sorted.map((l) => {
-            const target = Number(l.lembrarNaRodada || rodadaAtual);
-            const state = target < rodadaAtual ? "Atrasado" : target === rodadaAtual ? "Agora" : `Em ${target - rodadaAtual} rodada(s)`;
+            const modo = l.modo || "naRodada";
+            const state = modo === "cadaX" ? `A cada ${l.aCada || 1} rodada(s)` : modo === "emX" ? `Daqui ${l.emX || 1} rodada(s)` : `Na rodada ${l.rodadaAlvo || rodadaAtual}`;
             return (
-              <div key={l.id} style={{ border: "1px solid #3b2f1e", borderRadius: 8, padding: 8, display: "grid", gap: 6 }}>
-                <input value={l.texto || ""} onChange={(e) => onChange((lembretes || []).map((x) => (x.id === l.id ? { ...x, texto: e.target.value } : x)))} style={inpStyle()} />
-                <div style={{ display: "grid", gridTemplateColumns: "120px 1fr auto", gap: 6, alignItems: "center" }}>
-                  <input type="number" value={target} onChange={(e) => onChange((lembretes || []).map((x) => (x.id === l.id ? { ...x, lembrarNaRodada: Number(e.target.value) || rodadaAtual, tipo: "naRodada" } : x)))} style={inpStyle()} />
-                  <span style={{ color: "#d7c7aa", fontFamily: "monospace", fontSize: 11 }}>{state}</span>
+              <div key={l.id} style={{ border: "1px solid #3b2f1e", borderRadius: 8, padding: 8, display: "grid", gap: 6, background: "#120f0b" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 110px auto", gap: 6 }}>
+                  <input value={l.nome || ""} onChange={(e) => onChange((lembretes || []).map((x) => (x.id === l.id ? { ...x, nome: e.target.value } : x)))} placeholder="Nome do lembrete" style={inpStyle()} />
+                  <select value={modo} onChange={(e) => onChange((lembretes || []).map((x) => (x.id === l.id ? { ...x, modo: e.target.value } : x)))} style={inpStyle()}>
+                    <option value="naRodada">Na rodada X</option>
+                    <option value="emX">Em X rodadas</option>
+                    <option value="cadaX">A cada X rodadas</option>
+                  </select>
                   <HoverButton onClick={() => onChange((lembretes || []).filter((x) => x.id !== l.id))} style={btnStyle({ borderColor: "#87413a", color: "#ff9990" })}>✕</HoverButton>
+                </div>
+                <input value={l.descricao || ""} onChange={(e) => onChange((lembretes || []).map((x) => (x.id === l.id ? { ...x, descricao: e.target.value } : x)))} placeholder="Descrição" style={inpStyle()} />
+                <input value={l.texto || ""} onChange={(e) => onChange((lembretes || []).map((x) => (x.id === l.id ? { ...x, texto: e.target.value } : x)))} placeholder="Lembrete" style={inpStyle()} />
+                <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: 6, alignItems: "center" }}>
+                  {modo === "naRodada" && <input type="number" value={l.rodadaAlvo || rodadaAtual} onChange={(e) => onChange((lembretes || []).map((x) => (x.id === l.id ? { ...x, rodadaAlvo: Number(e.target.value) || rodadaAtual } : x)))} style={inpStyle()} />}
+                  {modo === "emX" && <input type="number" min={1} value={l.emX || 1} onChange={(e) => onChange((lembretes || []).map((x) => (x.id === l.id ? { ...x, emX: Math.max(1, Number(e.target.value) || 1) } : x)))} style={inpStyle()} />}
+                  {modo === "cadaX" && <input type="number" min={1} value={l.aCada || 1} onChange={(e) => onChange((lembretes || []).map((x) => (x.id === l.id ? { ...x, aCada: Math.max(1, Number(e.target.value) || 1) } : x)))} style={inpStyle()} />}
+                  <span style={{ color: "#d7c7aa", fontFamily: "monospace", fontSize: 11 }}>{state}</span>
                 </div>
               </div>
             );
