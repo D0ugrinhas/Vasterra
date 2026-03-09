@@ -30,7 +30,13 @@ const CORE_STATUS_META = {
   EST: { label: "EST", cor: "#d7d748" },
   MAN: { label: "MAN", cor: "#4a7dff" },
   SAN: { label: "SAN", cor: "#c15cff" },
-  CONS: { label: "CONSC", cor: "#50c5aa" },
+  CONSC: { label: "CONSC", cor: "#50c5aa" },
+};
+
+const normalizeStatusCode = (raw) => {
+  const up = String(raw || "").trim().toUpperCase();
+  if (up === "CONS") return "CONSC";
+  return up;
 };
 
 function FormulaInput({ value, onChange, placeholder, suggestions = [] }) {
@@ -318,11 +324,11 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
   const computedStatusBase = useMemo(() => {
     const statusEntries = Object.entries(ficha?.status || {});
     const allStatusKeys = Array.from(new Set([
-      ...statusEntries.map(([k]) => String(k || "").toUpperCase()),
-      ...Object.keys(combate.statusMeta || {}).map((k) => String(k || "").toUpperCase()),
+      ...statusEntries.map(([k]) => normalizeStatusCode(k)),
+      ...Object.keys(combate.statusMeta || {}).map((k) => normalizeStatusCode(k)),
     ])).filter(Boolean);
     const base = Object.fromEntries(allStatusKeys.map((code) => {
-      const fromStatus = statusEntries.find(([k]) => String(k || "").toUpperCase() === code)?.[1] || {};
+      const fromStatus = statusEntries.find(([k]) => normalizeStatusCode(k) === code)?.[1] || {};
       return [code, { val: Number(fromStatus?.val || 0), max: Math.max(1, Number(fromStatus?.max || 1)) }];
     }));
     let next = { ...base };
@@ -330,7 +336,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
       const vars = appendResourceFormulaVars(buildFormulaVars(formulaFicha, next), combate.recursos || []);
       allStatusKeys.forEach((code) => {
         const curr = next[code] || { val: 0, max: 1 };
-        const meta = combate.statusMeta?.[code] || {};
+        const meta = combate.statusMeta?.[code] || (code === "CONSC" ? combate.statusMeta?.CONS : null) || {};
         const maxEval = evaluateStatusFormula(meta.maxFormula, { vars });
         const max = Math.max(1, Math.floor(Number.isFinite(maxEval) ? maxEval : Number(curr.max || 1)));
         const valEval = evaluateStatusFormula(meta.valFormula, { vars, x: max });
@@ -358,12 +364,12 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
 
   const statusDefs = useMemo(() => {
     const allCodes = Array.from(new Set([
-      ...Object.keys(ficha?.status || {}).map((key) => String(key || "").toUpperCase()),
-      ...Object.keys(combate.statusMeta || {}).map((key) => String(key || "").toUpperCase()),
+      ...Object.keys(ficha?.status || {}).map((key) => normalizeStatusCode(key)),
+      ...Object.keys(combate.statusMeta || {}).map((key) => normalizeStatusCode(key)),
     ])).filter(Boolean);
     const all = allCodes.map((up) => {
-      const existingKey = Object.keys(ficha?.status || {}).find((k) => String(k || "").toUpperCase() === up) || up;
-      const fromCombate = combate.statusMeta?.[up] || {};
+      const existingKey = Object.keys(ficha?.status || {}).find((k) => normalizeStatusCode(k) === up) || up;
+      const fromCombate = combate.statusMeta?.[up] || (up === "CONSC" ? combate.statusMeta?.CONS : null) || {};
       const base = CORE_STATUS_META[up] || {};
       return {
         key: existingKey,
@@ -414,7 +420,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
 
   const byResource = new Map(Object.values(effectiveResources).map((r) => [r.codigo, r]));
   const byStatus = new Map(Object.entries(combatStatus || {}).map(([k, v]) => [k.toUpperCase(), v]));
-  const resolveCode = (code) => (code === "CONSC" ? "CONS" : code);
+  const resolveCode = (code) => normalizeStatusCode(code);
 
   const canCloseRound = Object.entries(previewCosts).every(([rawCode, qtd]) => {
     const code = resolveCode(rawCode);

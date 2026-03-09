@@ -6,6 +6,7 @@ import { G, inpStyle, btnStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
 import { StatusBar } from "../../shared/components";
 import { ImageAttachModal, ImageViewport } from "../../../components/media/ImageAttachModal";
+import { appendResourceFormulaVars, buildFormulaVars, evaluateStatusFormula } from "./combate/utils";
 
 const defaultInfo = {
   peso: "",
@@ -63,7 +64,46 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
   const statusBonus = aggregateStatusModifiers(mergedMods);
   const attrBonus = aggregateModifiers(mergedMods, "atributos");
 
-  const upStatus = (sigla, field, val) => onUpdate({ status: { ...ficha.status, [sigla]: { ...ficha.status[sigla], [field]: val } } });
+  const normalizeStatusCode = (raw) => {
+    const up = String(raw || "").trim().toUpperCase();
+    return up === "CONS" ? "CONSC" : up;
+  };
+
+  const baseStatusDefs = useMemo(() => STATUS_CFG.map((s) => ({ ...s, sigla: normalizeStatusCode(s.sigla) })), []);
+  const statusCodes = useMemo(() => Array.from(new Set([
+    ...baseStatusDefs.map((s) => s.sigla),
+    ...Object.keys(ficha?.status || {}).map((k) => normalizeStatusCode(k)),
+    ...Object.keys(ficha?.combate?.statusMeta || {}).map((k) => normalizeStatusCode(k)),
+  ])).filter(Boolean), [baseStatusDefs, ficha?.status, ficha?.combate?.statusMeta]);
+
+  const computedStatusBase = useMemo(() => {
+    const statusEntries = Object.entries(ficha?.status || {});
+    const meta = ficha?.combate?.statusMeta || {};
+    const seeded = Object.fromEntries(statusCodes.map((code) => {
+      const found = statusEntries.find(([k]) => normalizeStatusCode(k) === code)?.[1] || {};
+      return [code, { val: Number(found?.val || 0), max: Math.max(1, Number(found?.max || 1)) }];
+    }));
+    let next = { ...seeded };
+    for (let i = 0; i < 2; i += 1) {
+      const vars = appendResourceFormulaVars(buildFormulaVars(ficha, next), ficha?.combate?.recursos || []);
+      statusCodes.forEach((code) => {
+        const curr = next[code] || { val: 0, max: 1 };
+        const m = meta[code] || (code === "CONSC" ? meta.CONS : null) || {};
+        const maxEval = evaluateStatusFormula(m.maxFormula, { vars });
+        const max = Math.max(1, Math.floor(Number.isFinite(maxEval) ? maxEval : Number(curr.max || 1)));
+        const valEval = evaluateStatusFormula(m.valFormula, { vars, x: max });
+        const rawVal = Number.isFinite(valEval) ? valEval : Number(curr.val || 0);
+        next[code] = { ...curr, max, val: Math.max(0, Math.min(max, Math.floor(rawVal))) };
+      });
+    }
+    return next;
+  }, [ficha, statusCodes]);
+
+  const upStatus = (sigla, field, val) => {
+    const code = normalizeStatusCode(sigla);
+    const key = Object.keys(ficha.status || {}).find((k) => normalizeStatusCode(k) === code) || code;
+    onUpdate({ status: { ...ficha.status, [key]: { ...(ficha.status?.[key] || {}), [field]: val } } });
+  };
   const upInfo = (patch) => onUpdate({ informacoes: { ...info, ...patch } });
 
   const rolarConfronto = () => {
@@ -79,10 +119,13 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
         <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 14, paddingBottom: 8, borderBottom: "1px solid " + G.border }}>
           <span>◈ INFORMAÇÕES · STATUS VITAIS</span>
         </div>
-        {STATUS_CFG.map((s) => {
-          const delta = statusBonus[s.sigla] || { base: 0, current: 0, max: 0 };
-          const val = (ficha.status[s.sigla].val || 0) + delta.base + delta.current;
-          const max = (ficha.status[s.sigla].max || 1) + delta.base + delta.max;
+        {statusCodes.map((code) => {
+          const meta = ficha?.combate?.statusMeta?.[code] || (code === "CONSC" ? ficha?.combate?.statusMeta?.CONS : null) || {};
+          const baseCfg = baseStatusDefs.find((x) => x.sigla === code) || {};
+          const s = { sigla: code, nome: meta.label || baseCfg.nome || code, cor: meta.cor || baseCfg.cor || "#9ca3af", msg: baseCfg.msg };
+          const delta = statusBonus[code] || (code === "CONSC" ? statusBonus.CONS : null) || { base: 0, current: 0, max: 0 };
+          const val = Number(computedStatusBase?.[code]?.val || 0) + delta.base + delta.current;
+          const max = Number(computedStatusBase?.[code]?.max || 1) + delta.base + delta.max;
           return (
             <StatusBar
               key={s.sigla}
