@@ -152,6 +152,14 @@ function skillIconSrc(skill = {}) {
   return "";
 }
 
+
+function effectIconSrc(effect = {}) {
+  if (effect.iconeModo === "url" && effect.iconeUrl) return effect.iconeUrl;
+  if (effect.iconeModo === "upload" && effect.iconeData) return effect.iconeData;
+  return "";
+}
+
+
 function ResourcePip({ active, willSpend = false, color, shape = "square", onClick, title }) {
   const styleByShape = {
     square: { borderRadius: "3px" },
@@ -174,9 +182,16 @@ function ResourcePip({ active, willSpend = false, color, shape = "square", onCli
   };
 
   return (
-    <button title={title} onClick={onClick} style={{ border: "none", background: "transparent", padding: 0 }}>
+    <span
+      role="button"
+      tabIndex={0}
+      title={title}
+      onClick={onClick}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onClick?.(e); }}
+      style={{ display: "inline-flex", border: "none", background: "transparent", padding: 0, cursor: "pointer" }}
+    >
       <span style={{ ...common, ...(styleByShape[shape] || styleByShape.square) }} />
-    </button>
+    </span>
   );
 }
 
