@@ -101,7 +101,7 @@ export function parseMechanicalEffect(raw = "") {
   const ess = ESSENCIA_ALIAS[code];
   if (ess) return { scope: "essencia", key: ess, value, isPct, target: "base", raw: `${value >= 0 ? "+" : ""}${value}${isPct ? "%" : ""}${ess}` };
 
-  const genericStatus = code.match(/^([A-Z0-9]{2,6})(ATUAL|CURRENT|MAX|MAXIMO)?$/);
+  const genericStatus = code.match(/^([A-Z0-9]{2,5})(ATUAL|CURRENT|MAX|MAXIMO)?$/);
   if (genericStatus) {
     const key = genericStatus[1];
     const suffix = genericStatus[2] || "";

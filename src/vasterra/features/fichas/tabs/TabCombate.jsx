@@ -929,7 +929,11 @@ function StatusQuickModal({ status, statusDef, previewCost, onClose, onApply, on
 
 function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSave }) {
   const [list, setList] = useState(combate.recursos || []);
-  const [statusMeta, setStatusMeta] = useState(combate.statusMeta || {});
+  const [statusMeta, setStatusMeta] = useState(() => {
+    const base = combate.statusMeta || {};
+    const fromDefs = Object.fromEntries((statusDefs || []).map((s) => [s.code, { label: s.label, cor: s.cor }]));
+    return { ...fromDefs, ...base };
+  });
   const [statusState, setStatusState] = useState(ficha?.status || {});
   const [statusInput, setStatusInput] = useState(() => Object.fromEntries(Object.entries(ficha?.status || {}).map(([k, v]) => [k, { val: String(v?.val ?? 0), max: String(v?.max ?? 1) }])));
   const [resourceDraft, setResourceDraft] = useState({ codigo: "", nome: "", cor: "#e0b44c", shape: "square", total: 1, atual: 1 });
@@ -939,8 +943,23 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
   const formulaVars = useMemo(() => buildFormulaVars(formulaBaseFicha, statusState), [formulaBaseFicha, statusState]);
   const formulaSuggestions = useMemo(() => Object.keys(formulaVars).sort().map((k) => ({ key: k, value: formulaVars[k] })), [formulaVars]);
 
+  const localStatusDefs = useMemo(() => {
+    const baseOrder = (statusDefs || []).map((s) => s.code);
+    const allCodes = Array.from(new Set([
+      ...Object.keys(statusState || {}).map((k) => String(k).toUpperCase()),
+      ...Object.keys(statusMeta || {}).map((k) => String(k).toUpperCase()),
+      ...baseOrder,
+    ]));
+    return allCodes.map((code) => {
+      const key = Object.keys(statusState || {}).find((k) => String(k).toUpperCase() === code) || code;
+      const base = (statusDefs || []).find((s) => s.code === code) || { label: code, cor: "#9ca3af" };
+      const meta = statusMeta?.[code] || {};
+      return { key, code, label: meta.label || base.label || code, cor: meta.cor || base.cor || "#9ca3af" };
+    });
+  }, [statusDefs, statusMeta, statusState]);
+
   const applyStatusFormula = (code, nextMeta) => {
-    const key = statusDefs.find((s) => s.code === code)?.key || code;
+    const key = localStatusDefs.find((s) => s.code === code)?.key || code;
     const current = { ...(statusState[key] || { val: 0, max: 1 }) };
     const vars = buildFormulaVars(formulaBaseFicha, statusState);
     const x = evaluateStatusFormula(nextMeta.maxFormula, { vars }) ?? Number(current.max || 1);
@@ -974,7 +993,7 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
         <div style={{ border: "1px solid #3d2f1f", borderRadius: 8, padding: 10 }}>
           <div style={{ color: G.gold, marginBottom: 6, fontFamily: "'Cinzel',serif" }}>Barras de status (nome/cor + valores)</div>
           <div style={{ display: "grid", gap: 6, maxHeight: 230, overflow: "auto" }}>
-            {statusDefs.map((s) => {
+            {localStatusDefs.map((s) => {
               const meta = statusMeta[s.code] || { label: s.label, cor: s.cor };
               const st = statusState[s.key] || { val: 0, max: 1 };
               return (
@@ -1009,7 +1028,27 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
                     }}
                     style={inpStyle()}
                   />
-                  <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 11, alignSelf: "center" }}>{s.code}</span>
+                  <HoverButton
+                    onClick={() => {
+                      setStatusState((p) => {
+                        const next = { ...p };
+                        delete next[s.key];
+                        return next;
+                      });
+                      setStatusMeta((p) => {
+                        const next = { ...p };
+                        delete next[s.code];
+                        return next;
+                      });
+                      setStatusInput((p) => {
+                        const next = { ...p };
+                        delete next[s.key];
+                        return next;
+                      });
+                    }}
+                    title={`Remover ${s.code}`}
+                    style={btnStyle({ padding: "4px 8px", borderColor: "#87413a", color: "#ff9990" })}
+                  >✕</HoverButton>
                   <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, background: "#12100c", border: "1px solid #3f3121", borderRadius: 8, padding: 6 }}>
                     <div style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:6 }}><FormulaInput
                       value={meta.maxFormula || ""}
@@ -1042,7 +1081,7 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
                 if (!key) return;
                 setStatusState((p) => ({ ...p, [key]: { val: statusDraft.val, max: statusDraft.max } }));
                 setStatusInput((p) => ({ ...p, [key]: { val: String(statusDraft.val), max: String(statusDraft.max) } }));
-                setStatusMeta((p) => ({ ...p, [key]: { label: statusDraft.label || key, cor: statusDraft.cor } }));
+                setStatusMeta((p) => ({ ...p, [key]: { ...(p[key] || {}), label: statusDraft.label || key, cor: statusDraft.cor } }));
               }} style={btnStyle({ borderColor: "#4e7c59", color: "#98e7ad" })}>Adicionar</HoverButton>
             </div>
           </div>

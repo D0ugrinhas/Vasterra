@@ -48,6 +48,7 @@ Nesse caso, a expressão entre parênteses é rolada/calculada e exibida junto d
 - Campos de **ATUAL** e **MAX** aceitam número, expressão aritmética e dados (ex.: `2d4+3`, `for*2`, `vit+10`).
 - Fórmulas também consideram modificadores ativos de atributos/perícias/status ao montar o contexto de variáveis.
 - No Combate, status/recursos têm cálculo dinâmico de **ATUAL e MAX** com modificadores ativos (incluindo variações temporárias por efeito), e o reset de rodada usa o MAX efetivo atual.
+- Barras de status personalizadas podem ser criadas/removidas no painel de Configurações de Combate e suportam fórmulas com autocomplete (atualização em tempo real sem rerolar).
 
 ## Rodar direto do GitHub
 
