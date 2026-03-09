@@ -966,7 +966,7 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
   const [statusState, setStatusState] = useState(ficha?.status || {});
   const [statusInput, setStatusInput] = useState(() => Object.fromEntries(Object.entries(ficha?.status || {}).map(([k, v]) => [k, { val: String(v?.val ?? 0), max: String(v?.max ?? 1) }])));
   const [resourceDraft, setResourceDraft] = useState({ codigo: "", nome: "", cor: "#e0b44c", shape: "square", total: 1, atual: 1 });
-  const [statusDraft, setStatusDraft] = useState({ codigo: "DET", label: "Determinação", cor: "#8dc2ff", val: 10, max: 10 });
+  const [statusDraft, setStatusDraft] = useState({ codigo: "DET", label: "Determinação", cor: "#8dc2ff", maxFormula: "10", valFormula: "x" });
   const [statusEditor, setStatusEditor] = useState(null);
 
   const formulaBaseFicha = formulaFicha || ficha;
@@ -1038,11 +1038,12 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
       },
     };
 
+    const existing = statusState?.[draftCode] || {};
     const tempStatus = {
       ...(statusState || {}),
       [draftCode]: {
-        val: Number(statusEditor.draft.val || 0),
-        max: Math.max(1, Number(statusEditor.draft.max || 1)),
+        val: Math.max(0, Number(existing.val ?? statusEditor.draft.initialVal ?? 0) || 0),
+        max: Math.max(1, Number(existing.max ?? statusEditor.draft.initialMax ?? 1) || 1),
       },
     };
 
@@ -1052,20 +1053,6 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
 
     return recomputeStatusByFormula(tempStatus, tempMeta, tempDefs);
   }, [statusEditor, statusMeta, statusState, localStatusDefs, formulaBaseFicha, list]);
-
-  useEffect(() => {
-    if (!statusEditor) return;
-    const code = String(statusEditor.draft?.code || "").trim().toUpperCase();
-    const result = statusEditorPreview?.[code];
-    if (!result) return;
-    setStatusEditor((prev) => {
-      if (!prev) return prev;
-      const currVal = Number(prev.draft?.val || 0);
-      const currMax = Number(prev.draft?.max || 1);
-      if (currVal === Number(result.val || 0) && currMax === Number(result.max || 1)) return prev;
-      return { ...prev, draft: { ...prev.draft, val: Number(result.val || 0), max: Number(result.max || 1) } };
-    });
-  }, [statusEditorPreview, statusEditor]);
 
   const applyStatusFormula = (code, nextMeta) => {
     const key = localStatusDefs.find((s) => s.code === code)?.key || code;
@@ -1121,8 +1108,8 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
                       <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>{st.val}/{st.max}</span>
                     </div>
                     <div style={{ display: "flex", gap: 6 }}>
-                      <HoverButton onClick={() => setStatusEditor({ mode: "edit", status: s, draft: { code: s.code, label: meta.label || s.label, cor: meta.cor || s.cor, val: st.val, max: st.max, maxFormula: meta.maxFormula || "", valFormula: meta.valFormula || "" } })} style={btnStyle({ padding: "4px 8px", borderColor: "#4b6b8a", color: "#98cfff" })}>Editar</HoverButton>
-                      <HoverButton onClick={() => setStatusEditor({ mode: "duplicate", status: s, draft: { code: `${s.code}_2`, label: `${meta.label || s.label} Cópia`, cor: meta.cor || s.cor, val: st.val, max: st.max, maxFormula: meta.maxFormula || "", valFormula: meta.valFormula || "" } })} style={btnStyle({ padding: "4px 8px", borderColor: "#6b5a34", color: "#d8bf8b" })}>Duplicar</HoverButton>
+                      <HoverButton onClick={() => setStatusEditor({ mode: "edit", status: s, draft: { code: s.code, label: meta.label || s.label, cor: meta.cor || s.cor, initialVal: st.val, initialMax: st.max, maxFormula: meta.maxFormula || "", valFormula: meta.valFormula || "" } })} style={btnStyle({ padding: "4px 8px", borderColor: "#4b6b8a", color: "#98cfff" })}>Editar</HoverButton>
+                      <HoverButton onClick={() => setStatusEditor({ mode: "duplicate", status: s, draft: { code: `${s.code}_2`, label: `${meta.label || s.label} Cópia`, cor: meta.cor || s.cor, initialVal: st.val, initialMax: st.max, maxFormula: meta.maxFormula || "", valFormula: meta.valFormula || "" } })} style={btnStyle({ padding: "4px 8px", borderColor: "#6b5a34", color: "#d8bf8b" })}>Duplicar</HoverButton>
                       <HoverButton onClick={() => {
                         setStatusState((p) => { const n = { ...p }; delete n[s.key]; return n; });
                         setStatusMeta((p) => { const n = { ...p }; delete n[s.code]; return n; });
@@ -1141,18 +1128,33 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
 
           <div style={{ marginTop: 8, borderTop: "1px solid #3d2f1f", paddingTop: 8 }}>
             <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 11, marginBottom: 6 }}>Adicionar nova barra</div>
-            <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 56px 80px 80px auto", gap: 6 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 56px 1fr 1fr auto", gap: 6 }}>
               <input value={statusDraft.codigo} onChange={(e) => setStatusDraft((p) => ({ ...p, codigo: e.target.value.toUpperCase() }))} style={inpStyle()} placeholder="Cód" />
               <input value={statusDraft.label} onChange={(e) => setStatusDraft((p) => ({ ...p, label: e.target.value }))} style={inpStyle()} placeholder="Nome" />
               <input type="color" value={statusDraft.cor} onChange={(e) => setStatusDraft((p) => ({ ...p, cor: e.target.value }))} style={inpStyle({ padding: 2 })} />
-              <input type="number" value={statusDraft.val} onChange={(e) => setStatusDraft((p) => ({ ...p, val: Number(e.target.value) || 0 }))} style={inpStyle()} />
-              <input type="number" value={statusDraft.max} onChange={(e) => setStatusDraft((p) => ({ ...p, max: Math.max(1, Number(e.target.value) || 1) }))} style={inpStyle()} />
+              <FormulaInput value={statusDraft.maxFormula || ""} onChange={(v) => setStatusDraft((p) => ({ ...p, maxFormula: v }))} suggestions={formulaSuggestions} placeholder="Fórmula do MAX" />
+              <FormulaInput value={statusDraft.valFormula || ""} onChange={(v) => setStatusDraft((p) => ({ ...p, valFormula: v }))} suggestions={formulaSuggestions} placeholder="Fórmula do ATUAL" />
               <HoverButton onClick={() => {
                 const key = statusDraft.codigo.trim().toUpperCase();
                 if (!key) return;
-                setStatusState((p) => ({ ...p, [key]: { val: statusDraft.val, max: statusDraft.max } }));
-                setStatusInput((p) => ({ ...p, [key]: { val: String(statusDraft.val), max: String(statusDraft.max) } }));
-                setStatusMeta((p) => ({ ...p, [key]: { ...(p[key] || {}), label: statusDraft.label || key, cor: statusDraft.cor } }));
+                const nextMeta = {
+                  ...(statusMeta || {}),
+                  [key]: {
+                    ...(statusMeta?.[key] || {}),
+                    label: statusDraft.label || key,
+                    cor: statusDraft.cor,
+                    maxFormula: statusDraft.maxFormula || "",
+                    valFormula: statusDraft.valFormula || "",
+                  },
+                };
+                const seeded = { ...(statusState || {}), [key]: { ...(statusState?.[key] || {}), val: 0, max: 1 } };
+                const nextDefs = localStatusDefs.some((s) => s.code === key)
+                  ? localStatusDefs
+                  : [...localStatusDefs, { key, code: key, label: statusDraft.label || key, cor: statusDraft.cor || "#9ca3af" }];
+                const recomputed = recomputeStatusByFormula(seeded, nextMeta, nextDefs);
+                setStatusMeta(nextMeta);
+                setStatusState(recomputed);
+                setStatusInput((p) => ({ ...p, [key]: { val: String(recomputed[key]?.val ?? 0), max: String(recomputed[key]?.max ?? 1) } }));
               }} style={btnStyle({ borderColor: "#4e7c59", color: "#98e7ad" })}>Adicionar</HoverButton>
             </div>
           </div>
@@ -1190,10 +1192,6 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
               <input value={statusEditor.draft.label} onChange={(e) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, label: e.target.value } }))} style={inpStyle()} />
               <input type="color" value={statusEditor.draft.cor} onChange={(e) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, cor: e.target.value } }))} style={inpStyle({ padding: 2 })} />
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-              <input type="number" value={statusEditor.draft.val} onChange={(e) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, val: Number(e.target.value) || 0 } }))} style={inpStyle()} />
-              <input type="number" value={statusEditor.draft.max} onChange={(e) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, max: Math.max(1, Number(e.target.value) || 1) } }))} style={inpStyle()} />
-            </div>
             <FormulaInput value={statusEditor.draft.maxFormula || ""} onChange={(v) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, maxFormula: v } }))} suggestions={formulaSuggestions} placeholder="Fórmula do MAX" />
             <FormulaInput value={statusEditor.draft.valFormula || ""} onChange={(v) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, valFormula: v } }))} suggestions={formulaSuggestions} placeholder="Fórmula do ATUAL" />
             {statusEditorPreview?.[String(statusEditor.draft.code || "").trim().toUpperCase()] && (
@@ -1224,7 +1222,11 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
 
                 const nextStatusState = { ...(statusState || {}) };
                 if (code !== oldCode || key !== oldKey) delete nextStatusState[oldKey];
-                nextStatusState[key] = { val: Number(statusEditor.draft.val || 0), max: Math.max(1, Number(statusEditor.draft.max || 1)) };
+                const seedCurrent = statusState?.[key] || {};
+                nextStatusState[key] = {
+                  val: Math.max(0, Number(seedCurrent.val ?? statusEditor.draft.initialVal ?? 0) || 0),
+                  max: Math.max(1, Number(seedCurrent.max ?? statusEditor.draft.initialMax ?? 1) || 1),
+                };
 
                 const nextDefsBase = localStatusDefs.filter((s) => s.code !== oldCode);
                 const nextDefs = [...nextDefsBase, { key, code, label: statusEditor.draft.label || code, cor: statusEditor.draft.cor || "#9ca3af" }];
