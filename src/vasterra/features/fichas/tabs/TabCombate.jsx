@@ -127,6 +127,7 @@ function normalizeCombateState(combate = {}) {
     logs: Array.isArray(combate?.logs) ? combate.logs : [],
     pendingSkillIds: Array.isArray(combate?.pendingSkillIds) ? combate.pendingSkillIds : [],
     pendingSkillCounts: combate?.pendingSkillCounts && typeof combate.pendingSkillCounts === "object" ? combate.pendingSkillCounts : {},
+    statusAdjustments: combate?.statusAdjustments && typeof combate.statusAdjustments === "object" ? combate.statusAdjustments : {},
     recursos: [...base, ...custom],
     statusMeta: combate?.statusMeta && typeof combate.statusMeta === "object" ? combate.statusMeta : {},
   };
@@ -306,21 +307,6 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
   const pendingCounts = combate.pendingSkillCounts && Object.keys(combate.pendingSkillCounts).length ? combate.pendingSkillCounts : Object.fromEntries((combate.pendingSkillIds || []).map((id) => [id, 1]));
   const pendingEntries = useMemo(() => assigned.filter(({ entry }) => Number(pendingCounts[entry.id] || 0) > 0).map((x) => ({ ...x, count: Math.max(1, Number(pendingCounts[x.entry.id] || 1)) })), [assigned, pendingCounts]);
 
-  const combatStatus = useMemo(() => {
-    const out = {};
-    Object.entries(ficha?.status || {}).forEach(([key, data]) => {
-      const code = key.toUpperCase();
-      const mods = activeStatusMods[code] || { base: 0, current: 0, max: 0 };
-      const baseVal = Number(data?.val || 0);
-      const baseMax = Math.max(1, Number(data?.max || 1));
-      const overflowMax = Math.max(0, Math.floor(mods.base + mods.current));
-      const max = Math.max(1, Math.floor(baseMax + mods.max + overflowMax));
-      const val = Math.max(0, Math.min(max, Math.floor(baseVal + mods.base + mods.current)));
-      out[code] = { baseVal, baseMax, val, max, mods, overflowMax };
-    });
-    return out;
-  }, [ficha?.status, activeStatusMods]);
-
   const formulaFicha = useMemo(() => ({
     ...(ficha || {}),
     atributos: Object.fromEntries(Object.entries(ficha?.atributos || {}).map(([k, v]) => [k, { ...(v || {}), val: Number(v?.val || 0) + Number(activeAttrMods[k] || 0) }])),
@@ -329,6 +315,48 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
       return [k, Number(v || 0) + Number(activePericiaMods[code] || 0)];
     })),
   }), [ficha, activeAttrMods, activePericiaMods]);
+
+  const computedStatusBase = useMemo(() => {
+    const base = Object.fromEntries(Object.entries(ficha?.status || {}).map(([k, v]) => [k, { val: Number(v?.val || 0), max: Math.max(1, Number(v?.max || 1)) }]));
+    let next = { ...base };
+    for (let i = 0; i < 2; i += 1) {
+      const vars = buildFormulaVars(formulaFicha, next);
+      (combate.recursos || []).forEach((r) => {
+        const code = String(r.codigo || "").toUpperCase();
+        vars[code] = Number(r.atual || 0);
+        vars[code.toLowerCase()] = Number(r.atual || 0);
+        vars[`${code}MAX`] = Number(r.total || 0);
+        vars[`${code.toLowerCase()}max`] = Number(r.total || 0);
+      });
+      Object.keys(next).forEach((key) => {
+        const code = String(key || "").toUpperCase();
+        const meta = combate.statusMeta?.[code] || combate.statusMeta?.[key] || {};
+        const curr = next[key] || { val: 0, max: 1 };
+        const maxEval = evaluateStatusFormula(meta.maxFormula, { vars });
+        const max = Math.max(1, Math.floor(Number.isFinite(maxEval) ? maxEval : Number(curr.max || 1)));
+        const valEval = evaluateStatusFormula(meta.valFormula, { vars, x: max });
+        const rawVal = Number.isFinite(valEval) ? valEval : Number(curr.val || 0);
+        next[key] = { ...curr, max, val: Math.max(0, Math.min(max, Math.floor(rawVal))) };
+      });
+    }
+    return next;
+  }, [ficha?.status, formulaFicha, combate.statusMeta, combate.recursos]);
+
+  const combatStatus = useMemo(() => {
+    const out = {};
+    Object.entries(computedStatusBase || {}).forEach(([key, data]) => {
+      const code = key.toUpperCase();
+      const mods = activeStatusMods[code] || { base: 0, current: 0, max: 0 };
+      const adj = combate.statusAdjustments?.[code] || { current: 0, max: 0 };
+      const baseVal = Number(data?.val || 0);
+      const baseMax = Math.max(1, Number(data?.max || 1));
+      const overflowMax = Math.max(0, Math.floor(mods.base + mods.current));
+      const max = Math.max(1, Math.floor(baseMax + mods.max + overflowMax + Number(adj.max || 0)));
+      const val = Math.max(0, Math.min(max, Math.floor(baseVal + mods.base + mods.current + Number(adj.current || 0))));
+      out[code] = { baseVal, baseMax, val, max, mods, overflowMax };
+    });
+    return out;
+  }, [computedStatusBase, activeStatusMods, combate.statusAdjustments]);
 
   const statusDefs = useMemo(() => {
     const all = Object.keys(ficha?.status || {}).map((key) => {
@@ -470,7 +498,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
       const effective = effectiveResources[code];
       return { ...r, atual: Math.max(0, Number(effective?.total ?? r.total ?? 0)) };
     });
-    const nextStatus = { ...(ficha.status || {}) };
+    const nextStatusAdjustments = { ...(combate.statusAdjustments || {}) };
     const statusLogs = [];
     const resourceLogs = [];
 
@@ -484,12 +512,14 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
         resourceLogs.push({ code, prevVal, afterSpend, spent: qtd, total, maxAfter: total });
         return;
       }
-      if (!nextStatus[code]) return;
-      const prevVal = Number(nextStatus[code].val || 0);
-      const effective = Number(combatStatus[code]?.val ?? prevVal);
-      const nextVal = Math.max(0, prevVal - Math.max(0, qtd - Math.max(0, effective - prevVal)));
-      nextStatus[code] = { ...nextStatus[code], val: nextVal };
-      statusLogs.push({ code, prevVal, nextVal, spent: qtd, max: Number(nextStatus[code]?.max || 1) });
+      const effective = combatStatus[code];
+      if (!effective) return;
+      const prevVal = Number(effective.val || 0);
+      const nextVal = Math.max(0, prevVal - Math.max(0, qtd));
+      const diff = nextVal - prevVal;
+      const prevAdj = nextStatusAdjustments[code] || { current: 0, max: 0 };
+      nextStatusAdjustments[code] = { ...prevAdj, current: Number(prevAdj.current || 0) + diff };
+      statusLogs.push({ code, prevVal, nextVal, spent: qtd, max: Number(effective.max || 1) });
     });
 
     const usedSkillMeta = pendingEntries.flatMap(({ skill, count }) => Array.from({ length: Math.max(1, Number(count || 1)) }).map(() => ({ nome: skill.nome || "Skill", icone: skillIconSrc(skill) || skill.icone || "⚔" })));
@@ -518,8 +548,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     });
 
     onUpdate({
-      status: nextStatus,
-      combate: { ...(ficha.combate || {}), recursos: nextResources, rodadaAtual: nextRound, pendingSkillIds: [], pendingSkillCounts: {}, logs: nextLogs },
+      combate: { ...(ficha.combate || {}), recursos: nextResources, rodadaAtual: nextRound, pendingSkillIds: [], pendingSkillCounts: {}, logs: nextLogs, statusAdjustments: nextStatusAdjustments },
     });
 
     handleEffectExpiration(nextRound, nextLogs);
@@ -527,7 +556,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
 
   const resetCombate = () => {
     const resetResources = combate.recursos.map((r) => ({ ...r, atual: Number(r.total || 0) }));
-    saveCombate({ rodadaAtual: 0, pendingSkillIds: [], pendingSkillCounts: {}, recursos: resetResources, logs: [] });
+    saveCombate({ rodadaAtual: 0, pendingSkillIds: [], pendingSkillCounts: {}, recursos: resetResources, logs: [], statusAdjustments: {} });
     onNotify?.("Combate resetado (rodada, seleção e logs).", "success");
   };
 
@@ -537,22 +566,19 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
   };
 
   const setStatusValue = (key, field, effectiveValue) => {
-    const curr = ficha?.status?.[key] || { val: 0, max: 1 };
     const code = String(key || "").toUpperCase();
-    const runtime = combatStatus[code] || { mods: { base: 0, current: 0, max: 0 }, overflowMax: 0 };
-    const mods = runtime.mods || { base: 0, current: 0, max: 0 };
-    const baseShift = Number(mods.base || 0) + Number(mods.current || 0);
-    const maxShift = Number(mods.max || 0) + Number(runtime.overflowMax || 0);
+    const runtime = combatStatus[code] || { val: 0, max: 1 };
+    const currAdj = combate.statusAdjustments?.[code] || { current: 0, max: 0 };
     if (field === "max") {
-      const nextBaseMax = Math.max(1, Math.floor(Number(effectiveValue || 1) - maxShift));
-      const nextBaseVal = Math.max(0, Math.min(nextBaseMax, Number(curr.val || 0)));
-      onUpdate({ status: { ...(ficha.status || {}), [key]: { ...curr, max: nextBaseMax, val: nextBaseVal } } });
+      const target = Math.max(1, Math.floor(Number(effectiveValue || 1)));
+      const diff = target - Number(runtime.max || 1);
+      onUpdate({ combate: { ...(ficha.combate || {}), statusAdjustments: { ...(combate.statusAdjustments || {}), [code]: { ...currAdj, max: Number(currAdj.max || 0) + diff } } } });
       return;
     }
-    const nextEffectiveMax = Math.max(1, Math.floor(Number(runtime.max || curr.max || 1)));
-    const clampedEffectiveVal = Math.max(0, Math.min(nextEffectiveMax, Number(effectiveValue || 0)));
-    const nextBaseVal = Math.max(0, Math.min(Number(curr.max || 1), Math.floor(clampedEffectiveVal - baseShift)));
-    onUpdate({ status: { ...(ficha.status || {}), [key]: { ...curr, val: nextBaseVal } } });
+    const nextEffectiveMax = Math.max(1, Math.floor(Number(runtime.max || 1)));
+    const target = Math.max(0, Math.min(nextEffectiveMax, Math.floor(Number(effectiveValue || 0))));
+    const diff = target - Number(runtime.val || 0);
+    onUpdate({ combate: { ...(ficha.combate || {}), statusAdjustments: { ...(combate.statusAdjustments || {}), [code]: { ...currAdj, current: Number(currAdj.current || 0) + diff } } } });
   };
 
   const addReminder = () => {
