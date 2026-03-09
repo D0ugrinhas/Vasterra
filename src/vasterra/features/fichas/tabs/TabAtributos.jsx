@@ -110,7 +110,7 @@ export function TabAtributos({ ficha, onUpdate, arsenal = [], prestigios = {} })
     const key = normalizePericiaKey(nome);
     return mergedMods.reduce((sum, m) => {
       if (m?.ativo === false) return sum;
-      const parsedList = parseMechanicalEffects(m.efeitoMecanico || m.efeito || m.valor || "");
+      const parsedList = parseMechanicalEffects(m?.efeitosMecanicos ?? m?.efeitoMecanico ?? m?.efeito ?? m?.valor ?? "");
       return sum + parsedList.reduce((acc, parsed) => (!parsed || parsed.scope !== "pericias" || parsed.isPct ? acc : parsed.key === key ? acc + parsed.value : acc), 0);
     }, 0);
   };

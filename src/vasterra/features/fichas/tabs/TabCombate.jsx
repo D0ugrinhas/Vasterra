@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { uid } from "../../../core/factories";
 import { instantiateEffectFromTemplate, parseMechanicalEffects } from "../../../core/effects";
-import { aggregateResourceModifiers, aggregateStatusModifiers } from "../../../core/effects";
+import { aggregateModifiers, aggregateResourceModifiers, aggregateStatusModifiers } from "../../../core/effects";
 import { buildFormulaVars, evaluateStatusFormula, getMechanicalText, parseDurationRounds, toNumber } from "./combate/utils";
 import { RANK_COR } from "../../../data/gameData";
 import { G, btnStyle, inpStyle } from "../../../ui/theme";
@@ -234,6 +234,41 @@ function rollDiceExpression(raw = "") {
   }
 }
 
+function resolveNarrativeEffectMessage(raw = "") {
+  const source = String(raw || "").trim();
+  if (!source) return "";
+  const quoted = [...source.matchAll(/"([^"]+)"/g)].map((m) => String(m[1] || "").trim()).filter(Boolean);
+  const expressionMatch = source.match(/\(([^)]+)\)/);
+  const expressionRaw = expressionMatch?.[1]?.trim() || "";
+  const outside = source
+    .replace(/"[^"]*"/g, " ")
+    .replace(/\(([^)]+)\)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const text = [...quoted, outside].filter(Boolean).join(" ").trim();
+
+  if (!expressionRaw) return text || source;
+  const roll = rollDiceExpression(expressionRaw);
+  if (!roll) return text || source;
+
+  const detailDice = roll.parts.map((p) => `${p.token}=${p.rolls.join("+")}`).join("; ");
+  const detail = `${detailDice}${roll.expr !== String(roll.total) ? ` => ${roll.expr}` : ""}`;
+  return `${roll.total}${text ? ` ${text}` : ""}${detail ? ` ((${detail}))` : ""}`;
+}
+
+function parseExpressionValue(raw, fallback, context = {}) {
+  const v = Number(raw);
+  if (Number.isFinite(v)) return v;
+  const txt = String(raw || "").trim();
+  if (!txt) return fallback;
+  if (/\d+d\d+/i.test(txt)) {
+    const dice = parseDurationRounds({ duracaoExpressao: txt });
+    if (Number.isFinite(dice)) return dice;
+  }
+  const expr = evaluateStatusFormula(txt, context);
+  return Number.isFinite(expr) ? expr : fallback;
+}
+
 export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags = [], onNotify }) {
   const [query, setQuery] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -253,6 +288,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
   const activeEffects = useMemo(() => (Array.isArray(ficha?.modificadores?.efeitos) ? ficha.modificadores.efeitos : []).filter((e) => e && e.ativo !== false), [ficha?.modificadores?.efeitos]);
   const activeStatusMods = useMemo(() => { try { return aggregateStatusModifiers(activeEffects); } catch { return {}; } }, [activeEffects]);
   const activeResourceMods = useMemo(() => { try { return aggregateResourceModifiers(activeEffects); } catch { return {}; } }, [activeEffects]);
+  const activeAttrMods = useMemo(() => { try { return aggregateModifiers(activeEffects, "atributos"); } catch { return {}; } }, [activeEffects]);
   const pendingCounts = combate.pendingSkillCounts && Object.keys(combate.pendingSkillCounts).length ? combate.pendingSkillCounts : Object.fromEntries((combate.pendingSkillIds || []).map((id) => [id, 1]));
   const pendingEntries = useMemo(() => assigned.filter(({ entry }) => Number(pendingCounts[entry.id] || 0) > 0).map((x) => ({ ...x, count: Math.max(1, Number(pendingCounts[x.entry.id] || 1)) })), [assigned, pendingCounts]);
 
@@ -269,6 +305,11 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     });
     return out;
   }, [ficha?.status, activeStatusMods]);
+
+  const formulaFicha = useMemo(() => ({
+    ...(ficha || {}),
+    atributos: Object.fromEntries(Object.entries(ficha?.atributos || {}).map(([k, v]) => [k, { ...(v || {}), val: Number(v?.val || 0) + Number(activeAttrMods[k] || 0) }])),
+  }), [ficha, activeAttrMods]);
 
   const statusDefs = useMemo(() => {
     const all = Object.keys(ficha?.status || {}).map((key) => {
@@ -449,13 +490,8 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
       .map((ef) => ({ ef, raw: String(getMechanicalText(ef) || "").trim() }))
       .filter(({ raw }) => raw && parseMechanicalEffects(raw).length === 0);
     effectMessages.forEach(({ ef, raw }) => {
-      const [exprPart, ...tail] = raw.split(/\s+/);
-      const suffix = tail.join(" ").replace(/^"|"$/g, "").trim();
-      const roll = rollDiceExpression(exprPart);
-      if (!roll) return;
-      const detailDice = roll.parts.map((p) => `${p.token}=${p.rolls.join("+")}`).join("; ");
-      const detail = `${detailDice}${roll.expr !== String(roll.total) ? ` => ${roll.expr}` : ""}`;
-      const rolled = `${roll.total}${suffix ? ` ${suffix}` : ""}${detail ? ` ((${detail}))` : ""}`;
+      const rolled = resolveNarrativeEffectMessage(raw);
+      if (!rolled) return;
       const msg = `${ef.nome || "Efeito"}: ${rolled}`;
       nextLogs = addLog(msg, nextRound, nextLogs, { kind: "effect", effectId: ef.id, text: rolled });
       onNotify?.(`✨ ${msg}`, "info");
@@ -718,6 +754,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
         combate={combate}
         statusDefs={statusDefs}
         ficha={ficha}
+        formulaFicha={formulaFicha}
         onClose={() => setSettingsOpen(false)}
         onSave={(payload) => {
           onUpdate({
@@ -854,20 +891,21 @@ function StatusQuickModal({ status, statusDef, previewCost, onClose, onApply, on
   );
 }
 
-function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
+function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSave }) {
   const [list, setList] = useState(combate.recursos || []);
   const [statusMeta, setStatusMeta] = useState(combate.statusMeta || {});
   const [statusState, setStatusState] = useState(ficha?.status || {});
   const [resourceDraft, setResourceDraft] = useState({ codigo: "", nome: "", cor: "#e0b44c", shape: "square", total: 1, atual: 1 });
   const [statusDraft, setStatusDraft] = useState({ codigo: "DET", label: "Determinação", cor: "#8dc2ff", val: 10, max: 10 });
 
-  const formulaVars = useMemo(() => buildFormulaVars(ficha, statusState), [ficha, statusState]);
+  const formulaBaseFicha = formulaFicha || ficha;
+  const formulaVars = useMemo(() => buildFormulaVars(formulaBaseFicha, statusState), [formulaBaseFicha, statusState]);
   const formulaSuggestions = useMemo(() => Object.keys(formulaVars).sort().map((k) => ({ key: k, value: formulaVars[k] })), [formulaVars]);
 
   const applyStatusFormula = (code, nextMeta) => {
     const key = statusDefs.find((s) => s.code === code)?.key || code;
     const current = { ...(statusState[key] || { val: 0, max: 1 }) };
-    const vars = buildFormulaVars(ficha, statusState);
+    const vars = buildFormulaVars(formulaBaseFicha, statusState);
     const x = evaluateStatusFormula(nextMeta.maxFormula, { vars }) ?? Number(current.max || 1);
     const max = Math.max(1, Math.floor(x));
     const valExpr = evaluateStatusFormula(nextMeta.valFormula, { vars, x: max });
@@ -908,8 +946,8 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
                     <input value={meta.label || s.label} onChange={(e) => setStatusMeta((p) => ({ ...p, [s.code]: { ...(p[s.code] || {}), label: e.target.value, cor: (p[s.code]?.cor || s.cor) } }))} style={inpStyle()} />
                     <input type="color" value={meta.cor || s.cor} onChange={(e) => setStatusMeta((p) => ({ ...p, [s.code]: { ...(p[s.code] || {}), label: (p[s.code]?.label || s.label), cor: e.target.value } }))} style={inpStyle({ padding: 2 })} />
                   </div>
-                  <input type="number" value={st.val} onChange={(e) => setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || { val: 0, max: 1 }), val: Number(e.target.value) || 0 } }))} style={inpStyle()} />
-                  <input type="number" value={st.max} onChange={(e) => setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || { val: 0, max: 1 }), max: Math.max(1, Number(e.target.value) || 1) } }))} style={inpStyle()} />
+                  <input type="text" value={st.val} onChange={(e) => setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || { val: 0, max: 1 }), val: Math.max(0, Math.floor(parseExpressionValue(e.target.value, Number(p[s.key]?.val || 0), { vars: formulaVars }))) } }))} style={inpStyle()} />
+                  <input type="text" value={st.max} onChange={(e) => setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || { val: 0, max: 1 }), max: Math.max(1, Math.floor(parseExpressionValue(e.target.value, Number(p[s.key]?.max || 1), { vars: formulaVars }))) } }))} style={inpStyle()} />
                   <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 11, alignSelf: "center" }}>{s.code}</span>
                   <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, background: "#12100c", border: "1px solid #3f3121", borderRadius: 8, padding: 6 }}>
                     <div style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:6 }}><FormulaInput
