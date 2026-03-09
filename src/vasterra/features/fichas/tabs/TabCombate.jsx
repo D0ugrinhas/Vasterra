@@ -293,7 +293,10 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
   const activePericiaMods = useMemo(() => {
     const out = {};
     activeEffects.forEach((m) => {
-      parseMechanicalEffects(m?.efeitosMecanicos ?? m?.efeitoMecanico ?? m?.efeito ?? m?.valor ?? "").forEach((parsed) => {
+      const mechanicalRaw = Array.isArray(m?.efeitosMecanicos) && m.efeitosMecanicos.length
+        ? m.efeitosMecanicos
+        : (m?.efeitoMecanico || m?.efeito || m?.valor || "");
+      parseMechanicalEffects(mechanicalRaw).forEach((parsed) => {
         if (!parsed || parsed.scope !== "pericias" || parsed.isPct) return;
         out[parsed.key] = (out[parsed.key] || 0) + Number(parsed.value || 0);
       });
@@ -969,6 +972,25 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
     setStatusState((p) => ({ ...p, [key]: { ...(p[key] || {}), max, val } }));
     setStatusInput((p) => ({ ...p, [key]: { val: String(val), max: String(max) } }));
   };
+
+  useEffect(() => {
+    setStatusState((prev) => {
+      let next = { ...prev };
+      for (let i = 0; i < 2; i += 1) {
+        const vars = buildFormulaVars(formulaBaseFicha, next);
+        localStatusDefs.forEach((s) => {
+          const meta = statusMeta[s.code] || {};
+          const curr = next[s.key] || { val: 0, max: 1 };
+          const maxEval = evaluateStatusFormula(meta.maxFormula, { vars });
+          const max = Math.max(1, Math.floor(Number.isFinite(maxEval) ? maxEval : Number(curr.max || 1)));
+          const valEval = evaluateStatusFormula(meta.valFormula, { vars, x: max });
+          const rawVal = Number.isFinite(valEval) ? valEval : Number(curr.val || 0);
+          next[s.key] = { ...curr, max, val: Math.max(0, Math.min(max, Math.floor(rawVal))) };
+        });
+      }
+      return JSON.stringify(next) === JSON.stringify(prev) ? prev : next;
+    });
+  }, [formulaBaseFicha, localStatusDefs, statusMeta]);
 
   return (
     <Modal title="Configurações de Combate" onClose={onClose} wide>
