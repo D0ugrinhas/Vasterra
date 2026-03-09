@@ -983,7 +983,17 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
 
   const formulaBaseFicha = formulaFicha || ficha;
   const buildVars = (currStatus = statusState) => {
-    return appendResourceFormulaVars(buildFormulaVars(formulaBaseFicha, currStatus), list || []);
+    const normalizedStatus = Object.fromEntries(
+      Object.entries(currStatus || {}).map(([k, v]) => [
+        normalizeStatusCode(k),
+        {
+          val: Math.max(0, Number(v?.val || 0)),
+          max: Math.max(1, Number(v?.max || 1)),
+        },
+      ]),
+    );
+    if (normalizedStatus.CONSC && !normalizedStatus.CONS) normalizedStatus.CONS = normalizedStatus.CONSC;
+    return appendResourceFormulaVars(buildFormulaVars(formulaBaseFicha, normalizedStatus), list || []);
   };
   const formulaVars = useMemo(() => buildVars(statusState), [formulaBaseFicha, statusState, list]);
   const formulaSuggestions = useMemo(() => Object.keys(formulaVars).sort().map((k) => ({ key: k, value: formulaVars[k] })), [formulaVars]);
@@ -992,12 +1002,12 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
     const allCodes = Array.from(new Set([
       ...Object.keys(statusState || {}).map((k) => normalizeStatusCode(k)),
       ...Object.keys(statusMeta || {}).map((k) => normalizeStatusCode(k)),
-    ]));
+      ...(statusDefs || []).map((s) => normalizeStatusCode(s.code)),
+    ])).filter(Boolean);
     return allCodes.map((code) => {
-      const key = Object.keys(statusState || {}).find((k) => normalizeStatusCode(k) === code) || code;
       const base = (statusDefs || []).find((s) => normalizeStatusCode(s.code) === code) || { label: code, cor: "#9ca3af" };
       const meta = statusMeta?.[code] || (code === "CONSC" ? statusMeta?.CONS : null) || {};
-      return { key, code, label: meta.label || base.label || code, cor: meta.cor || base.cor || "#9ca3af" };
+      return { key: code, code, label: meta.label || base.label || code, cor: meta.cor || base.cor || "#9ca3af" };
     }).sort((a, b) => {
       const ia = (statusDefs || []).findIndex((x) => normalizeStatusCode(x.code) === a.code);
       const ib = (statusDefs || []).findIndex((x) => normalizeStatusCode(x.code) === b.code);
@@ -1009,17 +1019,27 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
   }, [statusDefs, statusMeta, statusState]);
 
   const recomputeStatusByFormula = (baseStatus, nextMeta, defs = localStatusDefs) => {
-    let next = { ...(baseStatus || {}) };
+    const normalizedBase = Object.fromEntries(
+      Object.entries(baseStatus || {}).map(([k, v]) => [
+        normalizeStatusCode(k),
+        {
+          val: Math.max(0, Number(v?.val || 0)),
+          max: Math.max(1, Number(v?.max || 1)),
+        },
+      ]),
+    );
+    let next = { ...normalizedBase };
     for (let i = 0; i < 2; i += 1) {
       const vars = buildVars(next);
       (defs || []).forEach((s) => {
-        const meta = nextMeta?.[s.code] || {};
-        const curr = next[s.key] || { val: 0, max: 1 };
+        const code = normalizeStatusCode(s.code);
+        const meta = nextMeta?.[code] || (code === "CONSC" ? nextMeta?.CONS : null) || {};
+        const curr = next[code] || { val: 0, max: 1 };
         const maxEval = evaluateStatusFormula(meta.maxFormula, { vars });
         const max = Math.max(1, Math.floor(Number.isFinite(maxEval) ? maxEval : Number(curr.max || 1)));
         const valEval = evaluateStatusFormula(meta.valFormula, { vars, x: max });
         const rawVal = Number.isFinite(valEval) ? valEval : Number(curr.val || 0);
-        next[s.key] = { ...curr, max, val: Math.max(0, Math.min(max, Math.floor(rawVal))) };
+        next[code] = { ...curr, max, val: Math.max(0, Math.min(max, Math.floor(rawVal))) };
       });
     }
     return next;
@@ -1041,21 +1061,20 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
       },
     };
 
-    const existingKey = Object.keys(statusState || {}).find((k) => normalizeStatusCode(k) === draftCode) || draftCode;
-    const existing = statusState?.[existingKey] || {};
+    const existing = statusState?.[draftCode] || {};
     const tempStatus = {
       ...(statusState || {}),
-      [existingKey]: {
-        val: Math.max(0, Number(existing.val ?? statusEditor.draft.val ?? statusEditor.draft.initialVal ?? 0) || 0),
-        max: Math.max(1, Number(existing.max ?? statusEditor.draft.max ?? statusEditor.draft.initialMax ?? 1) || 1),
+      [draftCode]: {
+        val: Math.max(0, Number(statusEditor.draft.val ?? statusEditor.draft.initialVal ?? existing.val ?? 0) || 0),
+        max: Math.max(1, Number(statusEditor.draft.max ?? statusEditor.draft.initialMax ?? existing.max ?? 1) || 1),
       },
     };
 
     const tempDefs = localStatusDefs.some((s) => normalizeStatusCode(s.code) === draftCode)
       ? localStatusDefs
-      : [...localStatusDefs, { key: existingKey, code: draftCode, label: statusEditor.draft.label || draftCode, cor: statusEditor.draft.cor || "#9ca3af" }];
+      : [...localStatusDefs, { key: draftCode, code: draftCode, label: statusEditor.draft.label || draftCode, cor: statusEditor.draft.cor || "#9ca3af" }];
 
-    return recomputeStatusByFormula(tempStatus, tempMeta, tempDefs);
+    return recomputeStatusByFormula(tempStatus, tempMeta, tempDefs)[draftCode] || null;
   }, [statusEditor, statusMeta, statusState, localStatusDefs, formulaBaseFicha, list]);
 
   useEffect(() => {
@@ -1151,7 +1170,7 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
                   },
                 };
                 const seeded = { ...(statusState || {}), [key]: { ...(statusState?.[key] || {}), val: Math.max(0, Number(statusDraft.val || 0)), max: Math.max(1, Number(statusDraft.max || 1)) } };
-                const nextDefs = localStatusDefs.some((s) => s.code === key)
+                const nextDefs = localStatusDefs.some((s) => normalizeStatusCode(s.code) === key)
                   ? localStatusDefs
                   : [...localStatusDefs, { key, code: key, label: statusDraft.label || key, cor: statusDraft.cor || "#9ca3af" }];
                 const recomputed = recomputeStatusByFormula(seeded, nextMeta, nextDefs);
@@ -1201,9 +1220,9 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
             </div>
             <FormulaInput value={statusEditor.draft.maxFormula || ""} onChange={(v) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, maxFormula: v } }))} suggestions={formulaSuggestions} placeholder="Fórmula do MAX" />
             <FormulaInput value={statusEditor.draft.valFormula || ""} onChange={(v) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, valFormula: v } }))} suggestions={formulaSuggestions} placeholder="Fórmula do ATUAL" />
-            {statusEditorPreview?.[normalizeStatusCode(statusEditor.draft.code)] && (
+            {statusEditorPreview && (
               <div style={{ color: "#9fe3a1", fontFamily: "monospace", fontSize: 11 }}>
-                Prévia: {statusEditorPreview[normalizeStatusCode(statusEditor.draft.code)].val}/{statusEditorPreview[normalizeStatusCode(statusEditor.draft.code)].max}
+                Prévia: {statusEditorPreview.val}/{statusEditorPreview.max}
               </div>
             )}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
@@ -1214,7 +1233,6 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
                 const exists = localStatusDefs.some((x) => normalizeStatusCode(x.code) === code);
                 if (statusEditor.mode === "duplicate" && exists) return;
                 const oldCode = normalizeStatusCode(statusEditor.status.code);
-                const oldKey = statusEditor.status.key;
                 const key = code;
 
                 const nextStatusMeta = { ...(statusMeta || {}) };
@@ -1231,14 +1249,14 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
                 };
 
                 const nextStatusState = { ...(statusState || {}) };
-                if (code !== oldCode || key !== oldKey) delete nextStatusState[oldKey];
-                const seedCurrent = statusState?.[key] || {};
+                if (code !== oldCode) delete nextStatusState[oldCode];
+                const seedCurrent = statusState?.[key] || statusState?.[oldCode] || {};
                 nextStatusState[key] = {
-                  val: Math.max(0, Number(seedCurrent.val ?? statusEditor.draft.val ?? statusEditor.draft.initialVal ?? 0) || 0),
-                  max: Math.max(1, Number(seedCurrent.max ?? statusEditor.draft.max ?? statusEditor.draft.initialMax ?? 1) || 1),
+                  val: Math.max(0, Number(statusEditor.draft.val ?? statusEditor.draft.initialVal ?? seedCurrent.val ?? 0) || 0),
+                  max: Math.max(1, Number(statusEditor.draft.max ?? statusEditor.draft.initialMax ?? seedCurrent.max ?? 1) || 1),
                 };
 
-                const nextDefsBase = localStatusDefs.filter((s) => s.code !== oldCode);
+                const nextDefsBase = localStatusDefs.filter((s) => normalizeStatusCode(s.code) !== oldCode);
                 const nextDefs = [...nextDefsBase, { key, code, label: statusEditor.draft.label || code, cor: statusEditor.draft.cor || "#9ca3af" }];
 
                 const recomputed = recomputeStatusByFormula(nextStatusState, nextStatusMeta, nextDefs);
@@ -1246,7 +1264,7 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
                 setStatusState(recomputed);
                 setStatusInput((p) => {
                   const next = { ...(p || {}) };
-                  if (code !== oldCode || key !== oldKey) delete next[oldKey];
+                  if (code !== oldCode) delete next[oldCode];
                   next[key] = { val: String(recomputed[key]?.val ?? 0), max: String(recomputed[key]?.max ?? 1) };
                   return next;
                 });
