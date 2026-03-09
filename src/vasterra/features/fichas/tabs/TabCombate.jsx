@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { uid } from "../../../core/factories";
 import { instantiateEffectFromTemplate } from "../../../core/effects";
 import { aggregateStatusModifiers } from "../../../core/effects";
@@ -94,6 +94,74 @@ function evaluateStatusFormula(expression, context = {}) {
   }
 }
 
+
+
+function buildFormulaVars(ficha = {}, statusState = {}) {
+  const vars = {};
+  Object.entries(ficha?.atributos || {}).forEach(([k, v]) => { vars[String(k).toLowerCase()] = Number(v || 0); });
+  const attrAlias = {
+    forca: "for", força: "for", vigor: "vig", destreza: "des", agilidade: "des",
+    constituicao: "const", constituição: "const", inteligencia: "int", inteligência: "int",
+    sabedoria: "sab", carisma: "car", mentalidade: "ment", vontade: "vont",
+  };
+  Object.entries(attrAlias).forEach(([alias, source]) => { vars[alias] = Number(vars[source] || 0); });
+
+  Object.entries(ficha?.pericias || {}).forEach(([k, v]) => {
+    const key = String(k).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+    if (key) vars[key] = Number(v || 0);
+  });
+
+  Object.entries(statusState || {}).forEach(([k, v]) => {
+    vars[k.toLowerCase()] = Number(v?.val || 0);
+    vars[k.toUpperCase()] = Number(v?.val || 0);
+    vars[`${k.toLowerCase()}max`] = Number(v?.max || 0);
+    vars[`${k.toUpperCase()}MAX`] = Number(v?.max || 0);
+  });
+  return vars;
+}
+
+function FormulaInput({ value, onChange, placeholder, suggestions = [] }) {
+  const [open, setOpen] = useState(false);
+  const [idx, setIdx] = useState(0);
+  const filtered = useMemo(() => {
+    const tail = String(value || "").split(/[^A-Za-zÀ-ÿ0-9_]+/).pop() || "";
+    if (!tail) return suggestions.slice(0, 8);
+    return suggestions.filter((s) => s.toLowerCase().includes(tail.toLowerCase())).slice(0, 8);
+  }, [value, suggestions]);
+
+  return (
+    <div style={{ position: "relative" }}>
+      <input
+        value={value}
+        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 120)}
+        onKeyDown={(e) => {
+          if (!open || filtered.length === 0) return;
+          if (e.key === "ArrowDown") { e.preventDefault(); setIdx((p) => (p + 1) % filtered.length); }
+          if (e.key === "ArrowUp") { e.preventDefault(); setIdx((p) => (p - 1 + filtered.length) % filtered.length); }
+          if (e.key === "Enter") {
+            e.preventDefault();
+            const token = filtered[idx] || filtered[0];
+            const raw = String(value || "");
+            const next = raw.replace(/([A-Za-zÀ-ÿ0-9_]+)?$/, token);
+            onChange(next);
+            setOpen(true)
+          }
+        }}
+        placeholder={placeholder}
+        style={inpStyle({ fontFamily: "monospace", fontSize: 11 })}
+      />
+      {open && filtered.length > 0 && (
+        <div style={{ position: "absolute", zIndex: 20, left: 0, right: 0, top: "102%", border: "1px solid #4f4028", borderRadius: 8, background: "#130f0a", maxHeight: 150, overflow: "auto" }}>
+          {filtered.map((s, i) => (
+            <div key={s} onMouseDown={() => onChange(String(value || "").replace(/([A-Za-zÀ-ÿ0-9_]+)?$/, s))} style={{ padding: "4px 6px", cursor: "pointer", background: i === idx ? "#2a1d0f" : "transparent", color: "#e7d5b1", fontFamily: "monospace", fontSize: 11 }}>{s}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 function durationInfo(effect, rodadaAtual) {
   const total = parseDurationRounds(effect);
   if (!total) return null;
@@ -171,7 +239,7 @@ function skillIconSrc(skill = {}) {
   return "";
 }
 
-function ResourcePip({ active, color, shape = "square", onClick, title }) {
+function ResourcePip({ active, willSpend = false, color, shape = "square", onClick, title }) {
   const styleByShape = {
     square: { borderRadius: "3px" },
     circle: { borderRadius: "999px" },
@@ -184,12 +252,12 @@ function ResourcePip({ active, color, shape = "square", onClick, title }) {
     height: 17,
     cursor: "pointer",
     transition: "all .18s ease",
-    filter: active ? "drop-shadow(0 0 8px rgba(255,255,255,.32))" : "grayscale(0.9) brightness(.45)",
+    filter: willSpend ? "drop-shadow(0 0 10px rgba(255,110,80,.55))" : active ? "drop-shadow(0 0 8px rgba(255,255,255,.32))" : "grayscale(0.9) brightness(.45)",
     transform: active ? "scale(1)" : "scale(.88)",
     opacity: active ? 1 : 0.72,
     borderRadius: "3px",
     background: color,
-    animation: active ? "resourcePulse 1.2s ease-in-out infinite" : "none",
+    animation: willSpend ? "resourceSpend 1s ease-in-out infinite" : active ? "resourcePulse 1.2s ease-in-out infinite" : "none",
   };
 
   return (
@@ -293,7 +361,24 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     saveCombate({ pendingSkillIds: list });
   };
 
-  const addLog = (mensagem, rodada = combate.rodadaAtual, baseLogs = combate.logs || []) => [{ id: uid(), rodada, mensagem, em: Date.now() }, ...baseLogs].slice(0, 160);
+  const addLog = (mensagem, rodada = combate.rodadaAtual, baseLogs = combate.logs || [], extra = {}) => [{ id: uid(), rodada, mensagem, em: Date.now(), ...extra }, ...baseLogs].slice(0, 220);
+
+  const logViewportRef = useRef(null);
+  const groupedLogs = useMemo(() => {
+    const asc = [...(combate.logs || [])].reverse();
+    const groups = [];
+    asc.forEach((log) => {
+      const last = groups[groups.length - 1];
+      if (!last || last.rodada !== log.rodada) groups.push({ rodada: log.rodada, items: [log] });
+      else last.items.push(log);
+    });
+    return groups;
+  }, [combate.logs]);
+
+  useEffect(() => {
+    if (!logViewportRef.current) return;
+    logViewportRef.current.scrollTop = logViewportRef.current.scrollHeight;
+  }, [groupedLogs]);
 
   const setRound = (nextRound) => saveCombate({ rodadaAtual: Math.max(0, Math.floor(nextRound)) });
 
@@ -339,7 +424,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
         const prevVal = Number(resource.atual || 0);
         const total = Math.max(0, Number(resource.total || 0));
         const afterSpend = Math.max(0, prevVal - qtd);
-        resourceLogs.push(`${code}: ${prevVal}→${afterSpend} (gasto ${qtd}) ↺ ${total}`);
+        resourceLogs.push({ code, prevVal, afterSpend, spent: qtd, total, maxAfter: total });
         return;
       }
       if (!nextStatus[code]) return;
@@ -347,14 +432,14 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
       const effective = Number(combatStatus[code]?.val ?? prevVal);
       const nextVal = Math.max(0, prevVal - Math.max(0, qtd - Math.max(0, effective - prevVal)));
       nextStatus[code] = { ...nextStatus[code], val: nextVal };
-      statusLogs.push(`${code}: ${prevVal}→${nextVal} (-${qtd})`);
+      statusLogs.push({ code, prevVal, nextVal, spent: qtd, max: Number(nextStatus[code]?.max || 1) });
     });
 
     const usedSkills = pendingEntries.map(({ skill }) => skill.nome || "Skill").join(", ") || "sem skills";
-    let nextLogs = addLog(`Rodada ${nextRound} encerrada • Skills: ${usedSkills}.`, nextRound);
-    if (resourceLogs.length) nextLogs = addLog(`Recursos (com recarga total): ${resourceLogs.join(" · ")}.`, nextRound, nextLogs);
-    else nextLogs = addLog("Recursos resetados para o máximo.", nextRound, nextLogs);
-    if (statusLogs.length) nextLogs = addLog(`Status: ${statusLogs.join(" · ")}.`, nextRound, nextLogs);
+    let nextLogs = addLog(`Rodada ${nextRound} encerrada • Skills: ${usedSkills}.`, nextRound, undefined, { kind: "round" });
+    if (resourceLogs.length) nextLogs = addLog("Recursos atualizados.", nextRound, nextLogs, { kind: "resource", changes: resourceLogs });
+    else nextLogs = addLog("Recursos resetados para o máximo.", nextRound, nextLogs, { kind: "resource" });
+    if (statusLogs.length) nextLogs = addLog("Status atualizados.", nextRound, nextLogs, { kind: "status", changes: statusLogs });
 
     onUpdate({
       status: nextStatus,
@@ -409,6 +494,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
         .status-card:hover .status-fill { filter: brightness(1.2); }
         .round-chip { animation:roundPulse 1.6s ease-in-out infinite; }
         @keyframes resourcePulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+        @keyframes resourceSpend { 0%,100% { transform: scale(1); filter: hue-rotate(0deg); } 50% { transform: scale(1.14); filter: hue-rotate(-25deg) brightness(1.2); } }
         @keyframes statusGlow { 0%,100% { box-shadow:0 0 0 rgba(255,255,255,0); } 50% { box-shadow:0 0 8px rgba(255,255,255,.45); } }
         @keyframes roundPulse { 0%,100% { text-shadow:0 0 0 rgba(255,220,160,.0); } 50% { text-shadow:0 0 12px rgba(255,220,160,.45); } }
         @keyframes logEnter { from { opacity:0; transform:translateY(3px); } to { opacity:1; transform:translateY(0); } }
@@ -451,18 +537,38 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
           </div>
         </div>
 
-        <div style={{ marginTop: 10, border: "1px solid #3f3121", borderRadius: 8, padding: 8, background: "#0d0a07", minHeight: 120, overflow: "auto" }}>
+        <div ref={logViewportRef} style={{ marginTop: 10, border: "1px solid #3f3121", borderRadius: 8, padding: 8, background: "#0d0a07", minHeight: 120, maxHeight: 260, overflow: "auto" }}>
           <div style={{ color: "#c8b188", fontFamily: "monospace", fontSize: 11, marginBottom: 6 }}>Linha do tempo da luta</div>
-          {(combate.logs || []).slice(0, 14).map((log) => (
-            <div key={log.id} className="combat-log-item">
-              <div style={{ display: "flex", justifyContent: "space-between", color: "#bca57a", fontFamily: "monospace", fontSize: 10 }}>
-                <span>Rodada {log.rodada}</span>
-                <span>{new Date(log.em || Date.now()).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
-              </div>
-              <div style={{ color: "#e7d8bf", fontFamily: "monospace", fontSize: 11 }}>{log.mensagem}</div>
+          {groupedLogs.map((group) => (
+            <div key={`rod-${group.rodada}`} style={{ marginBottom: 8 }}>
+              <div style={{ color: "#e0bd84", fontFamily: "'Cinzel',serif", fontSize: 12, marginBottom: 4, borderBottom: "1px dashed #5d4728" }}>Rodada {group.rodada}</div>
+              {group.items.map((log) => (
+                <div key={log.id} className="combat-log-item">
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#bca57a", fontFamily: "monospace", fontSize: 10 }}>
+                    <span>{log.kind === "resource" ? "Recursos" : log.kind === "status" ? "Status" : "Evento"}</span>
+                    <span>{new Date(log.em || Date.now()).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+                  </div>
+                  <div style={{ color: "#e7d8bf", fontFamily: "monospace", fontSize: 11 }}>{log.mensagem}</div>
+                  {Array.isArray(log.changes) && log.kind === "status" && (
+                    <div style={{ marginTop: 4, display: "grid", gap: 4 }}>
+                      {log.changes.map((it, i) => {
+                        const before = Math.max(1, Number(it.max || 1));
+                        const p1 = Math.max(0, Math.min(100, (Number(it.prevVal || 0) / before) * 100));
+                        const p2 = Math.max(0, Math.min(100, (Number(it.nextVal || 0) / before) * 100));
+                        return <div key={`${log.id}-s-${i}`}><div style={{ color: "#a8b8cf", fontSize: 10, fontFamily: "monospace" }}>{it.code}: {it.prevVal}→{it.nextVal}</div><div style={{ height: 5, borderRadius: 3, background: "#2a2116" }}><div style={{ width: `${p1}%`, height: "100%", background: "#6aa5ff55", borderRadius: 3 }} /></div><div style={{ marginTop: 1, height: 5, borderRadius: 3, background: "#2a2116" }}><div style={{ width: `${p2}%`, height: "100%", background: "#6aa5ff", borderRadius: 3, transition: "width .3s" }} /></div></div>;
+                      })}
+                    </div>
+                  )}
+                  {Array.isArray(log.changes) && log.kind === "resource" && (
+                    <div style={{ marginTop: 4, display: "flex", gap: 5, flexWrap: "wrap" }}>
+                      {log.changes.map((it, i) => <span key={`${log.id}-r-${i}`} style={{ color: "#9fd39f", fontFamily: "monospace", fontSize: 10 }}>{it.code}: -{it.spent} ↺ {it.maxAfter}</span>)}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           ))}
-          {(combate.logs || []).length === 0 && <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Sem eventos recentes.</div>}
+          {groupedLogs.length === 0 && <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Sem eventos recentes.</div>}
         </div>
       </div>
 
@@ -504,7 +610,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
                 <button key={r.id} className="resource-group" onClick={() => setResourceModal(r)} style={{ border: "1px solid #4f4028", borderRadius: 9, padding: 7, transition: "all .2s", background: "transparent", textAlign: "left", cursor: "pointer" }}>
                   <div style={{ color: "#e7d5b1", fontFamily: "monospace", fontSize: 11, marginBottom: 5, display: "flex", justifyContent: "space-between" }}>
                     <span>{r.codigo}</span>
-                    <span style={{ color: G.muted }}>{r.atual}/{r.total}{spendPreview > 0 ? ` · prévia ${previewRemaining}/${r.total}` : ""}</span>
+                    <span style={{ color: G.muted }}>{r.atual}/{r.total}{spendPreview > 0 ? ` · gasto previsto ${spendPreview}` : ""}</span>
                   </div>
                   <div style={{ display: "flex", gap: 6, minHeight: 20, alignItems: "center", flexWrap: "wrap" }}>
                     {Array.from({ length: Number(r.total || 0) }).map((_, idx) => (
@@ -512,6 +618,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
                         key={`${r.id}-${idx}`}
                         color={r.cor}
                         active={idx < Number(r.atual || 0)}
+                        willSpend={spendPreview > 0 && idx >= previewRemaining && idx < Number(r.atual || 0)}
                         shape={r.shape || "square"}
                         title={`${r.codigo} ${idx + 1}/${r.total}`}
                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); togglePip(r, idx); }}
@@ -519,13 +626,6 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
                     ))}
                     {Number(r.total || 0) === 0 && <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 10 }}>Defina em configurações</span>}
                   </div>
-                  {spendPreview > 0 && (
-                    <div style={{ display: "flex", gap: 5, marginTop: 5, flexWrap: "wrap", opacity: .85 }}>
-                      {Array.from({ length: Number(r.total || 0) }).map((_, idx) => (
-                        <ResourcePip key={`preview-${r.id}-${idx}`} color={r.cor} shape={r.shape || "square"} active={idx < previewRemaining} title="Prévia" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} />
-                      ))}
-                    </div>
-                  )}
                 </button>
               );
             })}
@@ -739,21 +839,8 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
   const [resourceDraft, setResourceDraft] = useState({ codigo: "", nome: "", cor: "#e0b44c", shape: "square", total: 1, atual: 1 });
   const [statusDraft, setStatusDraft] = useState({ codigo: "DET", label: "Determinação", cor: "#8dc2ff", val: 10, max: 10 });
 
-  const formulaVars = useMemo(() => {
-    const vars = {};
-    Object.entries(ficha?.atributos || {}).forEach(([k, v]) => { vars[k.toLowerCase()] = Number(v || 0); });
-    const attrAlias = {
-      forca: "for", força: "for", vigor: "vig", destreza: "des", agilidade: "des",
-      constituicao: "const", constituição: "const", inteligencia: "int", inteligência: "int",
-      sabedoria: "sab", carisma: "car", mentalidade: "ment", vontade: "vont",
-    };
-    Object.entries(attrAlias).forEach(([alias, source]) => { vars[alias] = Number(vars[source] || 0); });
-    Object.entries(statusState || {}).forEach(([k, v]) => {
-      vars[k.toLowerCase()] = Number(v?.val || 0);
-      vars[`${k.toLowerCase()}max`] = Number(v?.max || 0);
-    });
-    return vars;
-  }, [ficha?.atributos, statusState]);
+  const formulaVars = useMemo(() => buildFormulaVars(ficha, statusState), [ficha, statusState]);
+  const formulaSuggestions = useMemo(() => Object.keys(formulaVars).sort(), [formulaVars]);
 
   const recalcStatusFormulas = () => {
     const next = { ...(statusState || {}) };
@@ -805,18 +892,18 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
                   <input type="number" value={st.val} onChange={(e) => setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || { val: 0, max: 1 }), val: Number(e.target.value) || 0 } }))} style={inpStyle()} />
                   <input type="number" value={st.max} onChange={(e) => setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || { val: 0, max: 1 }), max: Math.max(1, Number(e.target.value) || 1) } }))} style={inpStyle()} />
                   <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 11, alignSelf: "center" }}>{s.code}</span>
-                  <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                    <input
+                  <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, background: "#12100c", border: "1px solid #3f3121", borderRadius: 8, padding: 6 }}>
+                    <FormulaInput
                       value={meta.maxFormula || ""}
-                      onChange={(e) => setStatusMeta((p) => ({ ...p, [s.code]: { ...(p[s.code] || {}), maxFormula: e.target.value } }))}
-                      placeholder="Fórmula do MAX (ex: ((vigor / 2) * (vit / 6) + 1) + (vontade * (mentalidade * 4)))"
-                      style={inpStyle({ fontFamily: "monospace", fontSize: 11 })}
+                      onChange={(val) => setStatusMeta((p) => ({ ...p, [s.code]: { ...(p[s.code] || {}), maxFormula: val } }))}
+                      suggestions={formulaSuggestions}
+                      placeholder="MAX: ex ((vigor / 2) * (vit / 6) + 1) + (vontade * (mentalidade * 4))"
                     />
-                    <input
+                    <FormulaInput
                       value={meta.valFormula || ""}
-                      onChange={(e) => setStatusMeta((p) => ({ ...p, [s.code]: { ...(p[s.code] || {}), valFormula: e.target.value } }))}
-                      placeholder="Fórmula do Atual (ex: (vit / 2) + x)"
-                      style={inpStyle({ fontFamily: "monospace", fontSize: 11 })}
+                      onChange={(val) => setStatusMeta((p) => ({ ...p, [s.code]: { ...(p[s.code] || {}), valFormula: val } }))}
+                      suggestions={formulaSuggestions}
+                      placeholder="ATUAL: ex ((vit / 2) + x)"
                     />
                   </div>
                 </div>
@@ -856,6 +943,7 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
           ))}
         </div>
 
+        <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 10 }}>Autocomplete: ↑/↓ navega, Enter completa variável (VIG, FOR, est, laminas_grandes...).</div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <HoverButton onClick={recalcStatusFormulas} style={btnStyle({ borderColor: "#4a6a8b", color: "#9cc8ff" })}>Recalcular fórmulas</HoverButton>
           <HoverButton onClick={onClose} style={btnStyle({ borderColor: "#4f4f4f", color: "#b8b8b8" })}>Fechar</HoverButton>
