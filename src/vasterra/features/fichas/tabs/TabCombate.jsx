@@ -941,9 +941,22 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
   const [statusInput, setStatusInput] = useState(() => Object.fromEntries(Object.entries(ficha?.status || {}).map(([k, v]) => [k, { val: String(v?.val ?? 0), max: String(v?.max ?? 1) }])));
   const [resourceDraft, setResourceDraft] = useState({ codigo: "", nome: "", cor: "#e0b44c", shape: "square", total: 1, atual: 1 });
   const [statusDraft, setStatusDraft] = useState({ codigo: "DET", label: "Determinação", cor: "#8dc2ff", val: 10, max: 10 });
+  const [statusEditor, setStatusEditor] = useState(null);
 
   const formulaBaseFicha = formulaFicha || ficha;
-  const formulaVars = useMemo(() => buildFormulaVars(formulaBaseFicha, statusState), [formulaBaseFicha, statusState]);
+  const buildVars = (currStatus = statusState) => {
+    const vars = buildFormulaVars(formulaBaseFicha, currStatus);
+    (list || []).forEach((r) => {
+      const code = String(r.codigo || "").toUpperCase();
+      if (!code) return;
+      vars[code] = Number(r.atual || 0);
+      vars[code.toLowerCase()] = Number(r.atual || 0);
+      vars[`${code}MAX`] = Number(r.total || 0);
+      vars[`${code.toLowerCase()}max`] = Number(r.total || 0);
+    });
+    return vars;
+  };
+  const formulaVars = useMemo(() => buildVars(statusState), [formulaBaseFicha, statusState, list]);
   const formulaSuggestions = useMemo(() => Object.keys(formulaVars).sort().map((k) => ({ key: k, value: formulaVars[k] })), [formulaVars]);
 
   const localStatusDefs = useMemo(() => {
@@ -964,7 +977,7 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
   const applyStatusFormula = (code, nextMeta) => {
     const key = localStatusDefs.find((s) => s.code === code)?.key || code;
     const current = { ...(statusState[key] || { val: 0, max: 1 }) };
-    const vars = buildFormulaVars(formulaBaseFicha, statusState);
+    const vars = buildVars(statusState);
     const x = evaluateStatusFormula(nextMeta.maxFormula, { vars }) ?? Number(current.max || 1);
     const max = Math.max(1, Math.floor(x));
     const valExpr = evaluateStatusFormula(nextMeta.valFormula, { vars, x: max });
@@ -977,7 +990,7 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
     setStatusState((prev) => {
       let next = { ...prev };
       for (let i = 0; i < 2; i += 1) {
-        const vars = buildFormulaVars(formulaBaseFicha, next);
+        const vars = buildVars(next);
         localStatusDefs.forEach((s) => {
           const meta = statusMeta[s.code] || {};
           const curr = next[s.key] || { val: 0, max: 1 };
@@ -1013,77 +1026,32 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
         </div>
 
         <div style={{ border: "1px solid #3d2f1f", borderRadius: 8, padding: 10 }}>
-          <div style={{ color: G.gold, marginBottom: 6, fontFamily: "'Cinzel',serif" }}>Barras de status (nome/cor + valores)</div>
-          <div style={{ display: "grid", gap: 6, maxHeight: 230, overflow: "auto" }}>
+          <div style={{ color: G.gold, marginBottom: 6, fontFamily: "'Cinzel',serif" }}>Barras de status</div>
+          <div style={{ display: "grid", gap: 8, maxHeight: 260, overflow: "auto" }}>
             {localStatusDefs.map((s) => {
               const meta = statusMeta[s.code] || { label: s.label, cor: s.cor };
               const st = statusState[s.key] || { val: 0, max: 1 };
               return (
-                <div key={s.key} style={{ display: "grid", gridTemplateColumns: "120px 1fr 90px 90px 60px", gap: 6 }}>
-                  <input value={s.code} disabled style={inpStyle({ opacity: .65 })} />
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 46px", gap: 6 }}>
-                    <input value={meta.label || s.label} onChange={(e) => setStatusMeta((p) => ({ ...p, [s.code]: { ...(p[s.code] || {}), label: e.target.value, cor: (p[s.code]?.cor || s.cor) } }))} style={inpStyle()} />
-                    <input type="color" value={meta.cor || s.cor} onChange={(e) => setStatusMeta((p) => ({ ...p, [s.code]: { ...(p[s.code] || {}), label: (p[s.code]?.label || s.label), cor: e.target.value } }))} style={inpStyle({ padding: 2 })} />
+                <div key={s.key} style={{ border: "1px solid #3f3121", borderRadius: 8, padding: 8, background: "#120f0b", display: "grid", gap: 6 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontFamily: "monospace", color: meta.cor || s.cor }}>{s.code}</span>
+                      <span style={{ color: "#e7d5b1", fontFamily: "monospace", fontSize: 11 }}>{meta.label || s.label}</span>
+                      <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>{st.val}/{st.max}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <HoverButton onClick={() => setStatusEditor({ mode: "edit", status: s, draft: { code: s.code, label: meta.label || s.label, cor: meta.cor || s.cor, val: st.val, max: st.max, maxFormula: meta.maxFormula || "", valFormula: meta.valFormula || "" } })} style={btnStyle({ padding: "4px 8px", borderColor: "#4b6b8a", color: "#98cfff" })}>Editar</HoverButton>
+                      <HoverButton onClick={() => setStatusEditor({ mode: "duplicate", status: s, draft: { code: `${s.code}_2`, label: `${meta.label || s.label} Cópia`, cor: meta.cor || s.cor, val: st.val, max: st.max, maxFormula: meta.maxFormula || "", valFormula: meta.valFormula || "" } })} style={btnStyle({ padding: "4px 8px", borderColor: "#6b5a34", color: "#d8bf8b" })}>Duplicar</HoverButton>
+                      <HoverButton onClick={() => {
+                        setStatusState((p) => { const n = { ...p }; delete n[s.key]; return n; });
+                        setStatusMeta((p) => { const n = { ...p }; delete n[s.code]; return n; });
+                        setStatusInput((p) => { const n = { ...p }; delete n[s.key]; return n; });
+                      }} style={btnStyle({ padding: "4px 8px", borderColor: "#87413a", color: "#ff9990" })}>Excluir</HoverButton>
+                    </div>
                   </div>
-                  <input
-                    type="text"
-                    value={statusInput[s.key]?.val ?? String(st.val)}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      setStatusInput((p) => ({ ...p, [s.key]: { ...(p[s.key] || { val: "0", max: "1" }), val: raw } }));
-                      const nextVal = Math.max(0, Math.floor(parseExpressionValue(raw, Number(statusState[s.key]?.val || 0), { vars: formulaVars })));
-                      setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || { val: 0, max: 1 }), val: Math.min(nextVal, Number(p[s.key]?.max || 1)) } }));
-                    }}
-                    style={inpStyle()}
-                  />
-                  <input
-                    type="text"
-                    value={statusInput[s.key]?.max ?? String(st.max)}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      setStatusInput((p) => ({ ...p, [s.key]: { ...(p[s.key] || { val: "0", max: "1" }), max: raw } }));
-                      const nextMax = Math.max(1, Math.floor(parseExpressionValue(raw, Number(statusState[s.key]?.max || 1), { vars: formulaVars })));
-                      setStatusState((p) => {
-                        const currVal = Number(p[s.key]?.val || 0);
-                        return { ...p, [s.key]: { ...(p[s.key] || { val: 0, max: 1 }), max: nextMax, val: Math.min(currVal, nextMax) } };
-                      });
-                    }}
-                    style={inpStyle()}
-                  />
-                  <HoverButton
-                    onClick={() => {
-                      setStatusState((p) => {
-                        const next = { ...p };
-                        delete next[s.key];
-                        return next;
-                      });
-                      setStatusMeta((p) => {
-                        const next = { ...p };
-                        delete next[s.code];
-                        return next;
-                      });
-                      setStatusInput((p) => {
-                        const next = { ...p };
-                        delete next[s.key];
-                        return next;
-                      });
-                    }}
-                    title={`Remover ${s.code}`}
-                    style={btnStyle({ padding: "4px 8px", borderColor: "#87413a", color: "#ff9990" })}
-                  >✕</HoverButton>
-                  <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, background: "#12100c", border: "1px solid #3f3121", borderRadius: 8, padding: 6 }}>
-                    <div style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:6 }}><FormulaInput
-                      value={meta.maxFormula || ""}
-                      onChange={(val) => { const metaNext = { ...(statusMeta[s.code] || {}), maxFormula: val, valFormula: (statusMeta[s.code]?.valFormula || "") }; setStatusMeta((p) => ({ ...p, [s.code]: metaNext })); applyStatusFormula(s.code, metaNext); }}
-                      suggestions={formulaSuggestions}
-                      placeholder="MAX: ex ((vigor / 2) * (vit / 6) + 1) + (vontade * (mentalidade * 4))"
-                    /><HoverButton onClick={() => { const roll = parseDurationRounds({ duracaoExpressao: meta.maxFormula || "" }); if (roll > 0) setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || {}), max: roll, val: Math.min(roll, Number(p[s.key]?.val || 0)) } })); }} style={btnStyle({ padding:"4px 8px", borderColor:"#6a5a33", color:"#e3c88f" })}>🎲</HoverButton></div>
-                    <div style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:6 }}><FormulaInput
-                      value={meta.valFormula || ""}
-                      onChange={(val) => { const metaNext = { ...(statusMeta[s.code] || {}), valFormula: val, maxFormula: (statusMeta[s.code]?.maxFormula || "") }; setStatusMeta((p) => ({ ...p, [s.code]: metaNext })); applyStatusFormula(s.code, metaNext); }}
-                      suggestions={formulaSuggestions}
-                      placeholder="ATUAL: ex ((vit / 2) + x)"
-                    /><HoverButton onClick={() => { const roll = parseDurationRounds({ duracaoExpressao: meta.valFormula || "" }); if (roll > 0) setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || {}), val: Math.max(0, Math.min(Number(p[s.key]?.max || 1), roll)) } })); }} style={btnStyle({ padding:"4px 8px", borderColor:"#6a5a33", color:"#e3c88f" })}>🎲</HoverButton></div>
+                  <div style={{ display: "flex", gap: 8, color: G.muted, fontFamily: "monospace", fontSize: 10, flexWrap: "wrap" }}>
+                    <span>MAX: {meta.maxFormula || "—"}</span>
+                    <span>ATUAL: {meta.valFormula || "—"}</span>
                   </div>
                 </div>
               );
@@ -1129,6 +1097,56 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
           <HoverButton onClick={() => { onSave({ recursos: list, statusMeta, status: statusState }); onClose(); }} style={btnStyle()}>Salvar</HoverButton>
         </div>
       </div>
+      {statusEditor && (
+        <Modal title={`${statusEditor.mode === "duplicate" ? "Duplicar" : "Editar"} barra: ${statusEditor.status?.code || "Status"}`} onClose={() => setStatusEditor(null)}>
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 56px", gap: 6 }}>
+              <input value={statusEditor.draft.code} onChange={(e) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, code: e.target.value.toUpperCase() } }))} style={inpStyle()} />
+              <input value={statusEditor.draft.label} onChange={(e) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, label: e.target.value } }))} style={inpStyle()} />
+              <input type="color" value={statusEditor.draft.cor} onChange={(e) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, cor: e.target.value } }))} style={inpStyle({ padding: 2 })} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+              <input type="number" value={statusEditor.draft.val} onChange={(e) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, val: Number(e.target.value) || 0 } }))} style={inpStyle()} />
+              <input type="number" value={statusEditor.draft.max} onChange={(e) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, max: Math.max(1, Number(e.target.value) || 1) } }))} style={inpStyle()} />
+            </div>
+            <FormulaInput value={statusEditor.draft.maxFormula || ""} onChange={(v) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, maxFormula: v } }))} suggestions={formulaSuggestions} placeholder="Fórmula do MAX" />
+            <FormulaInput value={statusEditor.draft.valFormula || ""} onChange={(v) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, valFormula: v } }))} suggestions={formulaSuggestions} placeholder="Fórmula do ATUAL" />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <HoverButton onClick={() => setStatusEditor(null)} style={btnStyle({ borderColor: "#4f4f4f", color: "#b8b8b8" })}>Cancelar</HoverButton>
+              <HoverButton onClick={() => {
+                const code = String(statusEditor.draft.code || "").trim().toUpperCase();
+                if (!code) return;
+                const exists = localStatusDefs.some((x) => x.code === code);
+                if (statusEditor.mode === "duplicate" && exists) return;
+                const oldCode = statusEditor.status.code;
+                const oldKey = statusEditor.status.key;
+                const key = code;
+                setStatusState((p) => {
+                  const base = { ...p };
+                  const curr = { val: statusEditor.draft.val, max: statusEditor.draft.max };
+                  if (code !== oldCode || key !== oldKey) delete base[oldKey];
+                  base[key] = curr;
+                  return base;
+                });
+                setStatusInput((p) => {
+                  const base = { ...p };
+                  if (code !== oldCode || key !== oldKey) delete base[oldKey];
+                  base[key] = { val: String(statusEditor.draft.val), max: String(statusEditor.draft.max) };
+                  return base;
+                });
+                setStatusMeta((p) => {
+                  const base = { ...p };
+                  if (code !== oldCode) delete base[oldCode];
+                  base[code] = { ...(base[code] || {}), label: statusEditor.draft.label || code, cor: statusEditor.draft.cor, maxFormula: statusEditor.draft.maxFormula || "", valFormula: statusEditor.draft.valFormula || "" };
+                  return base;
+                });
+                applyStatusFormula(code, { maxFormula: statusEditor.draft.maxFormula || "", valFormula: statusEditor.draft.valFormula || "" });
+                setStatusEditor(null);
+              }} style={btnStyle()}>Salvar</HoverButton>
+            </div>
+          </div>
+        </Modal>
+      )}
     </Modal>
   );
 }
