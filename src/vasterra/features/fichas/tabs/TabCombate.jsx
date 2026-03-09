@@ -119,6 +119,7 @@ function skillIconSrc(skill = {}) {
 
 function ResourcePip({ active, color, onClick, title }) {
   const common = {
+    display: "inline-block",
     width: 17,
     height: 17,
     cursor: "pointer",
@@ -246,17 +247,33 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     }
 
     const nextRound = combate.rodadaAtual + 1;
-    const nextResources = combate.recursos.map((r) => ({ ...r, atual: Math.max(0, Number(r.atual || 0) - (previewCosts[r.codigo] || 0)) }));
+    const nextResources = combate.recursos.map((r) => {
+      const total = Math.max(0, Number(r.total || 0));
+      const gasto = Number(previewCosts[r.codigo] || 0);
+      return { ...r, atual: Math.max(0, total - gasto) };
+    });
     const nextStatus = { ...(ficha.status || {}) };
+    const statusLogs = [];
 
     Object.entries(previewCosts).forEach(([rawCode, qtd]) => {
       const code = resolveCode(rawCode);
       if (!nextStatus[code]) return;
-      nextStatus[code] = { ...nextStatus[code], val: Math.max(0, Number(nextStatus[code].val || 0) - qtd) };
+      const prevVal = Number(nextStatus[code].val || 0);
+      const nextVal = Math.max(0, prevVal - qtd);
+      nextStatus[code] = { ...nextStatus[code], val: nextVal };
+      statusLogs.push(`${code}: ${prevVal}→${nextVal} (-${qtd})`);
     });
 
+    const resourceLogs = nextResources
+      .map((r) => {
+        const prev = Number((combate.recursos.find((x) => x.id === r.id)?.atual) || 0);
+        return `${r.codigo}: ${prev}→${r.atual}/${r.total}`;
+      });
+
     const roundLog = `Rodada ${nextRound}: ${pendingEntries.map(({ skill }) => skill.nome || "Skill").join(", ") || "sem skills"}.`;
-    const nextLogs = addLog(roundLog, nextRound);
+    let nextLogs = addLog(roundLog, nextRound);
+    if (resourceLogs.length) nextLogs = addLog(`Recursos: ${resourceLogs.join(" · ")}.`, nextRound, nextLogs);
+    if (statusLogs.length) nextLogs = addLog(`Status: ${statusLogs.join(" · ")}.`, nextRound, nextLogs);
 
     onUpdate({
       status: nextStatus,
