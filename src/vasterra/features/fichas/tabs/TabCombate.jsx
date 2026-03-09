@@ -1000,6 +1000,23 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
     });
   }, [statusDefs, statusMeta, statusState]);
 
+  const recomputeStatusByFormula = (baseStatus, nextMeta, defs = localStatusDefs) => {
+    let next = { ...(baseStatus || {}) };
+    for (let i = 0; i < 2; i += 1) {
+      const vars = buildVars(next);
+      (defs || []).forEach((s) => {
+        const meta = nextMeta?.[s.code] || {};
+        const curr = next[s.key] || { val: 0, max: 1 };
+        const maxEval = evaluateStatusFormula(meta.maxFormula, { vars });
+        const max = Math.max(1, Math.floor(Number.isFinite(maxEval) ? maxEval : Number(curr.max || 1)));
+        const valEval = evaluateStatusFormula(meta.valFormula, { vars, x: max });
+        const rawVal = Number.isFinite(valEval) ? valEval : Number(curr.val || 0);
+        next[s.key] = { ...curr, max, val: Math.max(0, Math.min(max, Math.floor(rawVal))) };
+      });
+    }
+    return next;
+  };
+
   const applyStatusFormula = (code, nextMeta) => {
     const key = localStatusDefs.find((s) => s.code === code)?.key || code;
     const current = { ...(statusState[key] || { val: 0, max: 1 }) };
@@ -1014,19 +1031,7 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
 
   useEffect(() => {
     setStatusState((prev) => {
-      let next = { ...prev };
-      for (let i = 0; i < 2; i += 1) {
-        const vars = buildVars(next);
-        localStatusDefs.forEach((s) => {
-          const meta = statusMeta[s.code] || {};
-          const curr = next[s.key] || { val: 0, max: 1 };
-          const maxEval = evaluateStatusFormula(meta.maxFormula, { vars });
-          const max = Math.max(1, Math.floor(Number.isFinite(maxEval) ? maxEval : Number(curr.max || 1)));
-          const valEval = evaluateStatusFormula(meta.valFormula, { vars, x: max });
-          const rawVal = Number.isFinite(valEval) ? valEval : Number(curr.val || 0);
-          next[s.key] = { ...curr, max, val: Math.max(0, Math.min(max, Math.floor(rawVal))) };
-        });
-      }
+      const next = recomputeStatusByFormula(prev, statusMeta, localStatusDefs);
       return JSON.stringify(next) === JSON.stringify(prev) ? prev : next;
     });
   }, [formulaBaseFicha, localStatusDefs, statusMeta]);
@@ -1120,7 +1125,11 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
         <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 10 }}>Autocomplete: ↑/↓ navega, Enter completa variável (VIG, FOR, est, laminas_grandes...).</div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <HoverButton onClick={onClose} style={btnStyle({ borderColor: "#4f4f4f", color: "#b8b8b8" })}>Fechar</HoverButton>
-          <HoverButton onClick={() => { onSave({ recursos: list, statusMeta, status: statusState }); onClose(); }} style={btnStyle()}>Salvar</HoverButton>
+          <HoverButton onClick={() => {
+            const nextStatus = recomputeStatusByFormula(statusState, statusMeta, localStatusDefs);
+            onSave({ recursos: list, statusMeta, status: nextStatus });
+            onClose();
+          }} style={btnStyle()}>Salvar</HoverButton>
         </div>
       </div>
       {statusEditor && (
@@ -1164,9 +1173,10 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
                   const base = { ...p };
                   if (code !== oldCode) delete base[oldCode];
                   base[code] = { ...(base[code] || {}), label: statusEditor.draft.label || code, cor: statusEditor.draft.cor, maxFormula: statusEditor.draft.maxFormula || "", valFormula: statusEditor.draft.valFormula || "" };
+                  const recomputed = recomputeStatusByFormula(statusState, base, localStatusDefs);
+                  setStatusState(recomputed);
                   return base;
                 });
-                applyStatusFormula(code, { maxFormula: statusEditor.draft.maxFormula || "", valFormula: statusEditor.draft.valFormula || "" });
                 setStatusEditor(null);
               }} style={btnStyle()}>Salvar</HoverButton>
             </div>
