@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { uid } from "../../../core/factories";
 import { instantiateEffectFromTemplate, parseMechanicalEffects } from "../../../core/effects";
-import { aggregateStatusModifiers } from "../../../core/effects";
+import { aggregateResourceModifiers, aggregateStatusModifiers } from "../../../core/effects";
 import { buildFormulaVars, evaluateStatusFormula, getMechanicalText, parseDurationRounds, toNumber } from "./combate/utils";
 import { RANK_COR } from "../../../data/gameData";
 import { G, btnStyle, inpStyle } from "../../../ui/theme";
@@ -206,6 +206,34 @@ function shouldTriggerReminder(reminder, rodadaAtual, rodadaAnterior) {
   return rodadaAtual === target;
 }
 
+function rollDiceExpression(raw = "") {
+  const input = String(raw || "").trim();
+  if (!input) return null;
+  const expr = input.replace(/\s+/g, "");
+  if (!/^[0-9dD+\-*/().]+$/.test(expr)) return null;
+  const parts = [];
+  const rolledExpr = expr.replace(/(\d*)d(\d+)/gi, (full, qtyRaw, facesRaw) => {
+    const qty = Math.max(1, Number(qtyRaw || 1));
+    const faces = Math.max(2, Number(facesRaw || 2));
+    const rolls = [];
+    let sum = 0;
+    for (let i = 0; i < qty; i += 1) {
+      const one = 1 + Math.floor(Math.random() * faces);
+      rolls.push(one);
+      sum += one;
+    }
+    parts.push({ token: `${qty}d${faces}`, rolls, sum });
+    return String(sum);
+  });
+  try {
+    const total = Number(Function(`"use strict"; return (${rolledExpr});`)());
+    if (!Number.isFinite(total)) return null;
+    return { total, expr: rolledExpr, parts };
+  } catch {
+    return null;
+  }
+}
+
 export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags = [], onNotify }) {
   const [query, setQuery] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -224,6 +252,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
 
   const activeEffects = useMemo(() => (Array.isArray(ficha?.modificadores?.efeitos) ? ficha.modificadores.efeitos : []).filter((e) => e && e.ativo !== false), [ficha?.modificadores?.efeitos]);
   const activeStatusMods = useMemo(() => { try { return aggregateStatusModifiers(activeEffects); } catch { return {}; } }, [activeEffects]);
+  const activeResourceMods = useMemo(() => { try { return aggregateResourceModifiers(activeEffects); } catch { return {}; } }, [activeEffects]);
   const pendingCounts = combate.pendingSkillCounts && Object.keys(combate.pendingSkillCounts).length ? combate.pendingSkillCounts : Object.fromEntries((combate.pendingSkillIds || []).map((id) => [id, 1]));
   const pendingEntries = useMemo(() => assigned.filter(({ entry }) => Number(pendingCounts[entry.id] || 0) > 0).map((x) => ({ ...x, count: Math.max(1, Number(pendingCounts[x.entry.id] || 1)) })), [assigned, pendingCounts]);
 
@@ -274,14 +303,25 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     return sum;
   }, [pendingEntries]);
 
+  const effectiveResources = useMemo(() => Object.fromEntries(
+    (combate.recursos || []).map((r) => {
+      const code = String(r.codigo || "").toUpperCase();
+      const mods = activeResourceMods[code] || { current: 0, max: 0 };
+      const baseTotal = Math.max(0, Number(r.total || 0));
+      const total = Math.max(0, Math.floor(baseTotal + mods.max));
+      const current = Math.max(0, Math.min(total, Math.floor(Number(r.atual || 0) + mods.current)));
+      return [code, { ...r, codigo: code, total, atual: current, mods }];
+    }),
+  ), [combate.recursos, activeResourceMods]);
+
   const previewRemainingByResource = useMemo(() => Object.fromEntries(
-    (combate.recursos || []).map((r) => [
+    Object.values(effectiveResources).map((r) => [
       r.codigo,
       Math.max(0, Number(r.atual || 0) - Number(previewCosts[r.codigo] || 0)),
     ]),
-  ), [combate.recursos, previewCosts]);
+  ), [effectiveResources, previewCosts]);
 
-  const byResource = new Map((combate.recursos || []).map((r) => [r.codigo, r]));
+  const byResource = new Map(Object.values(effectiveResources).map((r) => [r.codigo, r]));
   const byStatus = new Map(Object.entries(combatStatus || {}).map(([k, v]) => [k.toUpperCase(), v]));
   const resolveCode = (code) => (code === "CONSC" ? "CONS" : code);
 
@@ -364,14 +404,18 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     }
 
     const nextRound = combate.rodadaAtual + 1;
-    const nextResources = combate.recursos.map((r) => ({ ...r, atual: Math.max(0, Number(r.total || 0)) }));
+    const nextResources = combate.recursos.map((r) => {
+      const code = String(r.codigo || "").toUpperCase();
+      const effective = effectiveResources[code];
+      return { ...r, atual: Math.max(0, Number(effective?.total ?? r.total ?? 0)) };
+    });
     const nextStatus = { ...(ficha.status || {}) };
     const statusLogs = [];
     const resourceLogs = [];
 
     Object.entries(previewCosts).forEach(([rawCode, qtd]) => {
       const code = resolveCode(rawCode);
-      const resource = combate.recursos.find((r) => r.codigo === code);
+      const resource = effectiveResources[code];
       if (resource) {
         const prevVal = Number(resource.atual || 0);
         const total = Math.max(0, Number(resource.total || 0));
@@ -405,13 +449,13 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
       .map((ef) => ({ ef, raw: String(getMechanicalText(ef) || "").trim() }))
       .filter(({ raw }) => raw && parseMechanicalEffects(raw).length === 0);
     effectMessages.forEach(({ ef, raw }) => {
-      const rolled = raw.replace(/(\d*)d(\d+)/gi, (_, a, b) => {
-        const qtd = Math.max(1, Number(a || 1));
-        const faces = Math.max(2, Number(b || 2));
-        let total = 0;
-        for (let i = 0; i < qtd; i += 1) total += 1 + Math.floor(Math.random() * faces);
-        return String(total);
-      });
+      const [exprPart, ...tail] = raw.split(/\s+/);
+      const suffix = tail.join(" ").replace(/^"|"$/g, "").trim();
+      const roll = rollDiceExpression(exprPart);
+      if (!roll) return;
+      const detailDice = roll.parts.map((p) => `${p.token}=${p.rolls.join("+")}`).join("; ");
+      const detail = `${detailDice}${roll.expr !== String(roll.total) ? ` => ${roll.expr}` : ""}`;
+      const rolled = `${roll.total}${suffix ? ` ${suffix}` : ""}${detail ? ` ((${detail}))` : ""}`;
       const msg = `${ef.nome || "Efeito"}: ${rolled}`;
       nextLogs = addLog(msg, nextRound, nextLogs, { kind: "effect", effectId: ef.id, text: rolled });
       onNotify?.(`✨ ${msg}`, "info");
@@ -579,7 +623,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
             <HoverButton style={btnStyle({ padding: "4px 8px", borderColor: "#695532", color: "#e2c38a" })} onClick={() => setSettingsOpen(true)}>Configurações</HoverButton>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 8 }}>
-            {(combate.recursos || []).map((r) => {
+            {Object.values(effectiveResources).map((r) => {
               const spendPreview = previewCosts[r.codigo] || 0;
               const previewRemaining = previewRemainingByResource[r.codigo] ?? Number(r.atual || 0);
               return (
@@ -695,7 +739,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
 
       {resourceModal && (
         <ResourceQuickModal
-          resource={combate.recursos.find((r) => r.id === resourceModal.id) || resourceModal}
+          resource={effectiveResources[String(resourceModal.codigo || "").toUpperCase()] || combate.recursos.find((r) => r.id === resourceModal.id) || resourceModal}
           previewCost={previewCosts[resourceModal.codigo] || 0}
           onClose={() => setResourceModal(null)}
           onToggle={(idx) => {
