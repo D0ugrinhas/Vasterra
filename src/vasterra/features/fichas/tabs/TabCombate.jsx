@@ -310,9 +310,10 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
       const mods = activeStatusMods[code] || { base: 0, current: 0, max: 0 };
       const baseVal = Number(data?.val || 0);
       const baseMax = Math.max(1, Number(data?.max || 1));
-      const max = Math.max(1, Math.floor(baseMax + mods.base + mods.max));
+      const overflowMax = Math.max(0, Math.floor(mods.base + mods.current));
+      const max = Math.max(1, Math.floor(baseMax + mods.max + overflowMax));
       const val = Math.max(0, Math.min(max, Math.floor(baseVal + mods.base + mods.current)));
-      out[code] = { baseVal, baseMax, val, max, mods };
+      out[code] = { baseVal, baseMax, val, max, mods, overflowMax };
     });
     return out;
   }, [ficha?.status, activeStatusMods]);
@@ -364,9 +365,10 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
       const code = String(r.codigo || "").toUpperCase();
       const mods = activeResourceMods[code] || { current: 0, max: 0 };
       const baseTotal = Math.max(0, Number(r.total || 0));
-      const total = Math.max(0, Math.floor(baseTotal + mods.max));
+      const overflowMax = Math.max(0, Math.floor(mods.current));
+      const total = Math.max(0, Math.floor(baseTotal + mods.max + overflowMax));
       const current = Math.max(0, Math.min(total, Math.floor(Number(r.atual || 0) + mods.current)));
-      return [code, { ...r, codigo: code, total, atual: current, mods }];
+      return [code, { ...r, codigo: code, total, atual: current, mods, overflowMax }];
     }),
   ), [combate.recursos, activeResourceMods]);
 
@@ -531,12 +533,23 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     updateResourceById(resource.id, { atual: Math.max(0, Math.min(Number(resource.total || 0), next)) });
   };
 
-  const setStatusValue = (key, field, value) => {
+  const setStatusValue = (key, field, effectiveValue) => {
     const curr = ficha?.status?.[key] || { val: 0, max: 1 };
-    const patch = { ...curr, [field]: value };
-    if (field === "max") patch.val = Math.min(Number(patch.val || 0), Number(value || 1));
-    if (field === "val") patch.val = Math.max(0, Math.min(Number(value || 0), Number(curr.max || 1)));
-    onUpdate({ status: { ...(ficha.status || {}), [key]: patch } });
+    const code = String(key || "").toUpperCase();
+    const runtime = combatStatus[code] || { mods: { base: 0, current: 0, max: 0 }, overflowMax: 0 };
+    const mods = runtime.mods || { base: 0, current: 0, max: 0 };
+    const baseShift = Number(mods.base || 0) + Number(mods.current || 0);
+    const maxShift = Number(mods.max || 0) + Number(runtime.overflowMax || 0);
+    if (field === "max") {
+      const nextBaseMax = Math.max(1, Math.floor(Number(effectiveValue || 1) - maxShift));
+      const nextBaseVal = Math.max(0, Math.min(nextBaseMax, Number(curr.val || 0)));
+      onUpdate({ status: { ...(ficha.status || {}), [key]: { ...curr, max: nextBaseMax, val: nextBaseVal } } });
+      return;
+    }
+    const nextEffectiveMax = Math.max(1, Math.floor(Number(runtime.max || curr.max || 1)));
+    const clampedEffectiveVal = Math.max(0, Math.min(nextEffectiveMax, Number(effectiveValue || 0)));
+    const nextBaseVal = Math.max(0, Math.min(Number(curr.max || 1), Math.floor(clampedEffectiveVal - baseShift)));
+    onUpdate({ status: { ...(ficha.status || {}), [key]: { ...curr, val: nextBaseVal } } });
   };
 
   const addReminder = () => {
@@ -805,7 +818,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
 
       {statusModal && (
         <StatusQuickModal
-          status={ficha?.status?.[statusModal.key] || { val: 0, max: 1 }}
+          status={combatStatus[statusModal.code] || ficha?.status?.[statusModal.key] || { val: 0, max: 1 }}
           statusDef={statusModal}
           previewCost={(previewCosts[statusModal.code] || previewCosts[statusModal.label] || 0)}
           onClose={() => setStatusModal(null)}

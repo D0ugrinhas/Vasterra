@@ -31,6 +31,9 @@ Os efeitos mecânicos aceitam múltiplos formatos e impactam a ficha em tempo re
   - atual: `+1ACO`, `-1REA`, `+2MOV`
   - máximo: `+1ACOMAX`, `+3REAMAX`
 
+> Efeitos ativos na aba **Combate** afetam diretamente a aba **Atributos & Perícias** enquanto estiverem ativos.
+> Exemplo: `+3FOR` aplica buff em FOR e `-5Atletismo` aplica debuff em Atletismo.
+
 ### Efeitos narrativos por rodada (toast/log)
 
 Quando o texto do efeito **não** é um modificador mecânico parseável, ele é tratado como narrativo e pode disparar mensagem por rodada:
@@ -44,6 +47,7 @@ Nesse caso, a expressão entre parênteses é rolada/calculada e exibida junto d
 
 - Campos de **ATUAL** e **MAX** aceitam número, expressão aritmética e dados (ex.: `2d4+3`, `for*2`, `vit+10`).
 - Fórmulas também consideram modificadores ativos de atributos/perícias/status ao montar o contexto de variáveis.
+- No Combate, status/recursos têm cálculo dinâmico de **ATUAL e MAX** com modificadores ativos (incluindo variações temporárias por efeito), e o reset de rodada usa o MAX efetivo atual.
 
 ## Rodar direto do GitHub
 
