@@ -38,7 +38,7 @@ function FormulaInput({ value, onChange, placeholder, suggestions = [] }) {
   const filtered = useMemo(() => {
     const tail = String(value || "").split(/[^A-Za-zÀ-ÿ0-9_]+/).pop() || "";
     if (!tail) return suggestions.slice(0, 8);
-    return suggestions.filter((s) => s.toLowerCase().includes(tail.toLowerCase())).slice(0, 8);
+    return suggestions.filter((s) => String(s.key || s).toLowerCase().includes(tail.toLowerCase())).slice(0, 8);
   }, [value, suggestions]);
 
   return (
@@ -54,9 +54,10 @@ function FormulaInput({ value, onChange, placeholder, suggestions = [] }) {
           if (e.key === "ArrowUp") { e.preventDefault(); setIdx((p) => (p - 1 + filtered.length) % filtered.length); }
           if (e.key === "Enter") {
             e.preventDefault();
-            const token = filtered[idx] || filtered[0];
+            const token = (filtered[idx] || filtered[0]);
+            const tokenKey = String(token?.key || token);
             const raw = String(value || "");
-            const next = raw.replace(/([A-Za-zÀ-ÿ0-9_]+)?$/, token);
+            const next = raw.replace(/([A-Za-zÀ-ÿ0-9_]+)?$/, tokenKey);
             onChange(next);
             setOpen(true)
           }
@@ -66,9 +67,9 @@ function FormulaInput({ value, onChange, placeholder, suggestions = [] }) {
       />
       {open && filtered.length > 0 && (
         <div style={{ position: "absolute", zIndex: 20, left: 0, right: 0, top: "102%", border: "1px solid #4f4028", borderRadius: 8, background: "#130f0a", maxHeight: 150, overflow: "auto" }}>
-          {filtered.map((s, i) => (
-            <div key={s} onMouseDown={() => onChange(String(value || "").replace(/([A-Za-zÀ-ÿ0-9_]+)?$/, s))} style={{ padding: "4px 6px", cursor: "pointer", background: i === idx ? "#2a1d0f" : "transparent", color: "#e7d5b1", fontFamily: "monospace", fontSize: 11 }}>{s}</div>
-          ))}
+          {filtered.map((s, i) => { const k = String(s?.key || s); const v = s?.value; return (
+            <div key={k} onMouseDown={() => onChange(String(value || "").replace(/([A-Za-zÀ-ÿ0-9_]+)?$/, k))} style={{ padding: "4px 6px", cursor: "pointer", background: i === idx ? "#2a1d0f" : "transparent", color: "#e7d5b1", fontFamily: "monospace", fontSize: 11, display:"flex", justifyContent:"space-between" }}><span>{k}</span><span style={{color:"#8fa7c8"}}>{Number.isFinite(Number(v)) ? v : ""}</span></div>
+          ); })}
         </div>
       )}
     </div>
@@ -205,7 +206,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
   const assigned = useMemo(() => (ficha?.skills || []).map((entry) => ({ entry, skill: skillFromEntry(entry) })), [ficha?.skills]);
   const filteredSkills = useMemo(() => assigned.filter(({ skill }) => (`${skill.nome || ""} ${skill.descricao || ""} ${(skill.custos || []).map((c) => c.codigo).join(" ")}`).toLowerCase().includes(query.toLowerCase())), [assigned, query]);
 
-  const activeEffects = useMemo(() => (ficha?.modificadores?.efeitos || []).filter((e) => e.ativo !== false), [ficha?.modificadores?.efeitos]);
+  const activeEffects = useMemo(() => (Array.isArray(ficha?.modificadores?.efeitos) ? ficha.modificadores.efeitos : []).filter((e) => e && e.ativo !== false), [ficha?.modificadores?.efeitos]);
   const activeStatusMods = useMemo(() => aggregateStatusModifiers(activeEffects), [activeEffects]);
   const pendingEntries = useMemo(() => assigned.filter(({ entry }) => combate.pendingSkillIds.includes(entry.id)), [assigned, combate.pendingSkillIds]);
 
@@ -360,8 +361,9 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
       statusLogs.push({ code, prevVal, nextVal, spent: qtd, max: Number(nextStatus[code]?.max || 1) });
     });
 
-    const usedSkills = pendingEntries.map(({ skill }) => skill.nome || "Skill").join(", ") || "sem skills";
-    let nextLogs = addLog(`Rodada ${nextRound} encerrada • Skills: ${usedSkills}.`, nextRound, undefined, { kind: "round" });
+    const usedSkillMeta = pendingEntries.map(({ skill }) => ({ nome: skill.nome || "Skill", icone: skillIconSrc(skill) || skill.icone || "⚔" }));
+    const usedSkills = usedSkillMeta.map((s) => s.nome).join(", ") || "sem skills";
+    let nextLogs = addLog(`Rodada ${nextRound} encerrada • Skills: ${usedSkills}.`, nextRound, undefined, { kind: "round", skills: usedSkillMeta });
     if (resourceLogs.length) nextLogs = addLog("Recursos atualizados.", nextRound, nextLogs, { kind: "resource", changes: resourceLogs });
     else nextLogs = addLog("Recursos resetados para o máximo.", nextRound, nextLogs, { kind: "resource" });
     if (statusLogs.length) nextLogs = addLog("Status atualizados.", nextRound, nextLogs, { kind: "status", changes: statusLogs });
@@ -475,7 +477,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
             <div key={`rod-${group.rodada}`} style={{ marginBottom: 8 }}>
               <div style={{ color: "#e0bd84", fontFamily: "'Cinzel',serif", fontSize: 12, marginBottom: 4, borderBottom: "1px dashed #5d4728" }}>Rodada {group.rodada}</div>
               {group.items.map((log) => (
-                <button key={log.id} className="combat-log-item" onClick={() => setLogDetail(log)} style={{ textAlign: "left", cursor: "pointer" }}>
+                <button key={log.id} className="combat-log-item" onClick={() => setLogDetail(log)} style={{ textAlign: "left", cursor: "pointer", width:"100%", boxSizing:"border-box" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", color: "#bca57a", fontFamily: "monospace", fontSize: 10 }}>
                     <span>{log.kind === "resource" ? "Recursos" : log.kind === "status" ? "Status" : "Evento"}</span>
                     <span>{new Date(log.em || Date.now()).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
@@ -682,7 +684,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
         />
       )}
 
-      {logDetail && <Modal title={`Log R${logDetail.rodada}`} onClose={() => setLogDetail(null)}><div style={{ display: "grid", gap: 8 }}><div style={{ color: "#f2dfbe", fontFamily: "monospace" }}>{logDetail.mensagem}</div><pre style={{ margin:0, whiteSpace:"pre-wrap", color:"#b7c6dd", fontFamily:"monospace", fontSize:11 }}>{JSON.stringify(logDetail, null, 2)}</pre></div></Modal>}
+      {logDetail && <Modal title={`Log R${logDetail.rodada}`} onClose={() => setLogDetail(null)}><div style={{ display: "grid", gap: 8 }}><div style={{ color: "#f2dfbe", fontFamily: "monospace" }}>{logDetail.mensagem}</div>{Array.isArray(logDetail.skills) && <div style={{display:"flex", gap:6, flexWrap:"wrap"}}>{logDetail.skills.map((s,i)=><span key={i} style={{display:"inline-flex",gap:4,alignItems:"center",padding:"2px 8px",border:"1px solid #5d4728",borderRadius:999,color:"#e8d2aa"}}><span>{s.icone}</span><span>{s.nome}</span></span>)}</div>}{Array.isArray(logDetail.changes) && <div style={{display:"grid",gap:4}}>{logDetail.changes.map((c,i)=><div key={i} style={{color:"#b7c6dd",fontFamily:"monospace",fontSize:11}}>{c.code || ""} {c.prevVal != null ? `${c.prevVal}→${c.nextVal}` : c.spent != null ? `-${c.spent} / ${c.maxAfter}` : ""}</div>)}</div>}</div></Modal>}
       {effectDetail && <EffectDetailsModal effect={effectDetail} onClose={() => setEffectDetail(null)} />}
       {skillModal && <Modal title={`Skill: ${skillModal.nome || "Sem nome"}`} onClose={() => setSkillModal(null)} wide><SkillDetalhe skill={skillModal} tagsById={tagsById} /></Modal>}
     </div>
@@ -773,7 +775,7 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
   const [statusDraft, setStatusDraft] = useState({ codigo: "DET", label: "Determinação", cor: "#8dc2ff", val: 10, max: 10 });
 
   const formulaVars = useMemo(() => buildFormulaVars(ficha, statusState), [ficha, statusState]);
-  const formulaSuggestions = useMemo(() => Object.keys(formulaVars).sort(), [formulaVars]);
+  const formulaSuggestions = useMemo(() => Object.keys(formulaVars).sort().map((k) => ({ key: k, value: formulaVars[k] })), [formulaVars]);
 
   const applyStatusFormula = (code, nextMeta) => {
     const key = statusDefs.find((s) => s.code === code)?.key || code;

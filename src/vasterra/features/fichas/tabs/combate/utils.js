@@ -63,7 +63,11 @@ export function evaluateStatusFormula(expression, context = {}) {
 
 export function buildFormulaVars(ficha = {}, statusState = {}) {
   const vars = {};
-  Object.entries(ficha?.atributos || {}).forEach(([k, v]) => { vars[String(k).toLowerCase()] = Number(v || 0); });
+  Object.entries(ficha?.atributos || {}).forEach(([k, v]) => {
+    const num = Number((v && typeof v === "object") ? (v.val ?? v.valor ?? 0) : (v || 0));
+    vars[String(k).toLowerCase()] = Number.isFinite(num) ? num : 0;
+    vars[String(k).toUpperCase()] = Number.isFinite(num) ? num : 0;
+  });
   const attrAlias = {
     forca: "for", força: "for", vigor: "vig", destreza: "des", agilidade: "des",
     constituicao: "const", constituição: "const", inteligencia: "int", inteligência: "int",
@@ -73,7 +77,9 @@ export function buildFormulaVars(ficha = {}, statusState = {}) {
 
   Object.entries(ficha?.pericias || {}).forEach(([k, v]) => {
     const key = String(k).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-    if (key) vars[key] = Number(v || 0);
+    const num = Number((v && typeof v === "object") ? (v.val ?? v.valor ?? 0) : (v || 0));
+    if (key) vars[key] = Number.isFinite(num) ? num : 0;
+    vars[String(k)] = Number.isFinite(num) ? num : 0;
   });
 
   Object.entries(statusState || {}).forEach(([k, v]) => {
