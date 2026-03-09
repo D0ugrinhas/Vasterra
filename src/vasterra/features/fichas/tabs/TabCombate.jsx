@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { uid } from "../../../core/factories";
 import { instantiateEffectFromTemplate } from "../../../core/effects";
+import { aggregateStatusModifiers } from "../../../core/effects";
 import { RANK_COR } from "../../../data/gameData";
 import { G, btnStyle, inpStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
@@ -42,9 +43,55 @@ function effectIconSrc(effect = {}) {
 }
 
 function parseDurationRounds(effect) {
-  const dur = toNumber(effect?.duracaoRolada ?? effect?.duracao ?? effect?.duracaoRodadas ?? 0, 0);
-  if (dur <= 0) return 0;
-  return Math.max(0, Math.floor(dur));
+  if (effect?.duracaoRolada != null && Number(effect?.duracaoRolada) > 0) {
+    return Math.max(0, Math.floor(Number(effect?.duracaoRolada)));
+  }
+  const raw = String(effect?.duracaoExpressao ?? effect?.duracao ?? effect?.duracaoRodadas ?? "").trim();
+  if (!raw) return 0;
+  const normalized = raw.toLowerCase().replace(/rodadas?/g, "").replace(/\s+/g, "").replace(/,/g, ".");
+  if (!normalized) return 0;
+  if (/^[+-]?\d+(\.\d+)?$/.test(normalized)) return Math.max(0, Math.floor(Number(normalized)));
+  const diceRegex = /(\d*)d(\d+)/g;
+  let expr = normalized;
+  let m;
+  while ((m = diceRegex.exec(normalized)) !== null) {
+    const qtd = Math.max(1, Number(m[1] || 1));
+    const faces = Math.max(2, Number(m[2] || 2));
+    let total = 0;
+    for (let i = 0; i < qtd; i += 1) total += 1 + Math.floor(Math.random() * faces);
+    expr = expr.replace(m[0], String(total));
+  }
+  if (!/^[0-9+\-*/().]+$/.test(expr)) return 0;
+  try {
+    const val = Function(`"use strict"; return (${expr});`)();
+    return Math.max(0, Math.floor(Number(val) || 0));
+  } catch {
+    return 0;
+  }
+}
+
+function evaluateStatusFormula(expression, context = {}) {
+  const raw = String(expression || "").trim();
+  if (!raw) return null;
+  const normalized = raw
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\^/g, "**");
+  if (!/^[a-z0-9_+\-*/().\s]+$/.test(normalized)) return null;
+  const vars = {
+    x: Number(context.x || 0),
+    ...Object.fromEntries(Object.entries(context.vars || {}).map(([k, v]) => [String(k).toLowerCase(), Number(v || 0)])),
+  };
+  try {
+    const keys = Object.keys(vars);
+    const values = keys.map((k) => vars[k]);
+    const fn = Function(...keys, `return (${normalized});`);
+    const value = Number(fn(...values));
+    return Number.isFinite(value) ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 function durationInfo(effect, rodadaAtual) {
@@ -168,7 +215,22 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
   const filteredSkills = useMemo(() => assigned.filter(({ skill }) => (`${skill.nome || ""} ${skill.descricao || ""} ${(skill.custos || []).map((c) => c.codigo).join(" ")}`).toLowerCase().includes(query.toLowerCase())), [assigned, query]);
 
   const activeEffects = useMemo(() => (ficha?.modificadores?.efeitos || []).filter((e) => e.ativo !== false), [ficha?.modificadores?.efeitos]);
+  const activeStatusMods = useMemo(() => aggregateStatusModifiers(activeEffects), [activeEffects]);
   const pendingEntries = useMemo(() => assigned.filter(({ entry }) => combate.pendingSkillIds.includes(entry.id)), [assigned, combate.pendingSkillIds]);
+
+  const combatStatus = useMemo(() => {
+    const out = {};
+    Object.entries(ficha?.status || {}).forEach(([key, data]) => {
+      const code = key.toUpperCase();
+      const mods = activeStatusMods[code] || { base: 0, current: 0, max: 0 };
+      const baseVal = Number(data?.val || 0);
+      const baseMax = Math.max(1, Number(data?.max || 1));
+      const max = Math.max(1, Math.floor(baseMax + mods.base + mods.max));
+      const val = Math.max(0, Math.min(max, Math.floor(baseVal + mods.base + mods.current)));
+      out[code] = { baseVal, baseMax, val, max, mods };
+    });
+    return out;
+  }, [ficha?.status, activeStatusMods]);
 
   const statusDefs = useMemo(() => {
     const all = Object.keys(ficha?.status || {}).map((key) => {
@@ -211,7 +273,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
   ), [combate.recursos, previewCosts]);
 
   const byResource = new Map((combate.recursos || []).map((r) => [r.codigo, r]));
-  const byStatus = new Map(Object.entries(ficha?.status || {}).map(([k, v]) => [k.toUpperCase(), v]));
+  const byStatus = new Map(Object.entries(combatStatus || {}).map(([k, v]) => [k.toUpperCase(), v]));
   const resolveCode = (code) => (code === "CONSC" ? "CONS" : code);
 
   const canCloseRound = Object.entries(previewCosts).every(([rawCode, qtd]) => {
@@ -282,7 +344,8 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
       }
       if (!nextStatus[code]) return;
       const prevVal = Number(nextStatus[code].val || 0);
-      const nextVal = Math.max(0, prevVal - qtd);
+      const effective = Number(combatStatus[code]?.val ?? prevVal);
+      const nextVal = Math.max(0, prevVal - Math.max(0, qtd - Math.max(0, effective - prevVal)));
       nextStatus[code] = { ...nextStatus[code], val: nextVal };
       statusLogs.push(`${code}: ${prevVal}→${nextVal} (-${qtd})`);
     });
@@ -406,7 +469,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
       <div className="combat-card" style={{ padding: 10, display: "grid", gridTemplateRows: "auto auto 1fr" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 8, marginBottom: 10 }}>
           {statusDefs.map((st) => {
-            const status = ficha?.status?.[st.key] || { val: 0, max: 1 };
+            const status = combatStatus[st.code] || { val: 0, max: 1 };
             const pct = Math.max(0, Math.min(100, (Number(status.val || 0) / Math.max(1, Number(status.max || 1))) * 100));
             const spendPreview = previewCosts[st.code] || previewCosts[st.label] || 0;
             const previewVal = Math.max(0, Number(status.val || 0) - spendPreview);
@@ -480,6 +543,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
             {Object.keys(previewCosts).length === 0 && <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Nenhum custo selecionado.</span>}
           </div>
           <div style={{ color: canCloseRound ? "#8ef7a9" : "#ff8f8f", fontFamily: "monospace", fontSize: 11 }}>{canCloseRound ? "Pronto para avançar rodada." : "Custos inválidos para rodada atual."}</div>
+          {activeEffects.length > 0 && <div style={{ color: "#9cc8ff", fontFamily: "monospace", fontSize: 10, marginTop: 4 }}>Efeitos ativos aplicados aos status: {activeEffects.length}</div>}
         </div>
       </div>
 
@@ -675,6 +739,36 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
   const [resourceDraft, setResourceDraft] = useState({ codigo: "", nome: "", cor: "#e0b44c", shape: "square", total: 1, atual: 1 });
   const [statusDraft, setStatusDraft] = useState({ codigo: "DET", label: "Determinação", cor: "#8dc2ff", val: 10, max: 10 });
 
+  const formulaVars = useMemo(() => {
+    const vars = {};
+    Object.entries(ficha?.atributos || {}).forEach(([k, v]) => { vars[k.toLowerCase()] = Number(v || 0); });
+    const attrAlias = {
+      forca: "for", força: "for", vigor: "vig", destreza: "des", agilidade: "des",
+      constituicao: "const", constituição: "const", inteligencia: "int", inteligência: "int",
+      sabedoria: "sab", carisma: "car", mentalidade: "ment", vontade: "vont",
+    };
+    Object.entries(attrAlias).forEach(([alias, source]) => { vars[alias] = Number(vars[source] || 0); });
+    Object.entries(statusState || {}).forEach(([k, v]) => {
+      vars[k.toLowerCase()] = Number(v?.val || 0);
+      vars[`${k.toLowerCase()}max`] = Number(v?.max || 0);
+    });
+    return vars;
+  }, [ficha?.atributos, statusState]);
+
+  const recalcStatusFormulas = () => {
+    const next = { ...(statusState || {}) };
+    Object.keys(next).forEach((key) => {
+      const code = key.toUpperCase();
+      const meta = statusMeta[code] || {};
+      const x = evaluateStatusFormula(meta.maxFormula, { vars: formulaVars }) ?? Number(next[key]?.max || 1);
+      const max = Math.max(1, Math.floor(x));
+      const valExpr = evaluateStatusFormula(meta.valFormula, { vars: formulaVars, x: max });
+      const val = Math.max(0, Math.min(max, Math.floor(valExpr ?? Number(next[key]?.val || 0))));
+      next[key] = { ...(next[key] || {}), max, val };
+    });
+    setStatusState(next);
+  };
+
   return (
     <Modal title="Configurações de Combate" onClose={onClose} wide>
       <div style={{ display: "grid", gap: 12 }}>
@@ -711,6 +805,20 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
                   <input type="number" value={st.val} onChange={(e) => setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || { val: 0, max: 1 }), val: Number(e.target.value) || 0 } }))} style={inpStyle()} />
                   <input type="number" value={st.max} onChange={(e) => setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || { val: 0, max: 1 }), max: Math.max(1, Number(e.target.value) || 1) } }))} style={inpStyle()} />
                   <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 11, alignSelf: "center" }}>{s.code}</span>
+                  <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                    <input
+                      value={meta.maxFormula || ""}
+                      onChange={(e) => setStatusMeta((p) => ({ ...p, [s.code]: { ...(p[s.code] || {}), maxFormula: e.target.value } }))}
+                      placeholder="Fórmula do MAX (ex: ((vigor / 2) * (vit / 6) + 1) + (vontade * (mentalidade * 4)))"
+                      style={inpStyle({ fontFamily: "monospace", fontSize: 11 })}
+                    />
+                    <input
+                      value={meta.valFormula || ""}
+                      onChange={(e) => setStatusMeta((p) => ({ ...p, [s.code]: { ...(p[s.code] || {}), valFormula: e.target.value } }))}
+                      placeholder="Fórmula do Atual (ex: (vit / 2) + x)"
+                      style={inpStyle({ fontFamily: "monospace", fontSize: 11 })}
+                    />
+                  </div>
                 </div>
               );
             })}
@@ -749,6 +857,7 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <HoverButton onClick={recalcStatusFormulas} style={btnStyle({ borderColor: "#4a6a8b", color: "#9cc8ff" })}>Recalcular fórmulas</HoverButton>
           <HoverButton onClick={onClose} style={btnStyle({ borderColor: "#4f4f4f", color: "#b8b8b8" })}>Fechar</HoverButton>
           <HoverButton onClick={() => { onSave({ recursos: list, statusMeta, status: statusState }); onClose(); }} style={btnStyle()}>Salvar</HoverButton>
         </div>
@@ -767,7 +876,16 @@ function EffectsModal({ efeitos, biblioteca, rodadaAtual, onClose, onChange }) {
   const attach = () => {
     const tpl = (biblioteca || []).find((x) => x.id === selectedLib);
     if (!tpl) return;
-    const inst = instantiateEffectFromTemplate(tpl, { rodadaInicio: rodadaAtual, ativo: true, origem: "Efeito", origemDetalhe: tpl.nome || "Caldeirão" });
+    const duracaoBase = String(tpl.duracaoExpressao || tpl.duracao || "").trim();
+    const duracaoRolada = parseDurationRounds({ duracaoExpressao: duracaoBase || "0" });
+    const inst = instantiateEffectFromTemplate(tpl, {
+      rodadaInicio: rodadaAtual,
+      ativo: true,
+      origem: "Efeito",
+      origemDetalhe: tpl.nome || "Caldeirão",
+      duracaoExpressao: duracaoBase,
+      duracaoRolada,
+    });
     onChange([inst, ...(efeitos || [])]);
   };
 
@@ -800,15 +918,22 @@ function EffectsModal({ efeitos, biblioteca, rodadaAtual, onClose, onChange }) {
             {(efeitos || []).map((ef) => {
               const dur = durationInfo(ef, rodadaAtual);
               return (
-                <div key={ef.id} style={{ border: "1px solid #333", borderRadius: 7, padding: 7, display: "grid", gridTemplateColumns: "1fr 100px auto auto", gap: 6, alignItems: "center" }}>
+                <div key={ef.id} style={{ border: "1px solid #333", borderRadius: 7, padding: 7, display: "grid", gridTemplateColumns: "1fr 100px auto auto auto", gap: 6, alignItems: "center" }}>
                   <div>
                     <div style={{ color: "#f2dfbe", fontFamily: "'Cinzel',serif", fontSize: 12 }}>{ef.nome || "Efeito"}</div>
                     <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 10 }}>{ef.ativo === false ? "Inativo (não aplicado)" : "Ativo"}{dur ? ` · Duração ${dur.restante}/${dur.total}` : ""}</div>
+                    <input
+                      value={ef.duracaoExpressao || ef.duracao || ""}
+                      onChange={(e) => onChange((efeitos || []).map((x) => (x.id === ef.id ? { ...x, duracaoExpressao: e.target.value } : x)))}
+                      placeholder="Duração: 2d4, 1d4+5, 3"
+                      style={inpStyle({ marginTop: 5, fontFamily: "monospace", fontSize: 10 })}
+                    />
                   </div>
                   <select value={ef.ativo === false ? "off" : "on"} onChange={(e) => onChange((efeitos || []).map((x) => (x.id === ef.id ? { ...x, ativo: e.target.value === "on" } : x)))} style={inpStyle()}>
                     <option value="on">Ativo</option>
                     <option value="off">Inativo</option>
                   </select>
+                  <HoverButton onClick={() => onChange((efeitos || []).map((x) => (x.id === ef.id ? { ...x, duracaoRolada: parseDurationRounds({ duracaoExpressao: x.duracaoExpressao || x.duracao || "0" }), rodadaInicio: rodadaAtual } : x)))} style={btnStyle({ borderColor: "#5c6a3f", color: "#c9eda0" })}>Rolar</HoverButton>
                   <HoverButton onClick={() => setInspect(ef)} style={btnStyle({ borderColor: "#4b6b8a", color: "#98cfff" })}>Detalhes</HoverButton>
                   <HoverButton onClick={() => onChange((efeitos || []).filter((x) => x.id !== ef.id))} style={btnStyle({ borderColor: "#87413a", color: "#ff9990" })}>✕</HoverButton>
                 </div>
