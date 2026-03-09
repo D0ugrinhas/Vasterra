@@ -9,10 +9,17 @@ import { SkillDetalhe } from "../../biblioteca/SkillDetalhe";
 import { ImageViewport } from "../../../components/media/ImageAttachModal";
 
 const CORE_RESOURCES = [
-  { codigo: "ACO", nome: "Ação", cor: "#2ecc71", shape: "square", total: 2 },
+  { codigo: "ACO", nome: "Ação", cor: "#2ecc71", shape: "circle", total: 2 },
   { codigo: "MOV", nome: "Movimento", cor: "#3498db", shape: "square", total: 1 },
-  { codigo: "REA", nome: "Reação", cor: "#e74c3c", shape: "square", total: 1 },
-  { codigo: "ESF", nome: "Esforço", cor: "#8b0000", shape: "square", total: 1 },
+  { codigo: "REA", nome: "Reação", cor: "#e74c3c", shape: "triangle", total: 1 },
+  { codigo: "ESF", nome: "Esforço", cor: "#8b0000", shape: "hexagon", total: 1 },
+];
+
+const SHAPE_OPTIONS = [
+  { value: "square", label: "Quadrado" },
+  { value: "circle", label: "Círculo" },
+  { value: "triangle", label: "Triângulo" },
+  { value: "hexagon", label: "Hexágono" },
 ];
 
 const CORE_STATUS_META = {
@@ -62,7 +69,7 @@ function normalizeCombateState(combate = {}) {
       codigo: core.codigo,
       nome: old?.nome || core.nome,
       cor: old?.cor || core.cor,
-      shape: "square",
+      shape: old?.shape || core.shape || "square",
       total,
       atual,
       custom: false,
@@ -78,7 +85,7 @@ function normalizeCombateState(combate = {}) {
         codigo: String(r.codigo || r.nome || "").toUpperCase() || "NOVO",
         nome: r.nome || "Recurso",
         cor: r.cor || "#7f8c8d",
-        shape: "square",
+        shape: r.shape || "square",
         total,
         atual: Math.max(0, Math.min(total, Math.floor(toNumber(r.atual ?? r.max ?? total, total)))),
         custom: true,
@@ -117,7 +124,13 @@ function skillIconSrc(skill = {}) {
   return "";
 }
 
-function ResourcePip({ active, color, onClick, title }) {
+function ResourcePip({ active, color, shape = "square", onClick, title }) {
+  const styleByShape = {
+    square: { borderRadius: "3px" },
+    circle: { borderRadius: "999px" },
+    triangle: { clipPath: "polygon(50% 6%, 96% 92%, 4% 92%)", borderRadius: 0 },
+    hexagon: { clipPath: "polygon(25% 6%, 75% 6%, 97% 50%, 75% 94%, 25% 94%, 3% 50%)", borderRadius: 0 },
+  };
   const common = {
     display: "inline-block",
     width: 17,
@@ -134,7 +147,7 @@ function ResourcePip({ active, color, onClick, title }) {
 
   return (
     <button title={title} onClick={onClick} style={{ border: "none", background: "transparent", padding: 0 }}>
-      <span style={common} />
+      <span style={{ ...common, ...(styleByShape[shape] || styleByShape.square) }} />
     </button>
   );
 }
@@ -190,17 +203,22 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     return sum;
   }, [pendingEntries]);
 
+  const previewRemainingByResource = useMemo(() => Object.fromEntries(
+    (combate.recursos || []).map((r) => [
+      r.codigo,
+      Math.max(0, Number(r.atual || 0) - Number(previewCosts[r.codigo] || 0)),
+    ]),
+  ), [combate.recursos, previewCosts]);
+
   const byResource = new Map((combate.recursos || []).map((r) => [r.codigo, r]));
   const byStatus = new Map(Object.entries(ficha?.status || {}).map(([k, v]) => [k.toUpperCase(), v]));
   const resolveCode = (code) => (code === "CONSC" ? "CONS" : code);
 
   const canCloseRound = Object.entries(previewCosts).every(([rawCode, qtd]) => {
     const code = resolveCode(rawCode);
-    const resource = byResource.get(code);
-    if (resource) return Number(resource.atual || 0) >= qtd;
     const status = byStatus.get(code);
     if (status) return Number(status.val || 0) >= qtd;
-    return false;
+    return true;
   });
 
   const saveCombate = (patch) => onUpdate({ combate: { ...(ficha.combate || {}), ...patch } });
@@ -242,21 +260,26 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
 
   const closeRound = () => {
     if (!canCloseRound) {
-      onNotify?.("Custos excedem os recursos/status atuais.", "error");
+      onNotify?.("Custos excedem os status atuais.", "error");
       return;
     }
 
     const nextRound = combate.rodadaAtual + 1;
-    const nextResources = combate.recursos.map((r) => {
-      const total = Math.max(0, Number(r.total || 0));
-      const gasto = Number(previewCosts[r.codigo] || 0);
-      return { ...r, atual: Math.max(0, total - gasto) };
-    });
+    const nextResources = combate.recursos.map((r) => ({ ...r, atual: Math.max(0, Number(r.total || 0)) }));
     const nextStatus = { ...(ficha.status || {}) };
     const statusLogs = [];
+    const resourceLogs = [];
 
     Object.entries(previewCosts).forEach(([rawCode, qtd]) => {
       const code = resolveCode(rawCode);
+      const resource = combate.recursos.find((r) => r.codigo === code);
+      if (resource) {
+        const prevVal = Number(resource.atual || 0);
+        const total = Math.max(0, Number(resource.total || 0));
+        const afterSpend = Math.max(0, prevVal - qtd);
+        resourceLogs.push(`${code}: ${prevVal}→${afterSpend} (gasto ${qtd}) ↺ ${total}`);
+        return;
+      }
       if (!nextStatus[code]) return;
       const prevVal = Number(nextStatus[code].val || 0);
       const nextVal = Math.max(0, prevVal - qtd);
@@ -264,15 +287,10 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
       statusLogs.push(`${code}: ${prevVal}→${nextVal} (-${qtd})`);
     });
 
-    const resourceLogs = nextResources
-      .map((r) => {
-        const prev = Number((combate.recursos.find((x) => x.id === r.id)?.atual) || 0);
-        return `${r.codigo}: ${prev}→${r.atual}/${r.total}`;
-      });
-
-    const roundLog = `Rodada ${nextRound}: ${pendingEntries.map(({ skill }) => skill.nome || "Skill").join(", ") || "sem skills"}.`;
-    let nextLogs = addLog(roundLog, nextRound);
-    if (resourceLogs.length) nextLogs = addLog(`Recursos: ${resourceLogs.join(" · ")}.`, nextRound, nextLogs);
+    const usedSkills = pendingEntries.map(({ skill }) => skill.nome || "Skill").join(", ") || "sem skills";
+    let nextLogs = addLog(`Rodada ${nextRound} encerrada • Skills: ${usedSkills}.`, nextRound);
+    if (resourceLogs.length) nextLogs = addLog(`Recursos (com recarga total): ${resourceLogs.join(" · ")}.`, nextRound, nextLogs);
+    else nextLogs = addLog("Recursos resetados para o máximo.", nextRound, nextLogs);
     if (statusLogs.length) nextLogs = addLog(`Status: ${statusLogs.join(" · ")}.`, nextRound, nextLogs);
 
     onUpdate({
@@ -318,24 +336,30 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
   return (
     <div style={{ display: "grid", gridTemplateColumns: "330px 1fr 390px", gap: 12, height: "100%" }}>
       <style>{`
-        .combat-card { border:1px solid ${G.border}; border-radius:12px; background:linear-gradient(180deg,#13100c,#0c0906); box-shadow:0 8px 30px rgba(0,0,0,.18); }
-        .resource-group:hover { border-color:#8a6e3e !important; transform:translateY(-1px); }
-        .skill-row:hover { border-color:#96713a !important; transform:translateY(-1px); }
-        @keyframes resourcePulse {
-          0%, 100% { transform: scale(1); }
-          50% { transform: scale(1.08); }
-        }
+        .combat-card { border:1px solid ${G.border}; border-radius:12px; background:linear-gradient(180deg,#13100c,#0c0906); box-shadow:0 8px 30px rgba(0,0,0,.18); transition:transform .25s ease, box-shadow .25s ease, border-color .25s ease; }
+        .combat-card:hover { transform: translateY(-2px); box-shadow:0 12px 32px rgba(0,0,0,.28); border-color:#7d6236; }
+        .resource-group:hover { border-color:#8a6e3e !important; transform:translateY(-1px) scale(1.01); }
+        .skill-row:hover { border-color:#96713a !important; transform:translateY(-1px) scale(1.01); }
+        .combat-log-item { border:1px solid #3e2f1d; border-radius:8px; padding:6px; background:linear-gradient(90deg,rgba(46,32,18,.7),rgba(16,12,8,.7)); animation:logEnter .25s ease; }
+        .combat-log-item:hover { border-color:#8b6a3a; background:linear-gradient(90deg,rgba(68,47,24,.75),rgba(27,19,12,.75)); }
+        .status-fill { transition: width .35s ease, filter .25s ease; animation: statusGlow 1.9s ease-in-out infinite; }
+        .status-card:hover .status-fill { filter: brightness(1.2); }
+        .round-chip { animation:roundPulse 1.6s ease-in-out infinite; }
+        @keyframes resourcePulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+        @keyframes statusGlow { 0%,100% { box-shadow:0 0 0 rgba(255,255,255,0); } 50% { box-shadow:0 0 8px rgba(255,255,255,.45); } }
+        @keyframes roundPulse { 0%,100% { text-shadow:0 0 0 rgba(255,220,160,.0); } 50% { text-shadow:0 0 12px rgba(255,220,160,.45); } }
+        @keyframes logEnter { from { opacity:0; transform:translateY(3px); } to { opacity:1; transform:translateY(0); } }
       `}</style>
 
       <div className="combat-card" style={{ padding: 10, display: "grid", gridTemplateRows: "auto auto 1fr auto" }}>
         <div style={{ fontFamily: "'Cinzel',serif", color: G.gold, fontSize: 13, letterSpacing: 2 }}>Rodadas</div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "8px 0 10px" }}>
           <HoverButton onClick={() => setRound(combate.rodadaAtual - 1)} style={btnStyle({ padding: "4px 8px" })}>◀</HoverButton>
-          <div style={{ color: "#d7c7aa", fontFamily: "monospace", fontSize: 18 }}>R{combate.rodadaAtual}</div>
+          <div className="round-chip" style={{ color: "#d7c7aa", fontFamily: "monospace", fontSize: 18 }}>R{combate.rodadaAtual}</div>
           <HoverButton onClick={() => setRound(combate.rodadaAtual + 1)} style={btnStyle({ padding: "4px 8px" })}>▶</HoverButton>
         </div>
         <div style={{ display: "grid", gap: 6, marginBottom: 8 }}>
-          <HoverButton style={btnStyle()} onClick={closeRound}>Próxima rodada (gastar)</HoverButton>
+          <HoverButton style={btnStyle()} onClick={closeRound}>Próxima rodada (gastar + recarregar)</HoverButton>
           <div style={{ display: "flex", gap: 6 }}>
             <HoverButton style={btnStyle({ flex: 1, borderColor: "#6b5b35", color: "#d7c193" })} onClick={() => setRemindersOpen(true)}>Lembretes</HoverButton>
             <HoverButton style={btnStyle({ flex: 1, borderColor: "#55739a", color: "#9dcbff" })} onClick={() => setEffectsOpen(true)}>Efeitos</HoverButton>
@@ -365,8 +389,16 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
         </div>
 
         <div style={{ marginTop: 10, border: "1px solid #3f3121", borderRadius: 8, padding: 8, background: "#0d0a07", minHeight: 120, overflow: "auto" }}>
-          <div style={{ color: "#c8b188", fontFamily: "monospace", fontSize: 11, marginBottom: 6 }}>Logs e situações</div>
-          {(combate.logs || []).slice(0, 14).map((log) => <div key={log.id} style={{ color: "#d7c8ae", fontFamily: "monospace", fontSize: 11, marginBottom: 3 }}>[R{log.rodada}] {log.mensagem}</div>)}
+          <div style={{ color: "#c8b188", fontFamily: "monospace", fontSize: 11, marginBottom: 6 }}>Linha do tempo da luta</div>
+          {(combate.logs || []).slice(0, 14).map((log) => (
+            <div key={log.id} className="combat-log-item">
+              <div style={{ display: "flex", justifyContent: "space-between", color: "#bca57a", fontFamily: "monospace", fontSize: 10 }}>
+                <span>Rodada {log.rodada}</span>
+                <span>{new Date(log.em || Date.now()).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+              </div>
+              <div style={{ color: "#e7d8bf", fontFamily: "monospace", fontSize: 11 }}>{log.mensagem}</div>
+            </div>
+          ))}
           {(combate.logs || []).length === 0 && <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Sem eventos recentes.</div>}
         </div>
       </div>
@@ -377,13 +409,16 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
             const status = ficha?.status?.[st.key] || { val: 0, max: 1 };
             const pct = Math.max(0, Math.min(100, (Number(status.val || 0) / Math.max(1, Number(status.max || 1))) * 100));
             const spendPreview = previewCosts[st.code] || previewCosts[st.label] || 0;
+            const previewVal = Math.max(0, Number(status.val || 0) - spendPreview);
+            const previewPct = Math.max(0, Math.min(100, (previewVal / Math.max(1, Number(status.max || 1))) * 100));
             return (
-              <button key={st.key} onClick={() => setStatusModal(st)} style={{ border: "1px solid #52422b", borderRadius: 8, background: "#0d0a07", padding: 6, textAlign: "left", cursor: "pointer" }}>
+              <button className="status-card" key={st.key} onClick={() => setStatusModal(st)} style={{ border: "1px solid #52422b", borderRadius: 8, background: "#0d0a07", padding: 6, textAlign: "left", cursor: "pointer", transition: "all .2s" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", color: st.cor, fontFamily: "monospace", fontSize: 11 }}>
                   <span>{st.label}</span>
                   <span>{status.val}/{status.max}</span>
                 </div>
-                <div style={{ height: 7, borderRadius: 4, background: "#221a12", margin: "5px 0" }}><div style={{ width: `${pct}%`, height: "100%", background: st.cor, borderRadius: 4, transition: "width .2s" }} /></div>
+                <div style={{ height: 7, borderRadius: 4, background: "#221a12", margin: "5px 0", overflow: "hidden" }}><div className="status-fill" style={{ width: `${pct}%`, height: "100%", background: st.cor, borderRadius: 4 }} /></div>
+                {spendPreview > 0 && <div style={{ height: 5, borderRadius: 4, background: "#221a12", overflow: "hidden" }}><div className="status-fill" style={{ width: `${previewPct}%`, height: "100%", background: `${st.cor}aa`, borderRadius: 4 }} /></div>}
                 <div style={{ display: "flex", justifyContent: "space-between", color: G.muted, fontFamily: "monospace", fontSize: 10 }}>
                   <span>Toque para editar</span>
                   {spendPreview > 0 ? <span style={{ color: "#ff9f9f" }}>- {spendPreview}</span> : <span>—</span>}
@@ -401,11 +436,12 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 8 }}>
             {(combate.recursos || []).map((r) => {
               const spendPreview = previewCosts[r.codigo] || 0;
+              const previewRemaining = previewRemainingByResource[r.codigo] ?? Number(r.atual || 0);
               return (
                 <button key={r.id} className="resource-group" onClick={() => setResourceModal(r)} style={{ border: "1px solid #4f4028", borderRadius: 9, padding: 7, transition: "all .2s", background: "transparent", textAlign: "left", cursor: "pointer" }}>
                   <div style={{ color: "#e7d5b1", fontFamily: "monospace", fontSize: 11, marginBottom: 5, display: "flex", justifyContent: "space-between" }}>
                     <span>{r.codigo}</span>
-                    <span style={{ color: G.muted }}>{r.atual}/{r.total}{spendPreview > 0 ? ` · -${spendPreview}` : ""}</span>
+                    <span style={{ color: G.muted }}>{r.atual}/{r.total}{spendPreview > 0 ? ` · prévia ${previewRemaining}/${r.total}` : ""}</span>
                   </div>
                   <div style={{ display: "flex", gap: 6, minHeight: 20, alignItems: "center", flexWrap: "wrap" }}>
                     {Array.from({ length: Number(r.total || 0) }).map((_, idx) => (
@@ -413,12 +449,20 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
                         key={`${r.id}-${idx}`}
                         color={r.cor}
                         active={idx < Number(r.atual || 0)}
+                        shape={r.shape || "square"}
                         title={`${r.codigo} ${idx + 1}/${r.total}`}
                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); togglePip(r, idx); }}
                       />
                     ))}
                     {Number(r.total || 0) === 0 && <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 10 }}>Defina em configurações</span>}
                   </div>
+                  {spendPreview > 0 && (
+                    <div style={{ display: "flex", gap: 5, marginTop: 5, flexWrap: "wrap", opacity: .85 }}>
+                      {Array.from({ length: Number(r.total || 0) }).map((_, idx) => (
+                        <ResourcePip key={`preview-${r.id}-${idx}`} color={r.cor} shape={r.shape || "square"} active={idx < previewRemaining} title="Prévia" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} />
+                      ))}
+                    </div>
+                  )}
                 </button>
               );
             })}
@@ -560,6 +604,7 @@ function ResourceQuickModal({ resource, previewCost, onClose, onToggle, onDelete
               key={`${resource.id}-${idx}`}
                             color={resource.cor}
               active={idx < Number(resource.atual || 0)}
+              shape={resource.shape || "square"}
               title={`${resource.codigo} ${idx + 1}/${resource.total}`}
               onClick={() => onToggle(idx)}
             />
@@ -627,7 +672,7 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
   const [list, setList] = useState(combate.recursos || []);
   const [statusMeta, setStatusMeta] = useState(combate.statusMeta || {});
   const [statusState, setStatusState] = useState(ficha?.status || {});
-  const [resourceDraft, setResourceDraft] = useState({ codigo: "", nome: "", cor: "#e0b44c", total: 1, atual: 1 });
+  const [resourceDraft, setResourceDraft] = useState({ codigo: "", nome: "", cor: "#e0b44c", shape: "square", total: 1, atual: 1 });
   const [statusDraft, setStatusDraft] = useState({ codigo: "DET", label: "Determinação", cor: "#8dc2ff", val: 10, max: 10 });
 
   return (
@@ -635,16 +680,17 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
       <div style={{ display: "grid", gap: 12 }}>
         <div style={{ border: "1px solid #3d2f1f", borderRadius: 8, padding: 10 }}>
           <div style={{ color: G.gold, marginBottom: 6, fontFamily: "'Cinzel',serif" }}>Recurso personalizado</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px 90px 90px auto", gap: 6 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px 140px 90px 90px auto", gap: 6 }}>
             <input value={resourceDraft.codigo} onChange={(e) => setResourceDraft((p) => ({ ...p, codigo: e.target.value.toUpperCase() }))} placeholder="Código" style={inpStyle()} />
             <input value={resourceDraft.nome} onChange={(e) => setResourceDraft((p) => ({ ...p, nome: e.target.value }))} placeholder="Nome" style={inpStyle()} />
             <input type="color" value={resourceDraft.cor} onChange={(e) => setResourceDraft((p) => ({ ...p, cor: e.target.value }))} style={inpStyle({ padding: 2 })} />
+            <select value={resourceDraft.shape} onChange={(e) => setResourceDraft((p) => ({ ...p, shape: e.target.value }))} style={inpStyle()}>{SHAPE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select>
             <input type="number" min={0} value={resourceDraft.atual} onChange={(e) => setResourceDraft((p) => ({ ...p, atual: Number(e.target.value) || 0 }))} style={inpStyle()} />
             <input type="number" min={0} value={resourceDraft.total} onChange={(e) => setResourceDraft((p) => ({ ...p, total: Number(e.target.value) || 0 }))} style={inpStyle()} />
             <HoverButton onClick={() => {
               if (!resourceDraft.codigo.trim()) return;
-              setList((prev) => [...prev, { id: uid(), ...resourceDraft, shape: "square" }]);
-              setResourceDraft({ codigo: "", nome: "", cor: "#e0b44c", total: 1, atual: 1 });
+              setList((prev) => [...prev, { id: uid(), ...resourceDraft }]);
+              setResourceDraft({ codigo: "", nome: "", cor: "#e0b44c", shape: "square", total: 1, atual: 1 });
             }} style={btnStyle()}>Adicionar</HoverButton>
           </div>
         </div>
@@ -694,7 +740,7 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
               <input value={r.codigo} onChange={(e) => setList((prev) => prev.map((x) => x.id === r.id ? { ...x, codigo: e.target.value.toUpperCase() } : x))} style={inpStyle()} />
               <input value={r.nome} onChange={(e) => setList((prev) => prev.map((x) => x.id === r.id ? { ...x, nome: e.target.value } : x))} style={inpStyle()} />
               <input type="color" value={r.cor} onChange={(e) => setList((prev) => prev.map((x) => x.id === r.id ? { ...x, cor: e.target.value } : x))} style={inpStyle({ padding: 2 })} />
-              <div style={{ ...inpStyle(), display: "grid", placeItems: "center", color: G.muted, fontSize: 11 }}>Quadrado</div>
+              <select value={r.shape || "square"} onChange={(e) => setList((prev) => prev.map((x) => x.id === r.id ? { ...x, shape: e.target.value } : x))} style={inpStyle()}>{SHAPE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select>
               <input type="number" min={0} value={r.atual} onChange={(e) => setList((prev) => prev.map((x) => x.id === r.id ? { ...x, atual: Number(e.target.value) || 0 } : x))} style={inpStyle()} />
               <input type="number" min={0} value={r.total} onChange={(e) => setList((prev) => prev.map((x) => x.id === r.id ? { ...x, total: Number(e.target.value) || 0 } : x))} style={inpStyle()} />
               <HoverButton onClick={() => setList((prev) => prev.filter((x) => x.id !== r.id))} style={btnStyle({ borderColor: "#87413a", color: "#ff9990" })}>✕</HoverButton>
