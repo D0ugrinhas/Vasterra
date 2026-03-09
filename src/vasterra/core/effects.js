@@ -48,7 +48,8 @@ function detectStatusTarget(code, canonical) {
 
 
 function resolveMechanicalRaw(it = {}) {
-  return it.efeitosMecanicos || it.efeitoMecanico || it.efeito || it.valor || "";
+  if (Array.isArray(it.efeitosMecanicos) && it.efeitosMecanicos.length) return it.efeitosMecanicos;
+  return it.efeitoMecanico || it.efeito || it.valor || "";
 }
 
 export function parseMechanicalEffect(raw = "") {

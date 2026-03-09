@@ -745,7 +745,15 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
             const src = skillIconSrc(skill);
             const rankCor = RANK_COR[skill.rank] || skill.cor || "#93a6bf";
             return (
-              <button key={entry.id} className="skill-row" onClick={() => toggleSkill(entry.id)} style={{ border: `1px solid ${selected ? "#9f7a3a" : "#443621"}`, borderRadius: 10, padding: 8, background: selected ? "#231a10" : "#0d0a07", transition: "all .2s", textAlign: "left", cursor: "pointer" }}>
+              <div
+                key={entry.id}
+                className="skill-row"
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleSkill(entry.id)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleSkill(entry.id); } }}
+                style={{ border: `1px solid ${selected ? "#9f7a3a" : "#443621"}`, borderRadius: 10, padding: 8, background: selected ? "#231a10" : "#0d0a07", transition: "all .2s", textAlign: "left", cursor: "pointer" }}
+              >
                 <div style={{ display: "grid", gridTemplateColumns: "44px 1fr auto", gap: 8, alignItems: "center" }}>
                   <div style={{ width: 44, height: 44, borderRadius: 8, border: "1px solid #6b5431", display: "grid", placeItems: "center", background: "#1d1409", overflow: "hidden" }}>
                     {src ? <ImageViewport src={src} alt={skill?.nome || "Skill"} size={40} radius={6} adjust={skill?.iconeAjuste} /> : <span style={{ fontSize: 18 }}>{skill?.icone || "?"}</span>}
@@ -771,7 +779,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
                   })}
                   {costs.length === 0 && <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 10 }}>Sem custo</span>}
                 </div>
-              </button>
+              </div>
             );
           })}
           {filteredSkills.length === 0 && <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 12 }}>Nenhuma skill encontrada.</div>}
