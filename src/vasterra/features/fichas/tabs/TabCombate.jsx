@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { uid } from "../../../core/factories";
 import { instantiateEffectFromTemplate, parseMechanicalEffects } from "../../../core/effects";
 import { aggregateModifiers, aggregateResourceModifiers, aggregateStatusModifiers } from "../../../core/effects";
+import { normalizePericiaKey } from "../../../core/effects";
 import { buildFormulaVars, evaluateStatusFormula, getMechanicalText, parseDurationRounds, toNumber } from "./combate/utils";
 import { RANK_COR } from "../../../data/gameData";
 import { G, btnStyle, inpStyle } from "../../../ui/theme";
@@ -289,6 +290,16 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
   const activeStatusMods = useMemo(() => { try { return aggregateStatusModifiers(activeEffects); } catch { return {}; } }, [activeEffects]);
   const activeResourceMods = useMemo(() => { try { return aggregateResourceModifiers(activeEffects); } catch { return {}; } }, [activeEffects]);
   const activeAttrMods = useMemo(() => { try { return aggregateModifiers(activeEffects, "atributos"); } catch { return {}; } }, [activeEffects]);
+  const activePericiaMods = useMemo(() => {
+    const out = {};
+    activeEffects.forEach((m) => {
+      parseMechanicalEffects(m?.efeitosMecanicos ?? m?.efeitoMecanico ?? m?.efeito ?? m?.valor ?? "").forEach((parsed) => {
+        if (!parsed || parsed.scope !== "pericias" || parsed.isPct) return;
+        out[parsed.key] = (out[parsed.key] || 0) + Number(parsed.value || 0);
+      });
+    });
+    return out;
+  }, [activeEffects]);
   const pendingCounts = combate.pendingSkillCounts && Object.keys(combate.pendingSkillCounts).length ? combate.pendingSkillCounts : Object.fromEntries((combate.pendingSkillIds || []).map((id) => [id, 1]));
   const pendingEntries = useMemo(() => assigned.filter(({ entry }) => Number(pendingCounts[entry.id] || 0) > 0).map((x) => ({ ...x, count: Math.max(1, Number(pendingCounts[x.entry.id] || 1)) })), [assigned, pendingCounts]);
 
@@ -309,7 +320,11 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
   const formulaFicha = useMemo(() => ({
     ...(ficha || {}),
     atributos: Object.fromEntries(Object.entries(ficha?.atributos || {}).map(([k, v]) => [k, { ...(v || {}), val: Number(v?.val || 0) + Number(activeAttrMods[k] || 0) }])),
-  }), [ficha, activeAttrMods]);
+    pericias: Object.fromEntries(Object.entries(ficha?.pericias || {}).map(([k, v]) => {
+      const code = normalizePericiaKey(k);
+      return [k, Number(v || 0) + Number(activePericiaMods[code] || 0)];
+    })),
+  }), [ficha, activeAttrMods, activePericiaMods]);
 
   const statusDefs = useMemo(() => {
     const all = Object.keys(ficha?.status || {}).map((key) => {
@@ -895,6 +910,7 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
   const [list, setList] = useState(combate.recursos || []);
   const [statusMeta, setStatusMeta] = useState(combate.statusMeta || {});
   const [statusState, setStatusState] = useState(ficha?.status || {});
+  const [statusInput, setStatusInput] = useState(() => Object.fromEntries(Object.entries(ficha?.status || {}).map(([k, v]) => [k, { val: String(v?.val ?? 0), max: String(v?.max ?? 1) }])));
   const [resourceDraft, setResourceDraft] = useState({ codigo: "", nome: "", cor: "#e0b44c", shape: "square", total: 1, atual: 1 });
   const [statusDraft, setStatusDraft] = useState({ codigo: "DET", label: "Determinação", cor: "#8dc2ff", val: 10, max: 10 });
 
@@ -911,6 +927,7 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
     const valExpr = evaluateStatusFormula(nextMeta.valFormula, { vars, x: max });
     const val = Math.max(0, Math.min(max, Math.floor(valExpr ?? Number(current.val || 0))));
     setStatusState((p) => ({ ...p, [key]: { ...(p[key] || {}), max, val } }));
+    setStatusInput((p) => ({ ...p, [key]: { val: String(val), max: String(max) } }));
   };
 
   return (
@@ -946,8 +963,31 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
                     <input value={meta.label || s.label} onChange={(e) => setStatusMeta((p) => ({ ...p, [s.code]: { ...(p[s.code] || {}), label: e.target.value, cor: (p[s.code]?.cor || s.cor) } }))} style={inpStyle()} />
                     <input type="color" value={meta.cor || s.cor} onChange={(e) => setStatusMeta((p) => ({ ...p, [s.code]: { ...(p[s.code] || {}), label: (p[s.code]?.label || s.label), cor: e.target.value } }))} style={inpStyle({ padding: 2 })} />
                   </div>
-                  <input type="text" value={st.val} onChange={(e) => setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || { val: 0, max: 1 }), val: Math.max(0, Math.floor(parseExpressionValue(e.target.value, Number(p[s.key]?.val || 0), { vars: formulaVars }))) } }))} style={inpStyle()} />
-                  <input type="text" value={st.max} onChange={(e) => setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || { val: 0, max: 1 }), max: Math.max(1, Math.floor(parseExpressionValue(e.target.value, Number(p[s.key]?.max || 1), { vars: formulaVars }))) } }))} style={inpStyle()} />
+                  <input
+                    type="text"
+                    value={statusInput[s.key]?.val ?? String(st.val)}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      setStatusInput((p) => ({ ...p, [s.key]: { ...(p[s.key] || { val: "0", max: "1" }), val: raw } }));
+                      const nextVal = Math.max(0, Math.floor(parseExpressionValue(raw, Number(statusState[s.key]?.val || 0), { vars: formulaVars })));
+                      setStatusState((p) => ({ ...p, [s.key]: { ...(p[s.key] || { val: 0, max: 1 }), val: Math.min(nextVal, Number(p[s.key]?.max || 1)) } }));
+                    }}
+                    style={inpStyle()}
+                  />
+                  <input
+                    type="text"
+                    value={statusInput[s.key]?.max ?? String(st.max)}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      setStatusInput((p) => ({ ...p, [s.key]: { ...(p[s.key] || { val: "0", max: "1" }), max: raw } }));
+                      const nextMax = Math.max(1, Math.floor(parseExpressionValue(raw, Number(statusState[s.key]?.max || 1), { vars: formulaVars })));
+                      setStatusState((p) => {
+                        const currVal = Number(p[s.key]?.val || 0);
+                        return { ...p, [s.key]: { ...(p[s.key] || { val: 0, max: 1 }), max: nextMax, val: Math.min(currVal, nextMax) } };
+                      });
+                    }}
+                    style={inpStyle()}
+                  />
                   <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 11, alignSelf: "center" }}>{s.code}</span>
                   <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, background: "#12100c", border: "1px solid #3f3121", borderRadius: 8, padding: 6 }}>
                     <div style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:6 }}><FormulaInput
@@ -980,6 +1020,7 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
                 const key = statusDraft.codigo.trim().toUpperCase();
                 if (!key) return;
                 setStatusState((p) => ({ ...p, [key]: { val: statusDraft.val, max: statusDraft.max } }));
+                setStatusInput((p) => ({ ...p, [key]: { val: String(statusDraft.val), max: String(statusDraft.max) } }));
                 setStatusMeta((p) => ({ ...p, [key]: { label: statusDraft.label || key, cor: statusDraft.cor } }));
               }} style={btnStyle({ borderColor: "#4e7c59", color: "#98e7ad" })}>Adicionar</HoverButton>
             </div>
