@@ -36,6 +36,12 @@ function toNumber(v, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+
+
+function getMechanicalText(effect = {}) {
+  if (Array.isArray(effect?.efeitosMecanicos) && effect.efeitosMecanicos.length) return effect.efeitosMecanicos.join(", ");
+  return effect?.efeitoMecanico || effect?.efeito || effect?.valor || "";
+}
 function effectIconSrc(effect = {}) {
   if (effect.iconeModo === "url" && effect.iconeUrl) return effect.iconeUrl;
   if (effect.iconeModo === "upload" && effect.iconeData) return effect.iconeData;
@@ -346,9 +352,11 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
 
   const canCloseRound = Object.entries(previewCosts).every(([rawCode, qtd]) => {
     const code = resolveCode(rawCode);
+    const resource = byResource.get(code);
+    if (resource) return Number(resource.atual || 0) >= qtd;
     const status = byStatus.get(code);
     if (status) return Number(status.val || 0) >= qtd;
-    return true;
+    return false;
   });
 
   const saveCombate = (patch) => onUpdate({ combate: { ...(ficha.combate || {}), ...patch } });
@@ -959,13 +967,14 @@ function EffectsModal({ efeitos, biblioteca, rodadaAtual, onClose, onChange }) {
   const [selectedLib, setSelectedLib] = useState("");
   const [inspect, setInspect] = useState(null);
 
-  const filteredLib = useMemo(() => (biblioteca || []).filter((ef) => `${ef.nome || ""} ${ef.descricao || ""} ${ef.efeitoMecanico || ""}`.toLowerCase().includes(query.toLowerCase())), [biblioteca, query]);
+  const filteredLib = useMemo(() => (biblioteca || []).filter((ef) => `${ef.nome || ""} ${ef.descricao || ""} ${getMechanicalText(ef)}`.toLowerCase().includes(query.toLowerCase())), [biblioteca, query]);
 
   const attach = () => {
     const tpl = (biblioteca || []).find((x) => x.id === selectedLib);
     if (!tpl) return;
     const duracaoBase = String(tpl.duracaoExpressao || tpl.duracao || "").trim();
     const duracaoRolada = parseDurationRounds({ duracaoExpressao: duracaoBase || "0" });
+    const mecanico = getMechanicalText(tpl);
     const inst = instantiateEffectFromTemplate(tpl, {
       rodadaInicio: rodadaAtual,
       ativo: true,
@@ -973,6 +982,8 @@ function EffectsModal({ efeitos, biblioteca, rodadaAtual, onClose, onChange }) {
       origemDetalhe: tpl.nome || "Caldeirão",
       duracaoExpressao: duracaoBase,
       duracaoRolada,
+      efeitoMecanico: mecanico,
+      efeitosMecanicos: Array.isArray(tpl?.efeitosMecanicos) ? tpl.efeitosMecanicos : [],
     });
     onChange([inst, ...(efeitos || [])]);
   };
@@ -994,7 +1005,7 @@ function EffectsModal({ efeitos, biblioteca, rodadaAtual, onClose, onChange }) {
             {filteredLib.map((ef) => (
               <div key={ef.id} style={{ border: `1px solid ${selectedLib === ef.id ? "#8f6f3d" : "#333"}`, borderRadius: 7, padding: 6, cursor: "pointer" }} onClick={() => setSelectedLib(ef.id)}>
                 <div style={{ color: "#f2dfbe", fontFamily: "'Cinzel',serif", fontSize: 12 }}>{ef.nome || "Sem nome"}</div>
-                <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 10 }}>{ef.efeitoMecanico || "Sem efeito mecânico"}</div>
+                <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 10 }}>{getMechanicalText(ef) || "Sem efeito mecânico"}</div>
               </div>
             ))}
           </div>
