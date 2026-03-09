@@ -51,8 +51,9 @@ export function evaluateStatusFormula(expression, context = {}) {
     ...Object.fromEntries(Object.entries(context.vars || {}).map(([k, v]) => [String(k).toLowerCase(), Number(v || 0)])),
   };
   try {
-    const keys = Object.keys(vars);
-    const values = keys.map((k) => vars[k]);
+    const entries = Object.entries(vars).filter(([k]) => /^[a-z_][a-z0-9_]*$/i.test(k));
+    const keys = entries.map(([k]) => k);
+    const values = entries.map(([, v]) => v);
     const fn = Function(...keys, `return (${normalized});`);
     const value = Number(fn(...values));
     return Number.isFinite(value) ? value : null;
@@ -79,7 +80,6 @@ export function buildFormulaVars(ficha = {}, statusState = {}) {
     const key = String(k).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
     const num = Number((v && typeof v === "object") ? (v.val ?? v.valor ?? 0) : (v || 0));
     if (key) vars[key] = Number.isFinite(num) ? num : 0;
-    vars[String(k)] = Number.isFinite(num) ? num : 0;
   });
 
   Object.entries(statusState || {}).forEach(([k, v]) => {
@@ -88,5 +88,12 @@ export function buildFormulaVars(ficha = {}, statusState = {}) {
     vars[`${k.toLowerCase()}max`] = Number(v?.max || 0);
     vars[`${k.toUpperCase()}MAX`] = Number(v?.max || 0);
   });
+
+  const semanticAlias = { vig: "vigor", vit: "vitalidade", ment: "mentalidade", for: "forca", des: "destreza", int: "inteligencia", sab: "sabedoria", car: "carisma", const: "constituicao" };
+  Object.entries(semanticAlias).forEach(([sigla, nome]) => {
+    if (vars[sigla] != null) vars[nome] = vars[sigla];
+    if (vars[sigla.toUpperCase()] != null) vars[nome.toUpperCase()] = vars[sigla.toUpperCase()];
+  });
+
   return vars;
 }

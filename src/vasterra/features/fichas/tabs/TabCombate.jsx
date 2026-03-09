@@ -207,7 +207,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
   const filteredSkills = useMemo(() => assigned.filter(({ skill }) => (`${skill.nome || ""} ${skill.descricao || ""} ${(skill.custos || []).map((c) => c.codigo).join(" ")}`).toLowerCase().includes(query.toLowerCase())), [assigned, query]);
 
   const activeEffects = useMemo(() => (Array.isArray(ficha?.modificadores?.efeitos) ? ficha.modificadores.efeitos : []).filter((e) => e && e.ativo !== false), [ficha?.modificadores?.efeitos]);
-  const activeStatusMods = useMemo(() => aggregateStatusModifiers(activeEffects), [activeEffects]);
+  const activeStatusMods = useMemo(() => { try { return aggregateStatusModifiers(activeEffects); } catch { return {}; } }, [activeEffects]);
   const pendingEntries = useMemo(() => assigned.filter(({ entry }) => combate.pendingSkillIds.includes(entry.id)), [assigned, combate.pendingSkillIds]);
 
   const combatStatus = useMemo(() => {
@@ -937,7 +937,7 @@ function EffectsModal({ efeitos, biblioteca, rodadaAtual, onClose, onChange }) {
         <div style={{ border: "1px solid #2f2f2f", borderRadius: 8, padding: 8 }}>
           <div style={{ color: G.gold, fontFamily: "'Cinzel',serif", marginBottom: 6 }}>Efeitos anexados</div>
           <div style={{ maxHeight: 340, overflow: "auto", display: "grid", gap: 6 }}>
-            {(efeitos || []).map((ef) => {
+            {(Array.isArray(efeitos) ? efeitos : []).filter(Boolean).map((ef) => {
               const dur = durationInfo(ef, rodadaAtual);
               return (
                 <div key={ef.id} style={{ border: "1px solid #333", borderRadius: 7, padding: 7, display: "grid", gridTemplateColumns: "1fr 100px auto auto auto", gap: 6, alignItems: "center" }}>
