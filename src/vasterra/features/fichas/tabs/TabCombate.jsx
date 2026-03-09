@@ -990,17 +990,17 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
 
   const localStatusDefs = useMemo(() => {
     const allCodes = Array.from(new Set([
-      ...Object.keys(statusState || {}).map((k) => String(k).toUpperCase()),
-      ...Object.keys(statusMeta || {}).map((k) => String(k).toUpperCase()),
+      ...Object.keys(statusState || {}).map((k) => normalizeStatusCode(k)),
+      ...Object.keys(statusMeta || {}).map((k) => normalizeStatusCode(k)),
     ]));
     return allCodes.map((code) => {
-      const key = Object.keys(statusState || {}).find((k) => String(k).toUpperCase() === code) || code;
-      const base = (statusDefs || []).find((s) => s.code === code) || { label: code, cor: "#9ca3af" };
-      const meta = statusMeta?.[code] || {};
+      const key = Object.keys(statusState || {}).find((k) => normalizeStatusCode(k) === code) || code;
+      const base = (statusDefs || []).find((s) => normalizeStatusCode(s.code) === code) || { label: code, cor: "#9ca3af" };
+      const meta = statusMeta?.[code] || (code === "CONSC" ? statusMeta?.CONS : null) || {};
       return { key, code, label: meta.label || base.label || code, cor: meta.cor || base.cor || "#9ca3af" };
     }).sort((a, b) => {
-      const ia = (statusDefs || []).findIndex((x) => x.code === a.code);
-      const ib = (statusDefs || []).findIndex((x) => x.code === b.code);
+      const ia = (statusDefs || []).findIndex((x) => normalizeStatusCode(x.code) === a.code);
+      const ib = (statusDefs || []).findIndex((x) => normalizeStatusCode(x.code) === b.code);
       if (ia === -1 && ib === -1) return a.code.localeCompare(b.code);
       if (ia === -1) return 1;
       if (ib === -1) return -1;
@@ -1027,13 +1027,13 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
 
   const statusEditorPreview = useMemo(() => {
     if (!statusEditor) return null;
-    const draftCode = String(statusEditor.draft?.code || "").trim().toUpperCase();
+    const draftCode = normalizeStatusCode(statusEditor.draft?.code);
     if (!draftCode) return null;
 
     const tempMeta = {
       ...(statusMeta || {}),
       [draftCode]: {
-        ...(statusMeta?.[draftCode] || {}),
+        ...(statusMeta?.[draftCode] || (draftCode === "CONSC" ? statusMeta?.CONS : null) || {}),
         label: statusEditor.draft.label || draftCode,
         cor: statusEditor.draft.cor || "#9ca3af",
         maxFormula: statusEditor.draft.maxFormula || "",
@@ -1041,18 +1041,19 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
       },
     };
 
-    const existing = statusState?.[draftCode] || {};
+    const existingKey = Object.keys(statusState || {}).find((k) => normalizeStatusCode(k) === draftCode) || draftCode;
+    const existing = statusState?.[existingKey] || {};
     const tempStatus = {
       ...(statusState || {}),
-      [draftCode]: {
+      [existingKey]: {
         val: Math.max(0, Number(existing.val ?? statusEditor.draft.val ?? statusEditor.draft.initialVal ?? 0) || 0),
         max: Math.max(1, Number(existing.max ?? statusEditor.draft.max ?? statusEditor.draft.initialMax ?? 1) || 1),
       },
     };
 
-    const tempDefs = localStatusDefs.some((s) => s.code === draftCode)
+    const tempDefs = localStatusDefs.some((s) => normalizeStatusCode(s.code) === draftCode)
       ? localStatusDefs
-      : [...localStatusDefs, { key: draftCode, code: draftCode, label: statusEditor.draft.label || draftCode, cor: statusEditor.draft.cor || "#9ca3af" }];
+      : [...localStatusDefs, { key: existingKey, code: draftCode, label: statusEditor.draft.label || draftCode, cor: statusEditor.draft.cor || "#9ca3af" }];
 
     return recomputeStatusByFormula(tempStatus, tempMeta, tempDefs);
   }, [statusEditor, statusMeta, statusState, localStatusDefs, formulaBaseFicha, list]);
@@ -1092,7 +1093,7 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
           <div style={{ color: G.gold, marginBottom: 6, fontFamily: "'Cinzel',serif" }}>Barras de status</div>
           <div style={{ display: "grid", gap: 8, maxHeight: 260, overflow: "auto" }}>
             {localStatusDefs.map((s) => {
-              const meta = statusMeta[s.code] || { label: s.label, cor: s.cor };
+              const meta = statusMeta[s.code] || (s.code === "CONSC" ? statusMeta.CONS : null) || { label: s.label, cor: s.cor };
               const st = statusState[s.key] || { val: 0, max: 1 };
               return (
                 <div key={s.key} style={{ border: "1px solid #3f3121", borderRadius: 8, padding: 8, background: "#120f0b", display: "grid", gap: 6 }}>
@@ -1107,7 +1108,12 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
                       <HoverButton onClick={() => setStatusEditor({ mode: "duplicate", status: s, draft: { code: `${s.code}_2`, label: `${meta.label || s.label} Cópia`, cor: meta.cor || s.cor, val: st.val, max: st.max, initialVal: st.val, initialMax: st.max, maxFormula: meta.maxFormula || "", valFormula: meta.valFormula || "" } })} style={btnStyle({ padding: "4px 8px", borderColor: "#6b5a34", color: "#d8bf8b" })}>Duplicar</HoverButton>
                       <HoverButton onClick={() => {
                         setStatusState((p) => { const n = { ...p }; delete n[s.key]; return n; });
-                        setStatusMeta((p) => { const n = { ...p }; delete n[s.code]; return n; });
+                        setStatusMeta((p) => {
+                          const n = { ...p };
+                          delete n[s.code];
+                          if (s.code === "CONSC") delete n.CONS;
+                          return n;
+                        });
                         setStatusInput((p) => { const n = { ...p }; delete n[s.key]; return n; });
                       }} style={btnStyle({ padding: "4px 8px", borderColor: "#87413a", color: "#ff9990" })}>Excluir</HoverButton>
                     </div>
@@ -1132,12 +1138,12 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
               <FormulaInput value={statusDraft.maxFormula || ""} onChange={(v) => setStatusDraft((p) => ({ ...p, maxFormula: v }))} suggestions={formulaSuggestions} placeholder="Fórmula do MAX" />
               <FormulaInput value={statusDraft.valFormula || ""} onChange={(v) => setStatusDraft((p) => ({ ...p, valFormula: v }))} suggestions={formulaSuggestions} placeholder="Fórmula do ATUAL" />
               <HoverButton onClick={() => {
-                const key = statusDraft.codigo.trim().toUpperCase();
+                const key = normalizeStatusCode(statusDraft.codigo);
                 if (!key) return;
                 const nextMeta = {
                   ...(statusMeta || {}),
                   [key]: {
-                    ...(statusMeta?.[key] || {}),
+                    ...(statusMeta?.[key] || (key === "CONSC" ? statusMeta?.CONS : null) || {}),
                     label: statusDraft.label || key,
                     cor: statusDraft.cor,
                     maxFormula: statusDraft.maxFormula || "",
@@ -1185,7 +1191,7 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
         <Modal title={`${statusEditor.mode === "duplicate" ? "Duplicar" : "Editar"} barra: ${statusEditor.status?.code || "Status"}`} onClose={() => setStatusEditor(null)}>
           <div style={{ display: "grid", gap: 8 }}>
             <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 56px", gap: 6 }}>
-              <input value={statusEditor.draft.code} onChange={(e) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, code: e.target.value.toUpperCase() } }))} style={inpStyle()} />
+              <input value={statusEditor.draft.code} onChange={(e) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, code: normalizeStatusCode(e.target.value) } }))} style={inpStyle()} />
               <input value={statusEditor.draft.label} onChange={(e) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, label: e.target.value } }))} style={inpStyle()} />
               <input type="color" value={statusEditor.draft.cor} onChange={(e) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, cor: e.target.value } }))} style={inpStyle({ padding: 2 })} />
             </div>
@@ -1195,26 +1201,29 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
             </div>
             <FormulaInput value={statusEditor.draft.maxFormula || ""} onChange={(v) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, maxFormula: v } }))} suggestions={formulaSuggestions} placeholder="Fórmula do MAX" />
             <FormulaInput value={statusEditor.draft.valFormula || ""} onChange={(v) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, valFormula: v } }))} suggestions={formulaSuggestions} placeholder="Fórmula do ATUAL" />
-            {statusEditorPreview?.[String(statusEditor.draft.code || "").trim().toUpperCase()] && (
+            {statusEditorPreview?.[normalizeStatusCode(statusEditor.draft.code)] && (
               <div style={{ color: "#9fe3a1", fontFamily: "monospace", fontSize: 11 }}>
-                Prévia: {statusEditorPreview[String(statusEditor.draft.code || "").trim().toUpperCase()].val}/{statusEditorPreview[String(statusEditor.draft.code || "").trim().toUpperCase()].max}
+                Prévia: {statusEditorPreview[normalizeStatusCode(statusEditor.draft.code)].val}/{statusEditorPreview[normalizeStatusCode(statusEditor.draft.code)].max}
               </div>
             )}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <HoverButton onClick={() => setStatusEditor(null)} style={btnStyle({ borderColor: "#4f4f4f", color: "#b8b8b8" })}>Cancelar</HoverButton>
               <HoverButton onClick={() => {
-                const code = String(statusEditor.draft.code || "").trim().toUpperCase();
+                const code = normalizeStatusCode(statusEditor.draft.code);
                 if (!code) return;
-                const exists = localStatusDefs.some((x) => x.code === code);
+                const exists = localStatusDefs.some((x) => normalizeStatusCode(x.code) === code);
                 if (statusEditor.mode === "duplicate" && exists) return;
-                const oldCode = statusEditor.status.code;
+                const oldCode = normalizeStatusCode(statusEditor.status.code);
                 const oldKey = statusEditor.status.key;
                 const key = code;
 
                 const nextStatusMeta = { ...(statusMeta || {}) };
-                if (code !== oldCode) delete nextStatusMeta[oldCode];
+                if (code !== oldCode) {
+                  delete nextStatusMeta[oldCode];
+                  if (oldCode === "CONSC") delete nextStatusMeta.CONS;
+                }
                 nextStatusMeta[code] = {
-                  ...(nextStatusMeta[code] || {}),
+                  ...(nextStatusMeta[code] || (code === "CONSC" ? nextStatusMeta.CONS : null) || {}),
                   label: statusEditor.draft.label || code,
                   cor: statusEditor.draft.cor,
                   maxFormula: statusEditor.draft.maxFormula || "",
