@@ -500,7 +500,10 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
       const effective = effectiveResources[code];
       return { ...r, atual: Math.max(0, Number(effective?.total ?? r.total ?? 0)) };
     });
-    const nextStatus = { ...(ficha.status || {}) };
+    const nextStatus = {
+      ...Object.fromEntries(Object.entries(combatStatus || {}).map(([code, st]) => [code, { val: Number(st?.baseVal || 0), max: Math.max(1, Number(st?.baseMax || 1)) }])),
+      ...(ficha.status || {}),
+    };
     const statusLogs = [];
     const resourceLogs = [];
 
@@ -514,11 +517,10 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
         resourceLogs.push({ code, prevVal, afterSpend, spent: qtd, total, maxAfter: total });
         return;
       }
-      if (!nextStatus[code]) return;
-      const prevVal = Number(nextStatus[code].val || 0);
+      const prevVal = Number(nextStatus[code]?.val || 0);
       const effective = Number(combatStatus[code]?.val ?? prevVal);
       const nextVal = Math.max(0, prevVal - Math.max(0, qtd - Math.max(0, effective - prevVal)));
-      nextStatus[code] = { ...nextStatus[code], val: nextVal };
+      nextStatus[code] = { ...(nextStatus[code] || { max: Math.max(1, Number(combatStatus[code]?.baseMax || 1)) }), val: nextVal };
       statusLogs.push({ code, prevVal, nextVal, spent: qtd, max: Number(nextStatus[code]?.max || 1) });
     });
 
