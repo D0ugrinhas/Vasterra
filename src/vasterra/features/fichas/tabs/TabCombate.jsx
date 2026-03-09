@@ -1017,6 +1017,37 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
     return next;
   };
 
+  const statusEditorPreview = useMemo(() => {
+    if (!statusEditor) return null;
+    const draftCode = String(statusEditor.draft?.code || "").trim().toUpperCase();
+    if (!draftCode) return null;
+
+    const tempMeta = {
+      ...(statusMeta || {}),
+      [draftCode]: {
+        ...(statusMeta?.[draftCode] || {}),
+        label: statusEditor.draft.label || draftCode,
+        cor: statusEditor.draft.cor || "#9ca3af",
+        maxFormula: statusEditor.draft.maxFormula || "",
+        valFormula: statusEditor.draft.valFormula || "",
+      },
+    };
+
+    const tempStatus = {
+      ...(statusState || {}),
+      [draftCode]: {
+        val: Number(statusEditor.draft.val || 0),
+        max: Math.max(1, Number(statusEditor.draft.max || 1)),
+      },
+    };
+
+    const tempDefs = localStatusDefs.some((s) => s.code === draftCode)
+      ? localStatusDefs
+      : [...localStatusDefs, { key: draftCode, code: draftCode, label: statusEditor.draft.label || draftCode, cor: statusEditor.draft.cor || "#9ca3af" }];
+
+    return recomputeStatusByFormula(tempStatus, tempMeta, tempDefs);
+  }, [statusEditor, statusMeta, statusState, localStatusDefs, formulaBaseFicha, list]);
+
   const applyStatusFormula = (code, nextMeta) => {
     const key = localStatusDefs.find((s) => s.code === code)?.key || code;
     const current = { ...(statusState[key] || { val: 0, max: 1 }) };
@@ -1034,7 +1065,7 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
       const next = recomputeStatusByFormula(prev, statusMeta, localStatusDefs);
       return JSON.stringify(next) === JSON.stringify(prev) ? prev : next;
     });
-  }, [formulaBaseFicha, localStatusDefs, statusMeta]);
+  }, [formulaBaseFicha, localStatusDefs, statusMeta, list]);
 
   return (
     <Modal title="Configurações de Combate" onClose={onClose} wide>
@@ -1146,6 +1177,11 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
             </div>
             <FormulaInput value={statusEditor.draft.maxFormula || ""} onChange={(v) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, maxFormula: v } }))} suggestions={formulaSuggestions} placeholder="Fórmula do MAX" />
             <FormulaInput value={statusEditor.draft.valFormula || ""} onChange={(v) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, valFormula: v } }))} suggestions={formulaSuggestions} placeholder="Fórmula do ATUAL" />
+            {statusEditorPreview?.[String(statusEditor.draft.code || "").trim().toUpperCase()] && (
+              <div style={{ color: "#9fe3a1", fontFamily: "monospace", fontSize: 11 }}>
+                Prévia: {statusEditorPreview[String(statusEditor.draft.code || "").trim().toUpperCase()].val}/{statusEditorPreview[String(statusEditor.draft.code || "").trim().toUpperCase()].max}
+              </div>
+            )}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <HoverButton onClick={() => setStatusEditor(null)} style={btnStyle({ borderColor: "#4f4f4f", color: "#b8b8b8" })}>Cancelar</HoverButton>
               <HoverButton onClick={() => {
@@ -1156,26 +1192,32 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
                 const oldCode = statusEditor.status.code;
                 const oldKey = statusEditor.status.key;
                 const key = code;
-                setStatusState((p) => {
-                  const base = { ...p };
-                  const curr = { val: statusEditor.draft.val, max: statusEditor.draft.max };
-                  if (code !== oldCode || key !== oldKey) delete base[oldKey];
-                  base[key] = curr;
-                  return base;
-                });
+
+                const nextStatusMeta = { ...(statusMeta || {}) };
+                if (code !== oldCode) delete nextStatusMeta[oldCode];
+                nextStatusMeta[code] = {
+                  ...(nextStatusMeta[code] || {}),
+                  label: statusEditor.draft.label || code,
+                  cor: statusEditor.draft.cor,
+                  maxFormula: statusEditor.draft.maxFormula || "",
+                  valFormula: statusEditor.draft.valFormula || "",
+                };
+
+                const nextStatusState = { ...(statusState || {}) };
+                if (code !== oldCode || key !== oldKey) delete nextStatusState[oldKey];
+                nextStatusState[key] = { val: Number(statusEditor.draft.val || 0), max: Math.max(1, Number(statusEditor.draft.max || 1)) };
+
+                const nextDefsBase = localStatusDefs.filter((s) => s.code !== oldCode);
+                const nextDefs = [...nextDefsBase, { key, code, label: statusEditor.draft.label || code, cor: statusEditor.draft.cor || "#9ca3af" }];
+
+                const recomputed = recomputeStatusByFormula(nextStatusState, nextStatusMeta, nextDefs);
+                setStatusMeta(nextStatusMeta);
+                setStatusState(recomputed);
                 setStatusInput((p) => {
-                  const base = { ...p };
-                  if (code !== oldCode || key !== oldKey) delete base[oldKey];
-                  base[key] = { val: String(statusEditor.draft.val), max: String(statusEditor.draft.max) };
-                  return base;
-                });
-                setStatusMeta((p) => {
-                  const base = { ...p };
-                  if (code !== oldCode) delete base[oldCode];
-                  base[code] = { ...(base[code] || {}), label: statusEditor.draft.label || code, cor: statusEditor.draft.cor, maxFormula: statusEditor.draft.maxFormula || "", valFormula: statusEditor.draft.valFormula || "" };
-                  const recomputed = recomputeStatusByFormula(statusState, base, localStatusDefs);
-                  setStatusState(recomputed);
-                  return base;
+                  const next = { ...(p || {}) };
+                  if (code !== oldCode || key !== oldKey) delete next[oldKey];
+                  next[key] = { val: String(recomputed[key]?.val ?? 0), max: String(recomputed[key]?.max ?? 1) };
+                  return next;
                 });
                 setStatusEditor(null);
               }} style={btnStyle()}>Salvar</HoverButton>
