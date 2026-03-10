@@ -112,6 +112,30 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
 
   const canConfirm = !!src;
 
+  const safeSetPointerCapture = (pointerId) => {
+    if (pointerId === undefined || pointerId === null) return;
+    const el = previewDragRef.current;
+    if (!el?.setPointerCapture) return;
+    try {
+      el.setPointerCapture(pointerId);
+    } catch (_) {
+      // Evita crash caso o ponteiro não esteja mais ativo no elemento.
+    }
+  };
+
+  const safeReleasePointerCapture = (pointerId) => {
+    if (pointerId === undefined || pointerId === null) return;
+    const el = previewDragRef.current;
+    if (!el?.releasePointerCapture) return;
+    try {
+      if (!el.hasPointerCapture || el.hasPointerCapture(pointerId)) {
+        el.releasePointerCapture(pointerId);
+      }
+    } catch (_) {
+      // Evita crash caso a captura já tenha sido perdida/liberada.
+    }
+  };
+
   const startDrag = (ev) => {
     if (!src) return;
     dragStateRef.current = {
@@ -121,7 +145,7 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
       baseX: adjust.offsetX,
       baseY: adjust.offsetY,
     };
-    previewDragRef.current?.setPointerCapture?.(ev.pointerId);
+    safeSetPointerCapture(ev.pointerId);
     setDragging(true);
   };
 
@@ -142,7 +166,7 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
     const state = dragStateRef.current;
     if (!state) return;
     if (state.pointerId !== undefined && ev?.pointerId !== undefined && state.pointerId !== ev.pointerId) return;
-    previewDragRef.current?.releasePointerCapture?.(state.pointerId);
+    safeReleasePointerCapture(state.pointerId);
     dragStateRef.current = null;
     setDragging(false);
   };
@@ -166,7 +190,7 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
       <div style={{ width: 900, maxWidth: "95vw", maxHeight: "92vh", overflow: "auto", background: G.bg2, border: `1px solid ${G.border2}`, borderRadius: 12, padding: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <div style={{ fontFamily: "'Cinzel',serif", color: G.gold, letterSpacing: 1 }}>{title}</div>
-          <button onClick={onClose} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>✕</button>
+          <button onClick={(ev) => { stopDrag(ev); onClose?.(); }} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>✕</button>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 260px", gap: 14 }}>
@@ -275,7 +299,7 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
-          <button onClick={onClose} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button>
+          <button onClick={(ev) => { stopDrag(ev); onClose?.(); }} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button>
           <button disabled={!canConfirm} onClick={() => canConfirm && onConfirm?.({ mode, url: mode === "url" ? url : "", data: mode === "upload" ? data : "", adjust: normalizeImageAdjust(adjust) })} style={btnStyle({ opacity: canConfirm ? 1 : 0.6, cursor: canConfirm ? "pointer" : "not-allowed" })}>Confirmar imagem</button>
         </div>
       </div>
