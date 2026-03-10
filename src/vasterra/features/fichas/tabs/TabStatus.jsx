@@ -1,13 +1,11 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { STATUS_CFG, ATRIBUTOS, ARSENAL_RANKS, RANK_COR } from "../../../data/gameData";
 import { aggregateModifiers, aggregateStatusModifiers } from "../../../core/effects";
 import { inventoryItemModifiers } from "../../../core/inventory";
 import { G, inpStyle, btnStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
 import { StatusBar } from "../../shared/components";
-import { Modal } from "../../shared/components";
 import { ImageAttachModal, ImageViewport } from "../../../components/media/ImageAttachModal";
-import { appendResourceFormulaVars, buildFormulaVars, evaluateStatusFormula } from "./combate/utils";
 
 const defaultInfo = {
   peso: "",
@@ -54,8 +52,6 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
   const [cRes, setCRes] = useState(null);
   const [burstRes, setBurstRes] = useState(null);
   const [imageModalOpen, setImageModalOpen] = useState(false);
-  const [formulaOpen, setFormulaOpen] = useState(false);
-  const [formulaDraft, setFormulaDraft] = useState({});
 
   const info = { ...defaultInfo, ...(ficha.informacoes || {}) };
   const avatarModeUI = (info.avatarModo === "url" || info.avatarModo === "upload") ? "image" : (info.avatarModo || "fallback");
@@ -73,14 +69,6 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
   };
 
   const baseStatusDefs = useMemo(() => STATUS_CFG.map((s) => ({ ...s, sigla: normalizeStatusCode(s.sigla) })), []);
-  const buildStatusVars = (statusMap) => {
-    const vars = appendResourceFormulaVars(buildFormulaVars(ficha, statusMap), ficha?.combate?.recursos || []);
-    if (vars.CONSC != null && vars.CONS == null) vars.CONS = vars.CONSC;
-    if (vars.consc != null && vars.cons == null) vars.cons = vars.consc;
-    if (vars.CONSCMAX != null && vars.CONSMAX == null) vars.CONSMAX = vars.CONSCMAX;
-    if (vars.conscmax != null && vars.consmax == null) vars.consmax = vars.conscmax;
-    return vars;
-  };
   const statusCodes = useMemo(() => Array.from(new Set([
     ...baseStatusDefs.map((s) => s.sigla),
     ...Object.keys(ficha?.status || {}).map((k) => normalizeStatusCode(k)),
@@ -89,36 +77,11 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
 
   const computedStatusBase = useMemo(() => {
     const statusEntries = Object.entries(ficha?.status || {});
-    const meta = ficha?.combate?.statusMeta || {};
-    const seeded = Object.fromEntries(statusCodes.map((code) => {
+    return Object.fromEntries(statusCodes.map((code) => {
       const found = statusEntries.find(([k]) => normalizeStatusCode(k) === code)?.[1] || {};
       return [code, { val: Number(found?.val || 0), max: Math.max(1, Number(found?.max || 1)) }];
     }));
-    let next = { ...seeded };
-    for (let i = 0; i < 2; i += 1) {
-      const vars = buildStatusVars(next);
-      statusCodes.forEach((code) => {
-        const curr = next[code] || { val: 0, max: 1 };
-        const m = meta[code] || (code === "CONSC" ? meta.CONS : null) || {};
-        const maxEval = evaluateStatusFormula(m.maxFormula, { vars });
-        const max = Math.max(1, Math.floor(Number.isFinite(maxEval) ? maxEval : Number(curr.max || 1)));
-        const valEval = evaluateStatusFormula(m.valFormula, { vars, x: max });
-        const rawVal = Number.isFinite(valEval) ? valEval : Number(curr.val || 0);
-        next[code] = { ...curr, max, val: Math.max(0, Math.min(max, Math.floor(rawVal))) };
-      });
-    }
-    return next;
   }, [ficha, statusCodes]);
-
-  useEffect(() => {
-    const currentNormalized = Object.fromEntries(statusCodes.map((code) => {
-      const foundKey = Object.keys(ficha?.status || {}).find((k) => normalizeStatusCode(k) === code) || code;
-      const found = ficha?.status?.[foundKey] || {};
-      return [code, { val: Number(found?.val || 0), max: Math.max(1, Number(found?.max || 1)) }];
-    }));
-    if (JSON.stringify(currentNormalized) === JSON.stringify(computedStatusBase || {})) return;
-    onUpdate({ status: { ...(computedStatusBase || {}) } });
-  }, [computedStatusBase, ficha?.status, onUpdate, statusCodes]);
 
   const upStatus = (sigla, field, val) => {
     const code = normalizeStatusCode(sigla);
@@ -134,77 +97,25 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
     setCRes({ r1: Math.max(1, Math.ceil(Math.random() * 20) + diff), r2: Math.ceil(Math.random() * 20) });
   };
 
-  const openFormulaModal = () => {
-    setFormulaDraft({ ...(ficha?.combate?.statusMeta || {}) });
-    setFormulaOpen(true);
-  };
-
-  const saveFormulas = () => {
-    const nextMeta = { ...(ficha?.combate?.statusMeta || {}) };
-    statusCodes.forEach((code) => {
-      const prev = nextMeta[code] || (code === "CONSC" ? nextMeta.CONS : null) || {};
-      const draft = formulaDraft[code] || {};
-      nextMeta[code] = {
-        ...prev,
-        maxFormula: String(draft.maxFormula || "").trim(),
-        valFormula: String(draft.valFormula || "").trim(),
-      };
-      if (code === "CONSC") delete nextMeta.CONS;
-    });
-
-    const seeded = Object.fromEntries(statusCodes.map((code) => [
-      code,
-      {
-        val: Number(computedStatusBase?.[code]?.val || 0),
-        max: Math.max(1, Number(computedStatusBase?.[code]?.max || 1)),
-      },
-    ]));
-    let nextStatus = { ...seeded };
-    for (let i = 0; i < 2; i += 1) {
-      const vars = buildStatusVars(nextStatus);
-      statusCodes.forEach((code) => {
-        const curr = nextStatus[code] || { val: 0, max: 1 };
-        const m = nextMeta[code] || {};
-        const maxEval = evaluateStatusFormula(m.maxFormula, { vars });
-        const max = Math.max(1, Math.floor(Number.isFinite(maxEval) ? maxEval : Number(curr.max || 1)));
-        const valEval = evaluateStatusFormula(m.valFormula, { vars, x: max });
-        const rawVal = Number.isFinite(valEval) ? valEval : Number(curr.val || 0);
-        nextStatus[code] = { ...curr, max, val: Math.max(0, Math.min(max, Math.floor(rawVal))) };
-      });
-    }
-
-    onUpdate({
-      combate: { ...(ficha.combate || {}), statusMeta: nextMeta },
-      status: nextStatus,
-    });
-    setFormulaOpen(false);
-  };
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
       <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 14, paddingBottom: 8, borderBottom: "1px solid " + G.border }}>
-          <span>◈ INFORMAÇÕES · STATUS VITAIS</span>
-          <HoverButton onClick={openFormulaModal} style={btnStyle({ padding: "4px 8px", borderColor: "#4b6b8a", color: "#98cfff" })}>⚙ Fórmulas</HoverButton>
-        </div>
+        <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 14, paddingBottom: 8, borderBottom: "1px solid " + G.border }}><span>◈ INFORMAÇÕES · STATUS VITAIS</span></div>
         {statusCodes.map((code) => {
-          const meta = ficha?.combate?.statusMeta?.[code] || (code === "CONSC" ? ficha?.combate?.statusMeta?.CONS : null) || {};
           const baseCfg = baseStatusDefs.find((x) => x.sigla === code) || {};
-          const s = { sigla: code, nome: meta.label || baseCfg.nome || code, cor: meta.cor || baseCfg.cor || "#9ca3af", msg: baseCfg.msg };
+          const s = { sigla: code, nome: baseCfg.nome || code, cor: baseCfg.cor || "#9ca3af", msg: baseCfg.msg };
           const delta = statusBonus[code] || (code === "CONSC" ? statusBonus.CONS : null) || { base: 0, current: 0, max: 0 };
-          const isFormulaDriven = Boolean(String(meta.maxFormula || "").trim() || String(meta.valFormula || "").trim());
-          const formulaVal = Number(computedStatusBase?.[code]?.val || 0);
-          const formulaMax = Number(computedStatusBase?.[code]?.max || 1);
-          const val = isFormulaDriven ? formulaVal : (formulaVal + delta.base + delta.current);
-          const max = isFormulaDriven ? formulaMax : (formulaMax + delta.base + delta.max);
+          const val = Number(computedStatusBase?.[code]?.val || 0) + delta.base + delta.current;
+          const max = Number(computedStatusBase?.[code]?.max || 1) + delta.base + delta.max;
           return (
             <StatusBar
               key={s.sigla}
               {...s}
               val={Math.max(0, Math.min(Math.max(1, max), val))}
               max={Math.max(1, max)}
-              onVal={(v) => { if (!isFormulaDriven) upStatus(s.sigla, "val", v - delta.base - delta.current); }}
-              onMax={(v) => { if (!isFormulaDriven) upStatus(s.sigla, "max", v - delta.base - delta.max); }}
+              onVal={(v) => upStatus(s.sigla, "val", v - delta.base - delta.current)}
+              onMax={(v) => upStatus(s.sigla, "max", v - delta.base - delta.max)}
             />
           );
         })}
@@ -287,29 +198,6 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
           setImageModalOpen(false);
         }}
       />
-      {formulaOpen && (
-        <Modal title="Fórmulas das Barras de Status" onClose={() => setFormulaOpen(false)} wide>
-          <div style={{ display: "grid", gap: 8 }}>
-            {statusCodes.map((code) => {
-              const baseCfg = baseStatusDefs.find((x) => x.sigla === code) || {};
-              const meta = formulaDraft[code] || (ficha?.combate?.statusMeta?.[code] || {});
-              return (
-                <div key={code} style={{ border: "1px solid #2d3d4d", borderRadius: 8, padding: 8, display: "grid", gap: 6 }}>
-                  <div style={{ color: meta.cor || baseCfg.cor || "#9ca3af", fontFamily: "monospace" }}>{code} · {meta.label || baseCfg.nome || code}</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                    <input value={meta.maxFormula || ""} onChange={(e) => setFormulaDraft((p) => ({ ...p, [code]: { ...(p[code] || meta), maxFormula: e.target.value } }))} placeholder="Fórmula MAX" style={inpStyle()} />
-                    <input value={meta.valFormula || ""} onChange={(e) => setFormulaDraft((p) => ({ ...p, [code]: { ...(p[code] || meta), valFormula: e.target.value } }))} placeholder="Fórmula ATUAL" style={inpStyle()} />
-                  </div>
-                </div>
-              );
-            })}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <HoverButton onClick={() => setFormulaOpen(false)} style={btnStyle({ borderColor: "#4f4f4f", color: "#b8b8b8" })}>Cancelar</HoverButton>
-              <HoverButton onClick={saveFormulas} style={btnStyle()}>Salvar fórmulas</HoverButton>
-            </div>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }

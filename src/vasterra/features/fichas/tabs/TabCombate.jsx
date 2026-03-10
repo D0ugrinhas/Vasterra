@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { uid } from "../../../core/factories";
 import { instantiateEffectFromTemplate, parseMechanicalEffects } from "../../../core/effects";
-import { aggregateModifiers, aggregateResourceModifiers, aggregateStatusModifiers } from "../../../core/effects";
-import { normalizePericiaKey } from "../../../core/effects";
-import { appendResourceFormulaVars, buildFormulaVars, evaluateStatusFormula, getMechanicalText, parseDurationRounds, toNumber } from "./combate/utils";
+import { aggregateResourceModifiers, aggregateStatusModifiers } from "../../../core/effects";
+import { evaluateStatusFormula, getMechanicalText, parseDurationRounds, toNumber } from "./combate/utils";
 import { RANK_COR } from "../../../data/gameData";
 import { G, btnStyle, inpStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
@@ -253,31 +252,8 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
   const activeEffects = useMemo(() => (Array.isArray(ficha?.modificadores?.efeitos) ? ficha.modificadores.efeitos : []).filter((e) => e && e.ativo !== false), [ficha?.modificadores?.efeitos]);
   const activeStatusMods = useMemo(() => { try { return aggregateStatusModifiers(activeEffects); } catch { return {}; } }, [activeEffects]);
   const activeResourceMods = useMemo(() => { try { return aggregateResourceModifiers(activeEffects); } catch { return {}; } }, [activeEffects]);
-  const activeAttrMods = useMemo(() => { try { return aggregateModifiers(activeEffects, "atributos"); } catch { return {}; } }, [activeEffects]);
-  const activePericiaMods = useMemo(() => {
-    const out = {};
-    activeEffects.forEach((m) => {
-      const mechanicalRaw = Array.isArray(m?.efeitosMecanicos) && m.efeitosMecanicos.length
-        ? m.efeitosMecanicos
-        : (m?.efeitoMecanico || m?.efeito || m?.valor || "");
-      parseMechanicalEffects(mechanicalRaw).forEach((parsed) => {
-        if (!parsed || parsed.scope !== "pericias" || parsed.isPct) return;
-        out[parsed.key] = (out[parsed.key] || 0) + Number(parsed.value || 0);
-      });
-    });
-    return out;
-  }, [activeEffects]);
   const pendingCounts = combate.pendingSkillCounts && Object.keys(combate.pendingSkillCounts).length ? combate.pendingSkillCounts : Object.fromEntries((combate.pendingSkillIds || []).map((id) => [id, 1]));
   const pendingEntries = useMemo(() => assigned.filter(({ entry }) => Number(pendingCounts[entry.id] || 0) > 0).map((x) => ({ ...x, count: Math.max(1, Number(pendingCounts[x.entry.id] || 1)) })), [assigned, pendingCounts]);
-
-  const formulaFicha = useMemo(() => ({
-    ...(ficha || {}),
-    atributos: Object.fromEntries(Object.entries(ficha?.atributos || {}).map(([k, v]) => [k, { ...(v || {}), val: Number(v?.val || 0) + Number(activeAttrMods[k] || 0) }])),
-    pericias: Object.fromEntries(Object.entries(ficha?.pericias || {}).map(([k, v]) => {
-      const code = normalizePericiaKey(k);
-      return [k, Number(v || 0) + Number(activePericiaMods[code] || 0)];
-    })),
-  }), [ficha, activeAttrMods, activePericiaMods]);
 
   const computedStatusBase = useMemo(() => {
     const statusEntries = Object.entries(ficha?.status || {});
@@ -285,25 +261,11 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
       ...statusEntries.map(([k]) => normalizeStatusCode(k)),
       ...Object.keys(combate.statusMeta || {}).map((k) => normalizeStatusCode(k)),
     ])).filter(Boolean);
-    const base = Object.fromEntries(allStatusKeys.map((code) => {
+    return Object.fromEntries(allStatusKeys.map((code) => {
       const fromStatus = statusEntries.find(([k]) => normalizeStatusCode(k) === code)?.[1] || {};
       return [code, { val: Number(fromStatus?.val || 0), max: Math.max(1, Number(fromStatus?.max || 1)) }];
     }));
-    let next = { ...base };
-    for (let i = 0; i < 2; i += 1) {
-      const vars = appendResourceFormulaVars(buildFormulaVars(formulaFicha, next), combate.recursos || []);
-      allStatusKeys.forEach((code) => {
-        const curr = next[code] || { val: 0, max: 1 };
-        const meta = combate.statusMeta?.[code] || (code === "CONSC" ? combate.statusMeta?.CONS : null) || {};
-        const maxEval = evaluateStatusFormula(meta.maxFormula, { vars });
-        const max = Math.max(1, Math.floor(Number.isFinite(maxEval) ? maxEval : Number(curr.max || 1)));
-        const valEval = evaluateStatusFormula(meta.valFormula, { vars, x: max });
-        const rawVal = Number.isFinite(valEval) ? valEval : Number(curr.val || 0);
-        next[code] = { ...curr, max, val: Math.max(0, Math.min(max, Math.floor(rawVal))) };
-      });
-    }
-    return next;
-  }, [ficha?.status, formulaFicha, combate.statusMeta, combate.recursos]);
+  }, [ficha?.status, combate.statusMeta]);
 
   const combatStatus = useMemo(() => {
     const out = {};
@@ -789,7 +751,6 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
         combate={combate}
         statusDefs={statusDefs}
         ficha={ficha}
-        formulaFicha={formulaFicha}
         onClose={() => setSettingsOpen(false)}
         onSave={(payload) => {
           onUpdate({
@@ -926,7 +887,7 @@ function StatusQuickModal({ status, statusDef, previewCost, onClose, onApply, on
   );
 }
 
-function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSave }) {
+function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
   const [list, setList] = useState(combate.recursos || []);
   const [statusMeta, setStatusMeta] = useState(() => {
     const base = combate.statusMeta || {};
@@ -939,20 +900,6 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
   const [statusDraft, setStatusDraft] = useState({ codigo: "DET", label: "Determinação", cor: "#8dc2ff", val: 10, max: 10 });
   const [statusEditor, setStatusEditor] = useState(null);
 
-  const formulaBaseFicha = formulaFicha || ficha;
-  const buildVars = (currStatus = statusState) => {
-    const normalizedStatus = Object.fromEntries(
-      Object.entries(currStatus || {}).map(([k, v]) => [
-        normalizeStatusCode(k),
-        {
-          val: Math.max(0, Number(v?.val || 0)),
-          max: Math.max(1, Number(v?.max || 1)),
-        },
-      ]),
-    );
-    if (normalizedStatus.CONSC && !normalizedStatus.CONS) normalizedStatus.CONS = normalizedStatus.CONSC;
-    return appendResourceFormulaVars(buildFormulaVars(formulaBaseFicha, normalizedStatus), list || []);
-  };
   const localStatusDefs = useMemo(() => {
     const allCodes = Array.from(new Set([
       ...Object.keys(statusState || {}).map((k) => normalizeStatusCode(k)),
@@ -973,7 +920,7 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
     });
   }, [statusDefs, statusMeta, statusState]);
 
-  const recomputeStatusByFormula = (baseStatus, nextMeta, defs = localStatusDefs) => {
+  const normalizeStatusState = (baseStatus, defs = localStatusDefs) => {
     const normalizedBase = Object.fromEntries(
       Object.entries(baseStatus || {}).map(([k, v]) => [
         normalizeStatusCode(k),
@@ -983,29 +930,20 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
         },
       ]),
     );
-    let next = { ...normalizedBase };
-    for (let i = 0; i < 2; i += 1) {
-      const vars = buildVars(next);
-      (defs || []).forEach((s) => {
-        const code = normalizeStatusCode(s.code);
-        const meta = nextMeta?.[code] || (code === "CONSC" ? nextMeta?.CONS : null) || {};
-        const curr = next[code] || { val: 0, max: 1 };
-        const maxEval = evaluateStatusFormula(meta.maxFormula, { vars });
-        const max = Math.max(1, Math.floor(Number.isFinite(maxEval) ? maxEval : Number(curr.max || 1)));
-        const valEval = evaluateStatusFormula(meta.valFormula, { vars, x: max });
-        const rawVal = Number.isFinite(valEval) ? valEval : Number(curr.val || 0);
-        next[code] = { ...curr, max, val: Math.max(0, Math.min(max, Math.floor(rawVal))) };
-      });
-    }
+    const next = { ...normalizedBase };
+    (defs || []).forEach((s) => {
+      const code = normalizeStatusCode(s.code);
+      if (!next[code]) next[code] = { val: 0, max: 1 };
+    });
     return next;
   };
 
   useEffect(() => {
     setStatusState((prev) => {
-      const next = recomputeStatusByFormula(prev, statusMeta, localStatusDefs);
+      const next = normalizeStatusState(prev, localStatusDefs);
       return JSON.stringify(next) === JSON.stringify(prev) ? prev : next;
     });
-  }, [formulaBaseFicha, localStatusDefs, statusMeta, list]);
+  }, [localStatusDefs]);
 
   useEffect(() => {
     setStatusInput(Object.fromEntries(Object.entries(statusState || {}).map(([k, v]) => [k, { val: String(v?.val ?? 0), max: String(v?.max ?? 1) }])));
@@ -1088,7 +1026,7 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
                 const nextDefs = localStatusDefs.some((s) => normalizeStatusCode(s.code) === key)
                   ? localStatusDefs
                   : [...localStatusDefs, { key, code: key, label: statusDraft.label || key, cor: statusDraft.cor || "#9ca3af" }];
-                const recomputed = recomputeStatusByFormula(seeded, nextMeta, nextDefs);
+                const recomputed = normalizeStatusState(seeded, nextDefs);
                 setStatusMeta(nextMeta);
                 setStatusState(recomputed);
                 setStatusInput((p) => ({ ...p, [key]: { val: String(recomputed[key]?.val ?? 0), max: String(recomputed[key]?.max ?? 1) } }));
@@ -1114,7 +1052,7 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <HoverButton onClick={onClose} style={btnStyle({ borderColor: "#4f4f4f", color: "#b8b8b8" })}>Fechar</HoverButton>
           <HoverButton onClick={() => {
-            const nextStatus = recomputeStatusByFormula(statusState, statusMeta, localStatusDefs);
+            const nextStatus = normalizeStatusState(statusState, localStatusDefs);
             onSave({ recursos: list, statusMeta, status: nextStatus });
             onClose();
           }} style={btnStyle()}>Salvar</HoverButton>
@@ -1164,7 +1102,7 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
                 const nextDefsBase = localStatusDefs.filter((s) => normalizeStatusCode(s.code) !== oldCode);
                 const nextDefs = [...nextDefsBase, { key, code, label: statusEditor.draft.label || code, cor: statusEditor.draft.cor || "#9ca3af" }];
 
-                const recomputed = recomputeStatusByFormula(nextStatusState, nextStatusMeta, nextDefs);
+                const recomputed = normalizeStatusState(nextStatusState, nextDefs);
                 setStatusMeta(nextStatusMeta);
                 setStatusState(recomputed);
                 setStatusInput((p) => {
