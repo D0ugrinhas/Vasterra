@@ -192,9 +192,11 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
           const baseCfg = baseStatusDefs.find((x) => x.sigla === code) || {};
           const s = { sigla: code, nome: meta.label || baseCfg.nome || code, cor: meta.cor || baseCfg.cor || "#9ca3af", msg: baseCfg.msg };
           const delta = statusBonus[code] || (code === "CONSC" ? statusBonus.CONS : null) || { base: 0, current: 0, max: 0 };
-          const val = Number(computedStatusBase?.[code]?.val || 0) + delta.base + delta.current;
-          const max = Number(computedStatusBase?.[code]?.max || 1) + delta.base + delta.max;
           const isFormulaDriven = Boolean(String(meta.maxFormula || "").trim() || String(meta.valFormula || "").trim());
+          const formulaVal = Number(computedStatusBase?.[code]?.val || 0);
+          const formulaMax = Number(computedStatusBase?.[code]?.max || 1);
+          const val = isFormulaDriven ? formulaVal : (formulaVal + delta.base + delta.current);
+          const max = isFormulaDriven ? formulaMax : (formulaMax + delta.base + delta.max);
           return (
             <StatusBar
               key={s.sigla}
