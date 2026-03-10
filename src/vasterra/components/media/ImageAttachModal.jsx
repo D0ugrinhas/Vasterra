@@ -148,23 +148,15 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
     setDragging(false);
   };
 
-  useEffect(() => {
-    if (!dragging) return undefined;
-    const handleMove = (ev) => onDrag(ev);
-    const handleUp = () => stopDrag();
-    window.addEventListener("mousemove", handleMove);
-    window.addEventListener("mouseup", handleUp);
-    window.addEventListener("touchmove", handleMove, { passive: true });
-    window.addEventListener("touchend", handleUp);
-    window.addEventListener("touchcancel", handleUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMove);
-      window.removeEventListener("mouseup", handleUp);
-      window.removeEventListener("touchmove", handleMove);
-      window.removeEventListener("touchend", handleUp);
-      window.removeEventListener("touchcancel", handleUp);
-    };
-  }, [dragging]);
+  const onMouseMovePreview = (ev) => {
+    if (!dragging) return;
+    onDrag(ev);
+  };
+
+  const onTouchMovePreview = (ev) => {
+    if (!dragging) return;
+    onDrag(ev);
+  };
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(0,0,0,.75)", display: "grid", placeItems: "center" }}>
@@ -213,8 +205,14 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
               {src ? (
                 <div
                   onMouseDown={startDrag}
+                  onMouseMove={onMouseMovePreview}
+                  onMouseUp={stopDrag}
+                  onMouseLeave={stopDrag}
                   onTouchStart={startDrag}
-                  style={{ cursor: dragging ? "grabbing" : "grab", userSelect: "none" }}
+                  onTouchMove={onTouchMovePreview}
+                  onTouchEnd={stopDrag}
+                  onTouchCancel={stopDrag}
+                  style={{ cursor: dragging ? "grabbing" : "grab", userSelect: "none", touchAction: "none" }}
                 >
                   <ImageViewport src={src} alt="Prévia" size={280} radius={10} adjust={adjust} />
                 </div>
