@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { STATUS_CFG, ATRIBUTOS, ARSENAL_RANKS, RANK_COR } from "../../../data/gameData";
 import { aggregateModifiers, aggregateStatusModifiers } from "../../../core/effects";
 import { inventoryItemModifiers } from "../../../core/inventory";
@@ -102,6 +102,16 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
     return next;
   }, [ficha, statusCodes]);
 
+  useEffect(() => {
+    const currentNormalized = Object.fromEntries(statusCodes.map((code) => {
+      const foundKey = Object.keys(ficha?.status || {}).find((k) => normalizeStatusCode(k) === code) || code;
+      const found = ficha?.status?.[foundKey] || {};
+      return [code, { val: Number(found?.val || 0), max: Math.max(1, Number(found?.max || 1)) }];
+    }));
+    if (JSON.stringify(currentNormalized) === JSON.stringify(computedStatusBase || {})) return;
+    onUpdate({ status: { ...(ficha.status || {}), ...(computedStatusBase || {}) } });
+  }, [computedStatusBase, ficha?.status, onUpdate, statusCodes]);
+
   const upStatus = (sigla, field, val) => {
     const code = normalizeStatusCode(sigla);
     const key = Object.keys(ficha.status || {}).find((k) => normalizeStatusCode(k) === code) || code;
@@ -176,14 +186,15 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
           const delta = statusBonus[code] || (code === "CONSC" ? statusBonus.CONS : null) || { base: 0, current: 0, max: 0 };
           const val = Number(computedStatusBase?.[code]?.val || 0) + delta.base + delta.current;
           const max = Number(computedStatusBase?.[code]?.max || 1) + delta.base + delta.max;
+          const isFormulaDriven = Boolean(String(meta.maxFormula || "").trim() || String(meta.valFormula || "").trim());
           return (
             <StatusBar
               key={s.sigla}
               {...s}
               val={Math.max(0, Math.min(Math.max(1, max), val))}
               max={Math.max(1, max)}
-              onVal={(v) => upStatus(s.sigla, "val", v - delta.base - delta.current)}
-              onMax={(v) => upStatus(s.sigla, "max", v - delta.base - delta.max)}
+              onVal={(v) => { if (!isFormulaDriven) upStatus(s.sigla, "val", v - delta.base - delta.current); }}
+              onMax={(v) => { if (!isFormulaDriven) upStatus(s.sigla, "max", v - delta.base - delta.max); }}
             />
           );
         })}
