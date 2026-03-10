@@ -87,6 +87,7 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
   const [adjust, setAdjust] = useState(() => normalizeImageAdjust(initial?.adjust));
   const [dragging, setDragging] = useState(false);
   const dragStateRef = useRef(null);
+  const previewDragRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
@@ -94,6 +95,8 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
     setUrl(initial?.url || "");
     setData(initial?.data || "");
     setAdjust(normalizeImageAdjust(initial?.adjust));
+    dragStateRef.current = null;
+    setDragging(false);
   }, [open, initial]);
 
   const src = useMemo(() => (mode === "url" ? url : data), [mode, url, data]);
@@ -111,23 +114,52 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
 
   const startDrag = (ev) => {
     if (!src) return;
-    dragStateRef.current = { x: ev.clientX, y: ev.clientY, baseX: adjust.offsetX, baseY: adjust.offsetY };
+    dragStateRef.current = {
+      pointerId: ev.pointerId,
+      x: ev.clientX,
+      y: ev.clientY,
+      baseX: adjust.offsetX,
+      baseY: adjust.offsetY,
+    };
+    previewDragRef.current?.setPointerCapture?.(ev.pointerId);
     setDragging(true);
   };
+
   const onDrag = (ev) => {
-    if (!dragStateRef.current) return;
-    const deltaX = ev.clientX - dragStateRef.current.x;
-    const deltaY = ev.clientY - dragStateRef.current.y;
+    const state = dragStateRef.current;
+    if (!state) return;
+    if (state.pointerId !== undefined && ev.pointerId !== undefined && state.pointerId !== ev.pointerId) return;
+    const deltaX = ev.clientX - state.x;
+    const deltaY = ev.clientY - state.y;
     setAdjust((p) => ({
       ...p,
-      offsetX: dragStateRef.current.baseX + (deltaX / 280) * 100,
-      offsetY: dragStateRef.current.baseY + (deltaY / 280) * 100,
+      offsetX: state.baseX + (deltaX / 280) * 100,
+      offsetY: state.baseY + (deltaY / 280) * 100,
     }));
   };
-  const stopDrag = () => {
+
+  const stopDrag = (ev) => {
+    const state = dragStateRef.current;
+    if (!state) return;
+    if (state.pointerId !== undefined && ev?.pointerId !== undefined && state.pointerId !== ev.pointerId) return;
+    previewDragRef.current?.releasePointerCapture?.(state.pointerId);
     dragStateRef.current = null;
     setDragging(false);
   };
+
+  useEffect(() => {
+    if (!dragging) return undefined;
+    const handleMove = (ev) => onDrag(ev);
+    const handleUp = (ev) => stopDrag(ev);
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    window.addEventListener("pointercancel", handleUp);
+    return () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("pointercancel", handleUp);
+    };
+  }, [dragging]);
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(0,0,0,.75)", display: "grid", placeItems: "center" }}>
@@ -175,11 +207,11 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
             <div style={{ border: "1px solid #262626", borderRadius: 10, minHeight: 360, background: "#070707", display: "grid", placeItems: "center", position: "relative" }}>
               {src ? (
                 <div
+                  ref={previewDragRef}
                   onPointerDown={startDrag}
-                  onPointerMove={onDrag}
                   onPointerUp={stopDrag}
-                  onPointerLeave={stopDrag}
-                  style={{ cursor: dragging ? "grabbing" : "grab", touchAction: "none" }}
+                  onPointerCancel={stopDrag}
+                  style={{ cursor: dragging ? "grabbing" : "grab", touchAction: "none", userSelect: "none" }}
                 >
                   <ImageViewport src={src} alt="Prévia" size={280} radius={10} adjust={adjust} />
                 </div>
