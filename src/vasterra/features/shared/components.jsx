@@ -1,5 +1,5 @@
 import { evaluateMathExpression } from "../../core/mathExpression";
-import React, { useState } from "react";
+import React, { memo, useEffect, useMemo, useState } from "react";
 import { MOD_ORIGENS, STATUS_CFG } from "../../data/gameData";
 import { uid } from "../../core/factories";
 import { parseMechanicalEffects } from "../../core/effects";
@@ -44,18 +44,30 @@ export function Modal({ title, children, onClose, wide, closeOnBackdrop = false 
   );
 }
 
-export function StatusBar({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "", maxExpr = "", onValExpr, onMaxExpr }) {
+const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "", maxExpr = "", onValExpr, onMaxExpr }) => {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [draftValExpr, setDraftValExpr] = useState(valExpr || "");
   const [draftMaxExpr, setDraftMaxExpr] = useState(maxExpr || "");
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    if (detailsOpen) return;
+    setDraftValExpr(valExpr || "");
+    setDraftMaxExpr(maxExpr || "");
+    setDirty(false);
+  }, [valExpr, maxExpr, detailsOpen]);
+
   const pct = max > 0 ? Math.min(100, (val / max) * 100) : 0;
 
-  const maxPreview = evaluateMathExpression(draftMaxExpr, { fallback: max, min: 1 });
-  const valPreview = evaluateMathExpression(draftValExpr, { fallback: val, min: 0, max: maxPreview.value });
+  const previews = useMemo(() => {
+    const maxPreview = evaluateMathExpression(draftMaxExpr, { fallback: max, min: 1 });
+    const valPreview = evaluateMathExpression(draftValExpr, { fallback: val, min: 0, max: maxPreview.value });
+    return { maxPreview, valPreview };
+  }, [draftMaxExpr, draftValExpr, max, val]);
 
   return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+    <div style={{ marginBottom: 12, padding: "8px 10px", border: "1px solid #223447", borderRadius: 10, background: "linear-gradient(180deg,#0b1117,#090c10)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
         <span style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: cor, letterSpacing: 2 }}>
           {sigla} <span style={{ color: G.muted, fontSize: 10 }}>— {nome}</span>
         </span>
@@ -63,20 +75,16 @@ export function StatusBar({ sigla, nome, cor, val, max, onVal, onMax, valExpr = 
           <input
             type="number" min={0} max={max} value={val}
             onChange={e => onVal(Math.max(0, Math.min(max, Number(e.target.value) || 0)))}
-            style={inpStyle({ width: 44, textAlign: "center", padding: "2px 4px", fontSize: 13, color: cor })}
+            style={inpStyle({ width: 48, textAlign: "center", padding: "2px 4px", fontSize: 13, color: cor })}
           />
           <span style={{ color: G.muted }}>/</span>
           <input
             type="number" min={1} value={max}
             onChange={e => onMax(Math.max(1, Number(e.target.value) || 1))}
-            style={inpStyle({ width: 44, textAlign: "center", padding: "2px 4px", fontSize: 13 })}
+            style={inpStyle({ width: 48, textAlign: "center", padding: "2px 4px", fontSize: 13 })}
           />
           <button
-            onClick={() => {
-              setDraftValExpr(valExpr || "");
-              setDraftMaxExpr(maxExpr || "");
-              setDetailsOpen(true);
-            }}
+            onClick={() => setDetailsOpen(true)}
             title="Configuração detalhada"
             style={{ ...btnStyle({ borderColor: "#2f4f66", color: "#9cc8ff", padding: "1px 7px" }), minWidth: 28, lineHeight: 1 }}
           >
@@ -84,11 +92,11 @@ export function StatusBar({ sigla, nome, cor, val, max, onVal, onMax, valExpr = 
           </button>
         </div>
       </div>
-      <div style={{ height: 6, background: "#111", borderRadius: 3, overflow: "hidden" }}>
+      <div style={{ height: 7, background: "#111", borderRadius: 999, overflow: "hidden" }}>
         <div style={{
           height: "100%", width: pct + "%",
           background: "linear-gradient(90deg," + cor + "88," + cor + ")",
-          transition: "width .3s", boxShadow: "0 0 8px " + cor + "66",
+          transition: "width .25s", boxShadow: "0 0 8px " + cor + "66",
         }} />
       </div>
       {val === 0 && (
@@ -98,51 +106,85 @@ export function StatusBar({ sigla, nome, cor, val, max, onVal, onMax, valExpr = 
       )}
       {detailsOpen && (
         <Modal title={`Configuração detalhada · ${sigla}`} onClose={() => setDetailsOpen(false)}>
-          <div style={{ display: "grid", gap: 10 }}>
-            <div style={{ fontSize: 11, color: G.muted, fontFamily: "monospace" }}>
-              Aceita expressões matemáticas (+, -, *, /, parênteses). Ex.: <b>(24 * 2) + 2</b>
+          <div style={{ display: "grid", gap: 12 }}>
+            <div style={{
+              fontSize: 11,
+              color: "#a8c6df",
+              fontFamily: "monospace",
+              background: "#0d1722",
+              border: "1px solid #28435d",
+              borderRadius: 8,
+              padding: "8px 10px",
+            }}>
+              Suporta operações <b>+ - * / ^</b>, parênteses, constantes <b>PI</b>/<b>E</b> e funções como <b>min</b>, <b>max</b>, <b>pow</b>, <b>sqrt</b>, <b>round</b>.
             </div>
-            <div style={{ display: "grid", gap: 6 }}>
-              <label style={{ color: cor, fontSize: 12 }}>Valor Atual (expressão)</label>
-              <input
-                value={draftValExpr}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  setDraftValExpr(next);
-                  onValExpr?.(next);
-                }}
-                placeholder="Ex: 2+5"
-                style={inpStyle({ fontFamily: "monospace" })}
-              />
-              <div style={{ fontSize: 11, color: valPreview.valid ? "#9ee0aa" : "#ff7b7b", fontFamily: "monospace" }}>
-                {valPreview.valid ? `Resultado: ${valPreview.value}` : `Expressão inválida (${valPreview.error})`}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div style={{ display: "grid", gap: 6 }}>
+                <label style={{ color: cor, fontSize: 12 }}>Valor Atual (expressão)</label>
+                <input
+                  value={draftValExpr}
+                  onChange={(e) => {
+                    setDraftValExpr(e.target.value);
+                    setDirty(true);
+                  }}
+                  placeholder="Ex: max(2+5, 10)"
+                  style={inpStyle({ fontFamily: "monospace" })}
+                />
+                <div style={{ fontSize: 11, color: previews.valPreview.valid ? "#9ee0aa" : "#ff7b7b", fontFamily: "monospace" }}>
+                  {previews.valPreview.valid ? `Atual calculado: ${previews.valPreview.value}` : `Inválida: ${previews.valPreview.error}`}
+                </div>
+              </div>
+              <div style={{ display: "grid", gap: 6 }}>
+                <label style={{ color: cor, fontSize: 12 }}>Valor Máximo (expressão)</label>
+                <input
+                  value={draftMaxExpr}
+                  onChange={(e) => {
+                    setDraftMaxExpr(e.target.value);
+                    setDirty(true);
+                  }}
+                  placeholder="Ex: (24 * 2) + pow(2, 2)"
+                  style={inpStyle({ fontFamily: "monospace" })}
+                />
+                <div style={{ fontSize: 11, color: previews.maxPreview.valid ? "#9ee0aa" : "#ff7b7b", fontFamily: "monospace" }}>
+                  {previews.maxPreview.valid ? `Máximo calculado: ${previews.maxPreview.value}` : `Inválida: ${previews.maxPreview.error}`}
+                </div>
               </div>
             </div>
-            <div style={{ display: "grid", gap: 6 }}>
-              <label style={{ color: cor, fontSize: 12 }}>Valor Máximo (expressão)</label>
-              <input
-                value={draftMaxExpr}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  setDraftMaxExpr(next);
-                  onMaxExpr?.(next);
-                }}
-                placeholder="Ex: (24 * 2) + 2"
-                style={inpStyle({ fontFamily: "monospace" })}
-              />
-              <div style={{ fontSize: 11, color: maxPreview.valid ? "#9ee0aa" : "#ff7b7b", fontFamily: "monospace" }}>
-                {maxPreview.valid ? `Resultado: ${maxPreview.value}` : `Expressão inválida (${maxPreview.error})`}
-              </div>
+            <div style={{ fontSize: 11, color: G.muted, fontFamily: "monospace", borderTop: "1px solid #223447", paddingTop: 8 }}>
+              Pré-resultado aplicado: {Math.max(0, Math.min(previews.maxPreview.value, previews.valPreview.value))}/{Math.max(1, previews.maxPreview.value)}
             </div>
-            <div style={{ fontSize: 11, color: G.muted, fontFamily: "monospace" }}>
-              Valor aplicado agora: {Math.max(0, Math.min(maxPreview.value, valPreview.value))}/{Math.max(1, maxPreview.value)}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <HoverButton
+                style={btnStyle({ borderColor: "#555", color: "#ddd" })}
+                onClick={() => {
+                  setDraftValExpr(valExpr || "");
+                  setDraftMaxExpr(maxExpr || "");
+                  setDirty(false);
+                }}
+              >
+                Desfazer
+              </HoverButton>
+              <HoverButton
+                style={btnStyle({ borderColor: "#2f8f5a", color: "#9ff2c8" })}
+                disabled={!dirty}
+                onClick={() => {
+                  onMaxExpr?.(draftMaxExpr);
+                  onValExpr?.(draftValExpr);
+                  setDirty(false);
+                  setDetailsOpen(false);
+                }}
+              >
+                Salvar expressões
+              </HoverButton>
             </div>
           </div>
         </Modal>
       )}
     </div>
   );
-}
+};
+
+export const StatusBar = memo(StatusBarBase);
 
 export function EffectDetailsModal({ effect, onClose }) {
   if (!effect) return null;

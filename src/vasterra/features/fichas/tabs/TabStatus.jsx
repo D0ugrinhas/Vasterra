@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { STATUS_CFG, ATRIBUTOS, ARSENAL_RANKS, RANK_COR } from "../../../data/gameData";
 import { aggregateModifiers, aggregateStatusModifiers } from "../../../core/effects";
 import { inventoryItemModifiers } from "../../../core/inventory";
@@ -93,13 +93,13 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
     }));
   }, [ficha, statusCodes]);
 
-  const upStatus = (sigla, field, val) => {
+  const upStatus = useCallback((sigla, field, val) => {
     const code = normalizeStatusCode(sigla);
     const key = Object.keys(ficha.status || {}).find((k) => normalizeStatusCode(k) === code) || code;
     onUpdate({ status: { ...ficha.status, [key]: { ...(ficha.status?.[key] || {}), [field]: val } } });
-  };
-  const upInfo = (patch) => onUpdate({ informacoes: { ...info, ...patch } });
-  const upStatusExpr = (sigla, field, expr, constraints = {}) => {
+  }, [ficha.status, onUpdate]);
+  const upInfo = useCallback((patch) => onUpdate({ informacoes: { ...info, ...patch } }), [info, onUpdate]);
+  const upStatusExpr = useCallback((sigla, field, expr, constraints = {}) => {
     const code = normalizeStatusCode(sigla);
     const key = Object.keys(ficha.status || {}).find((k) => normalizeStatusCode(k) === code) || code;
     const current = ficha.status?.[key] || {};
@@ -117,14 +117,14 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
     const patch = { ...current, [expressionKey]: expr, [field]: resolved.value };
     if (field === "max") patch.val = Math.min(Math.max(0, Number(current?.val || 0)), patch.max);
     onUpdate({ status: { ...ficha.status, [key]: patch } });
-  };
+  }, [ficha.status, onUpdate]);
 
-  const rolarConfronto = () => {
+  const rolarConfronto = useCallback(() => {
     const v1 = (ficha.atributos[c1]?.val || 5) + (attrBonus[c1] || 0);
     const v2 = (ficha.atributos[c2]?.val || 5) + (attrBonus[c2] || 0);
     const diff = v1 - v2;
     setCRes({ r1: Math.max(1, Math.ceil(Math.random() * 20) + diff), r2: Math.ceil(Math.random() * 20) });
-  };
+  }, [attrBonus, c1, c2, ficha.atributos]);
 
 
   return (
