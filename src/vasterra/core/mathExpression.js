@@ -21,6 +21,12 @@ const FUNCTIONS = {
   max: (...args) => Math.max(...args),
 };
 
+const normalizeIdentifier = (value) => String(value || "")
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .replace(/[^\p{L}\p{N}_]/gu, "")
+  .toUpperCase();
+
 function tokenize(input) {
   const expr = String(input || "").trim();
   const tokens = [];
@@ -48,10 +54,10 @@ function tokenize(input) {
       tokens.push({ type: "number", value: Number(num) });
       continue;
     }
-    if (/[a-zA-Z_]/.test(ch)) {
+    if (/[\p{L}_]/u.test(ch)) {
       let id = ch;
       i += 1;
-      while (i < expr.length && /[a-zA-Z0-9_]/.test(expr[i])) {
+      while (i < expr.length && /[\p{L}\p{N}_]/u.test(expr[i])) {
         id += expr[i];
         i += 1;
       }
@@ -64,7 +70,16 @@ function tokenize(input) {
   return tokens;
 }
 
-function createParser(tokens) {
+function resolveVariable(identifier, variables) {
+  if (!variables || typeof variables !== "object") return null;
+  if (Object.prototype.hasOwnProperty.call(variables, identifier)) return variables[identifier];
+
+  const normalized = normalizeIdentifier(identifier);
+  const entry = Object.entries(variables).find(([key]) => normalizeIdentifier(key) === normalized);
+  return entry ? entry[1] : null;
+}
+
+function createParser(tokens, variables) {
   let index = 0;
 
   function current() {
@@ -151,6 +166,14 @@ function createParser(tokens) {
       if (Object.prototype.hasOwnProperty.call(CONSTANTS, id.toUpperCase())) {
         return CONSTANTS[id.toUpperCase()];
       }
+
+      const variableValue = resolveVariable(id, variables);
+      if (variableValue !== null && variableValue !== undefined) {
+        const casted = Number(variableValue);
+        if (!Number.isFinite(casted)) throw new Error(`Variável inválida: ${id}`);
+        return casted;
+      }
+
       throw new Error(`Identificador desconhecido: ${id}`);
     }
 
@@ -173,7 +196,7 @@ function createParser(tokens) {
   return { parse };
 }
 
-export function evaluateMathExpression(raw, { fallback = 0, min = -Infinity, max = Infinity, precision = 4 } = {}) {
+export function evaluateMathExpression(raw, { fallback = 0, min = -Infinity, max = Infinity, precision = 4, variables = null } = {}) {
   const expr = String(raw ?? "").trim();
   if (!expr) {
     const value = Math.max(min, Math.min(max, Number(fallback) || 0));
@@ -182,7 +205,7 @@ export function evaluateMathExpression(raw, { fallback = 0, min = -Infinity, max
 
   try {
     const tokens = tokenize(expr);
-    const parsed = createParser(tokens).parse();
+    const parsed = createParser(tokens, variables).parse();
     if (!Number.isFinite(parsed)) throw new Error("Resultado inválido.");
     const rounded = Number(parsed.toFixed(precision));
     const value = Math.max(min, Math.min(max, rounded));

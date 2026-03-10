@@ -8,6 +8,11 @@ import { HoverButton } from "../../../components/primitives/Interactive";
 import { StatusBar } from "../../shared/components";
 import { ImageAttachModal, ImageViewport } from "../../../components/media/ImageAttachModal";
 
+const normalizeVarToken = (value) => String(value || "")
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .replace(/[^\p{L}\p{N}_]/gu, "");
+
 const defaultInfo = {
   peso: "",
   altura: "",
@@ -76,14 +81,51 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
     ...Object.keys(ficha?.combate?.statusMeta || {}).map((k) => normalizeStatusCode(k)),
   ])).filter(Boolean), [baseStatusDefs, ficha?.status, ficha?.combate?.statusMeta]);
 
+  const statusExpressionVars = useMemo(() => {
+    const vars = {};
+    const putVar = (key, value) => {
+      if (!key) return;
+      const num = Number(value);
+      if (!Number.isFinite(num)) return;
+      vars[key] = num;
+      const normalized = normalizeVarToken(key);
+      if (normalized && !Object.prototype.hasOwnProperty.call(vars, normalized)) vars[normalized] = num;
+      const upper = normalized.toUpperCase();
+      if (upper && !Object.prototype.hasOwnProperty.call(vars, upper)) vars[upper] = num;
+    };
+
+    Object.entries(ficha?.atributos || {}).forEach(([sigla, payload]) => {
+      putVar(sigla, payload?.val || 0);
+    });
+
+    Object.entries(ficha?.pericias || {}).forEach(([name, value]) => {
+      putVar(name, value || 0);
+    });
+
+    Object.entries(ficha?.recursos || {}).forEach(([sigla, payload]) => {
+      const max = Number(payload?.total || 0);
+      const used = Number(payload?.usado || 0);
+      putVar(sigla, Math.max(0, max - used));
+      putVar(`${sigla}MAX`, max);
+    });
+
+    Object.entries(ficha?.status || {}).forEach(([key, payload]) => {
+      const code = normalizeStatusCode(key);
+      putVar(code, Number(payload?.val || 0));
+      putVar(`${code}MAX`, Math.max(1, Number(payload?.max || 1)));
+    });
+
+    return vars;
+  }, [ficha?.atributos, ficha?.pericias, ficha?.recursos, ficha?.status]);
+
   const computedStatusBase = useMemo(() => {
     const statusEntries = Object.entries(ficha?.status || {});
     return Object.fromEntries(statusCodes.map((code) => {
       const found = statusEntries.find(([k]) => normalizeStatusCode(k) === code)?.[1] || {};
       const rawVal = Number(found?.val || 0);
       const rawMax = Math.max(1, Number(found?.max || 1));
-      const resolvedMax = evaluateMathExpression(found?.maxExpr, { fallback: rawMax, min: 1 }).value;
-      const resolvedVal = evaluateMathExpression(found?.valExpr, { fallback: rawVal, min: 0, max: resolvedMax }).value;
+      const resolvedMax = evaluateMathExpression(found?.maxExpr, { fallback: rawMax, min: 1, variables: statusExpressionVars }).value;
+      const resolvedVal = evaluateMathExpression(found?.valExpr, { fallback: rawVal, min: 0, max: resolvedMax, variables: statusExpressionVars }).value;
       return [code, {
         val: resolvedVal,
         max: resolvedMax,
@@ -91,7 +133,7 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
         maxExpr: typeof found?.maxExpr === "string" ? found.maxExpr : "",
       }];
     }));
-  }, [ficha, statusCodes]);
+  }, [ficha, statusCodes, statusExpressionVars]);
 
   const upStatus = useCallback((sigla, field, val) => {
     const code = normalizeStatusCode(sigla);
@@ -106,18 +148,19 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
     const numericFallback = Number(current?.[field] || (field === "max" ? 1 : 0));
     const expressionKey = `${field}Expr`;
     const maxBase = field === "max"
-      ? evaluateMathExpression(expr, { fallback: numericFallback, min: 1 }).value
-      : evaluateMathExpression(current?.maxExpr, { fallback: Number(current?.max || 1), min: 1 }).value;
+      ? evaluateMathExpression(expr, { fallback: numericFallback, min: 1, variables: statusExpressionVars }).value
+      : evaluateMathExpression(current?.maxExpr, { fallback: Number(current?.max || 1), min: 1, variables: statusExpressionVars }).value;
     const resolved = evaluateMathExpression(expr, {
       fallback: numericFallback,
       min: field === "max" ? 1 : 0,
       max: field === "max" ? Infinity : maxBase,
       ...constraints,
+      variables: statusExpressionVars,
     });
     const patch = { ...current, [expressionKey]: expr, [field]: resolved.value };
     if (field === "max") patch.val = Math.min(Math.max(0, Number(current?.val || 0)), patch.max);
     onUpdate({ status: { ...ficha.status, [key]: patch } });
-  }, [ficha.status, onUpdate]);
+  }, [ficha.status, onUpdate, statusExpressionVars]);
 
 
   const saveStatusExpressions = useCallback((sigla, valExpr, maxExpr) => {
@@ -126,10 +169,10 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
     const current = ficha.status?.[key] || {};
 
     const rawMax = Number(current?.max || 1);
-    const nextMax = evaluateMathExpression(maxExpr, { fallback: rawMax, min: 1 }).value;
+    const nextMax = evaluateMathExpression(maxExpr, { fallback: rawMax, min: 1, variables: statusExpressionVars }).value;
 
     const rawVal = Number(current?.val || 0);
-    const nextVal = evaluateMathExpression(valExpr, { fallback: rawVal, min: 0, max: nextMax }).value;
+    const nextVal = evaluateMathExpression(valExpr, { fallback: rawVal, min: 0, max: nextMax, variables: statusExpressionVars }).value;
 
     onUpdate({
       status: {
@@ -143,7 +186,7 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
         },
       },
     });
-  }, [ficha.status, onUpdate]);
+  }, [ficha.status, onUpdate, statusExpressionVars]);
 
   const rolarConfronto = useCallback(() => {
     const v1 = (ficha.atributos[c1]?.val || 5) + (attrBonus[c1] || 0);
@@ -176,6 +219,8 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
               onValExpr={(expr) => upStatusExpr(s.sigla, "val", expr)}
               onMaxExpr={(expr) => upStatusExpr(s.sigla, "max", expr)}
               onSaveExpressions={(valExpr, maxExpr) => saveStatusExpressions(s.sigla, valExpr, maxExpr)}
+              expressionVariables={statusExpressionVars}
+              variableSuggestions={Object.keys(statusExpressionVars).filter((v) => /[A-Za-z]/.test(v)).sort((a, b) => a.localeCompare(b))}
             />
           );
         })}

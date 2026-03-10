@@ -1,5 +1,5 @@
 import { evaluateMathExpression } from "../../core/mathExpression";
-import React, { memo, useEffect, useMemo, useState } from "react";
+import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { MOD_ORIGENS, STATUS_CFG } from "../../data/gameData";
 import { uid } from "../../core/factories";
 import { parseMechanicalEffects } from "../../core/effects";
@@ -44,7 +44,88 @@ export function Modal({ title, children, onClose, wide, closeOnBackdrop = false 
   );
 }
 
-const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "", maxExpr = "", onValExpr, onMaxExpr, onSaveExpressions }) => {
+function ExpressionInput({ value, onChange, placeholder, style, suggestions = [] }) {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const rootRef = useRef(null);
+
+  const currentToken = useMemo(() => {
+    const match = String(value || "").match(/([\p{L}_][\p{L}\p{N}_]*)$/u);
+    return match ? match[1] : "";
+  }, [value]);
+
+  const filtered = useMemo(() => {
+    const token = currentToken.toLowerCase();
+    if (!token) return (suggestions || []).slice(0, 8);
+    return (suggestions || []).filter((item) => item.toLowerCase().includes(token)).slice(0, 8);
+  }, [currentToken, suggestions]);
+
+  useEffect(() => {
+    const onDocClick = (event) => {
+      if (rootRef.current && !rootRef.current.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [currentToken]);
+
+  const applySuggestion = (item) => {
+    const next = String(value || "").replace(/([\p{L}_][\p{L}\p{N}_]*)?$/u, item);
+    onChange(next);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={rootRef} style={{ position: "relative" }}>
+      <input
+        value={value}
+        onFocus={() => setOpen(true)}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+        onKeyDown={(e) => {
+          if (!open || !filtered.length) return;
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setActiveIndex((i) => (i + 1) % filtered.length);
+          }
+          if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setActiveIndex((i) => (i - 1 + filtered.length) % filtered.length);
+          }
+          if (e.key === "Enter") {
+            e.preventDefault();
+            applySuggestion(filtered[activeIndex] || filtered[0]);
+          }
+          if (e.key === "Escape") setOpen(false);
+        }}
+        placeholder={placeholder}
+        style={style}
+      />
+      {open && filtered.length > 0 && (
+        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: "#0a141f", border: "1px solid #2b4c68", borderRadius: 8, zIndex: 30, maxHeight: 180, overflowY: "auto" }}>
+          {filtered.map((item, idx) => (
+            <button
+              key={item}
+              type="button"
+              onMouseDown={(ev) => ev.preventDefault()}
+              onClick={() => applySuggestion(item)}
+              style={{ width: "100%", textAlign: "left", background: idx === activeIndex ? "#13324a" : "transparent", color: idx === activeIndex ? "#e3f3ff" : "#9cc8ff", border: "none", borderBottom: "1px solid #173046", padding: "6px 8px", cursor: "pointer", fontFamily: "monospace", fontSize: 12 }}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "", maxExpr = "", onValExpr, onMaxExpr, onSaveExpressions, expressionVariables = {}, variableSuggestions = [] }) => {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [draftValExpr, setDraftValExpr] = useState(valExpr || "");
   const [draftMaxExpr, setDraftMaxExpr] = useState(maxExpr || "");
@@ -60,8 +141,8 @@ const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "",
   const pct = max > 0 ? Math.min(100, (val / max) * 100) : 0;
 
   const previews = useMemo(() => {
-    const maxPreview = evaluateMathExpression(draftMaxExpr, { fallback: max, min: 1 });
-    const valPreview = evaluateMathExpression(draftValExpr, { fallback: val, min: 0, max: maxPreview.value });
+    const maxPreview = evaluateMathExpression(draftMaxExpr, { fallback: max, min: 1, variables: expressionVariables });
+    const valPreview = evaluateMathExpression(draftValExpr, { fallback: val, min: 0, max: maxPreview.value, variables: expressionVariables });
     return { maxPreview, valPreview };
   }, [draftMaxExpr, draftValExpr, max, val]);
 
@@ -116,18 +197,19 @@ const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "",
               borderRadius: 8,
               padding: "8px 10px",
             }}>
-              Suporta operações <b>+ - * / ^</b>, parênteses, constantes <b>PI</b>/<b>E</b> e funções como <b>min</b>, <b>max</b>, <b>pow</b>, <b>sqrt</b>, <b>round</b>.
+              Suporta operações <b>+ - * / ^</b>, parênteses, constantes <b>PI</b>/<b>E</b>, variáveis da ficha (ex.: <b>VIT</b>, <b>LaminasGrandes</b>, <b>ACO</b>, <b>ESTMAX</b>, <b>DET</b>) e funções como <b>min</b>, <b>max</b>, <b>pow</b>, <b>sqrt</b>, <b>round</b>. Use <b>↑/↓</b> + <b>Enter</b> no autocomplete.
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div style={{ display: "grid", gap: 6 }}>
                 <label style={{ color: cor, fontSize: 12 }}>Valor Atual (expressão)</label>
-                <input
+                <ExpressionInput
                   value={draftValExpr}
-                  onChange={(e) => {
-                    setDraftValExpr(e.target.value);
+                  onChange={(next) => {
+                    setDraftValExpr(next);
                     setDirty(true);
                   }}
-                  placeholder="Ex: max(2+5, 10)"
+                  suggestions={variableSuggestions}
+                  placeholder="Ex: (VIG * 2) / (MENT + Fortitude)"
                   style={inpStyle({ fontFamily: "monospace" })}
                 />
                 <div style={{ fontSize: 11, color: previews.valPreview.valid ? "#9ee0aa" : "#ff7b7b", fontFamily: "monospace" }}>
@@ -136,13 +218,14 @@ const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "",
               </div>
               <div style={{ display: "grid", gap: 6 }}>
                 <label style={{ color: cor, fontSize: 12 }}>Valor Máximo (expressão)</label>
-                <input
+                <ExpressionInput
                   value={draftMaxExpr}
-                  onChange={(e) => {
-                    setDraftMaxExpr(e.target.value);
+                  onChange={(next) => {
+                    setDraftMaxExpr(next);
                     setDirty(true);
                   }}
-                  placeholder="Ex: (24 * 2) + pow(2, 2)"
+                  suggestions={variableSuggestions}
+                  placeholder="Ex: max(ESTMAX, REAMAX) + DET"
                   style={inpStyle({ fontFamily: "monospace" })}
                 />
                 <div style={{ fontSize: 11, color: previews.maxPreview.valid ? "#9ee0aa" : "#ff7b7b", fontFamily: "monospace" }}>
