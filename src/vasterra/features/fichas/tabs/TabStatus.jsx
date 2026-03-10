@@ -117,7 +117,7 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
       return [code, { val: Number(found?.val || 0), max: Math.max(1, Number(found?.max || 1)) }];
     }));
     if (JSON.stringify(currentNormalized) === JSON.stringify(computedStatusBase || {})) return;
-    onUpdate({ status: { ...(ficha.status || {}), ...(computedStatusBase || {}) } });
+    onUpdate({ status: { ...(computedStatusBase || {}) } });
   }, [computedStatusBase, ficha?.status, onUpdate, statusCodes]);
 
   const upStatus = (sigla, field, val) => {
