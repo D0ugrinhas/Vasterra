@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { STATUS_CFG, ATRIBUTOS, ARSENAL_RANKS, RANK_COR } from "../../../data/gameData";
 import { aggregateModifiers, aggregateStatusModifiers } from "../../../core/effects";
 import { inventoryItemModifiers } from "../../../core/inventory";
+import { evaluateMathExpression } from "../../../core/mathExpression";
 import { G, inpStyle, btnStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
 import { StatusBar } from "../../shared/components";
@@ -79,7 +80,16 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
     const statusEntries = Object.entries(ficha?.status || {});
     return Object.fromEntries(statusCodes.map((code) => {
       const found = statusEntries.find(([k]) => normalizeStatusCode(k) === code)?.[1] || {};
-      return [code, { val: Number(found?.val || 0), max: Math.max(1, Number(found?.max || 1)) }];
+      const rawVal = Number(found?.val || 0);
+      const rawMax = Math.max(1, Number(found?.max || 1));
+      const resolvedMax = evaluateMathExpression(found?.maxExpr, { fallback: rawMax, min: 1 }).value;
+      const resolvedVal = evaluateMathExpression(found?.valExpr, { fallback: rawVal, min: 0, max: resolvedMax }).value;
+      return [code, {
+        val: resolvedVal,
+        max: resolvedMax,
+        valExpr: typeof found?.valExpr === "string" ? found.valExpr : "",
+        maxExpr: typeof found?.maxExpr === "string" ? found.maxExpr : "",
+      }];
     }));
   }, [ficha, statusCodes]);
 
@@ -89,6 +99,25 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
     onUpdate({ status: { ...ficha.status, [key]: { ...(ficha.status?.[key] || {}), [field]: val } } });
   };
   const upInfo = (patch) => onUpdate({ informacoes: { ...info, ...patch } });
+  const upStatusExpr = (sigla, field, expr, constraints = {}) => {
+    const code = normalizeStatusCode(sigla);
+    const key = Object.keys(ficha.status || {}).find((k) => normalizeStatusCode(k) === code) || code;
+    const current = ficha.status?.[key] || {};
+    const numericFallback = Number(current?.[field] || (field === "max" ? 1 : 0));
+    const expressionKey = `${field}Expr`;
+    const maxBase = field === "max"
+      ? evaluateMathExpression(expr, { fallback: numericFallback, min: 1 }).value
+      : evaluateMathExpression(current?.maxExpr, { fallback: Number(current?.max || 1), min: 1 }).value;
+    const resolved = evaluateMathExpression(expr, {
+      fallback: numericFallback,
+      min: field === "max" ? 1 : 0,
+      max: field === "max" ? Infinity : maxBase,
+      ...constraints,
+    });
+    const patch = { ...current, [expressionKey]: expr, [field]: resolved.value };
+    if (field === "max") patch.val = Math.min(Math.max(0, Number(current?.val || 0)), patch.max);
+    onUpdate({ status: { ...ficha.status, [key]: patch } });
+  };
 
   const rolarConfronto = () => {
     const v1 = (ficha.atributos[c1]?.val || 5) + (attrBonus[c1] || 0);
@@ -114,8 +143,12 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
               {...s}
               val={Math.max(0, Math.min(Math.max(1, max), val))}
               max={Math.max(1, max)}
+              valExpr={computedStatusBase?.[code]?.valExpr || ""}
+              maxExpr={computedStatusBase?.[code]?.maxExpr || ""}
               onVal={(v) => upStatus(s.sigla, "val", v - delta.base - delta.current)}
               onMax={(v) => upStatus(s.sigla, "max", v - delta.base - delta.max)}
+              onValExpr={(expr) => upStatusExpr(s.sigla, "val", expr)}
+              onMaxExpr={(expr) => upStatusExpr(s.sigla, "max", expr)}
             />
           );
         })}

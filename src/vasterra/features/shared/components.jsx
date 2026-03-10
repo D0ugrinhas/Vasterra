@@ -1,3 +1,4 @@
+import { evaluateMathExpression } from "../../core/mathExpression";
 import React, { useState } from "react";
 import { MOD_ORIGENS, STATUS_CFG } from "../../data/gameData";
 import { uid } from "../../core/factories";
@@ -43,8 +44,15 @@ export function Modal({ title, children, onClose, wide, closeOnBackdrop = false 
   );
 }
 
-export function StatusBar({ sigla, nome, cor, val, max, onVal, onMax }) {
+export function StatusBar({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "", maxExpr = "", onValExpr, onMaxExpr }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [draftValExpr, setDraftValExpr] = useState(valExpr || "");
+  const [draftMaxExpr, setDraftMaxExpr] = useState(maxExpr || "");
   const pct = max > 0 ? Math.min(100, (val / max) * 100) : 0;
+
+  const maxPreview = evaluateMathExpression(draftMaxExpr, { fallback: max, min: 1 });
+  const valPreview = evaluateMathExpression(draftValExpr, { fallback: val, min: 0, max: maxPreview.value });
+
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
@@ -63,6 +71,17 @@ export function StatusBar({ sigla, nome, cor, val, max, onVal, onMax }) {
             onChange={e => onMax(Math.max(1, Number(e.target.value) || 1))}
             style={inpStyle({ width: 44, textAlign: "center", padding: "2px 4px", fontSize: 13 })}
           />
+          <button
+            onClick={() => {
+              setDraftValExpr(valExpr || "");
+              setDraftMaxExpr(maxExpr || "");
+              setDetailsOpen(true);
+            }}
+            title="Configuração detalhada"
+            style={{ ...btnStyle({ borderColor: "#2f4f66", color: "#9cc8ff", padding: "1px 7px" }), minWidth: 28, lineHeight: 1 }}
+          >
+            ⚙
+          </button>
         </div>
       </div>
       <div style={{ height: 6, background: "#111", borderRadius: 3, overflow: "hidden" }}>
@@ -76,6 +95,50 @@ export function StatusBar({ sigla, nome, cor, val, max, onVal, onMax }) {
         <div style={{ fontSize: 10, color: "#ff4444", fontFamily: "monospace", marginTop: 2 }}>
           ⚠ {STATUS_CFG.find(s => s.sigla === sigla)?.msg}
         </div>
+      )}
+      {detailsOpen && (
+        <Modal title={`Configuração detalhada · ${sigla}`} onClose={() => setDetailsOpen(false)}>
+          <div style={{ display: "grid", gap: 10 }}>
+            <div style={{ fontSize: 11, color: G.muted, fontFamily: "monospace" }}>
+              Aceita expressões matemáticas (+, -, *, /, parênteses). Ex.: <b>(24 * 2) + 2</b>
+            </div>
+            <div style={{ display: "grid", gap: 6 }}>
+              <label style={{ color: cor, fontSize: 12 }}>Valor Atual (expressão)</label>
+              <input
+                value={draftValExpr}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setDraftValExpr(next);
+                  onValExpr?.(next);
+                }}
+                placeholder="Ex: 2+5"
+                style={inpStyle({ fontFamily: "monospace" })}
+              />
+              <div style={{ fontSize: 11, color: valPreview.valid ? "#9ee0aa" : "#ff7b7b", fontFamily: "monospace" }}>
+                {valPreview.valid ? `Resultado: ${valPreview.value}` : `Expressão inválida (${valPreview.error})`}
+              </div>
+            </div>
+            <div style={{ display: "grid", gap: 6 }}>
+              <label style={{ color: cor, fontSize: 12 }}>Valor Máximo (expressão)</label>
+              <input
+                value={draftMaxExpr}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setDraftMaxExpr(next);
+                  onMaxExpr?.(next);
+                }}
+                placeholder="Ex: (24 * 2) + 2"
+                style={inpStyle({ fontFamily: "monospace" })}
+              />
+              <div style={{ fontSize: 11, color: maxPreview.valid ? "#9ee0aa" : "#ff7b7b", fontFamily: "monospace" }}>
+                {maxPreview.valid ? `Resultado: ${maxPreview.value}` : `Expressão inválida (${maxPreview.error})`}
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: G.muted, fontFamily: "monospace" }}>
+              Valor aplicado agora: {Math.max(0, Math.min(maxPreview.value, valPreview.value))}/{Math.max(1, maxPreview.value)}
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );
