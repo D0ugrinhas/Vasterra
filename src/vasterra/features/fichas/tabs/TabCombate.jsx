@@ -39,49 +39,7 @@ const normalizeStatusCode = (raw) => {
   return up;
 };
 
-function FormulaInput({ value, onChange, placeholder, suggestions = [] }) {
-  const [open, setOpen] = useState(false);
-  const [idx, setIdx] = useState(0);
-  const filtered = useMemo(() => {
-    const tail = String(value || "").split(/[^A-Za-zÀ-ÿ0-9_]+/).pop() || "";
-    if (!tail) return suggestions.slice(0, 8);
-    return suggestions.filter((s) => String(s.key || s).toLowerCase().includes(tail.toLowerCase())).slice(0, 8);
-  }, [value, suggestions]);
 
-  return (
-    <div style={{ position: "relative" }}>
-      <input
-        value={value}
-        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 120)}
-        onKeyDown={(e) => {
-          if (!open || filtered.length === 0) return;
-          if (e.key === "ArrowDown") { e.preventDefault(); setIdx((p) => (p + 1) % filtered.length); }
-          if (e.key === "ArrowUp") { e.preventDefault(); setIdx((p) => (p - 1 + filtered.length) % filtered.length); }
-          if (e.key === "Enter") {
-            e.preventDefault();
-            const token = (filtered[idx] || filtered[0]);
-            const tokenKey = String(token?.key || token);
-            const raw = String(value || "");
-            const next = raw.replace(/([A-Za-zÀ-ÿ0-9_]+)?$/, tokenKey);
-            onChange(next);
-            setOpen(true)
-          }
-        }}
-        placeholder={placeholder}
-        style={inpStyle({ fontFamily: "monospace", fontSize: 11 })}
-      />
-      {open && filtered.length > 0 && (
-        <div style={{ position: "absolute", zIndex: 20, left: 0, right: 0, top: "102%", border: "1px solid #4f4028", borderRadius: 8, background: "#130f0a", maxHeight: 150, overflow: "auto" }}>
-          {filtered.map((s, i) => { const k = String(s?.key || s); const v = s?.value; return (
-            <div key={k} onMouseDown={() => onChange(String(value || "").replace(/([A-Za-zÀ-ÿ0-9_]+)?$/, k))} style={{ padding: "4px 6px", cursor: "pointer", background: i === idx ? "#2a1d0f" : "transparent", color: "#e7d5b1", fontFamily: "monospace", fontSize: 11, display:"flex", justifyContent:"space-between" }}><span>{k}</span><span style={{color:"#8fa7c8"}}>{Number.isFinite(Number(v)) ? v : ""}</span></div>
-          ); })}
-        </div>
-      )}
-    </div>
-  );
-}
 function durationInfo(effect, rodadaAtual) {
   const total = parseDurationRounds(effect);
   if (!total) return null;
@@ -978,7 +936,7 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
   const [statusState, setStatusState] = useState(ficha?.status || {});
   const [statusInput, setStatusInput] = useState(() => Object.fromEntries(Object.entries(ficha?.status || {}).map(([k, v]) => [k, { val: String(v?.val ?? 0), max: String(v?.max ?? 1) }])));
   const [resourceDraft, setResourceDraft] = useState({ codigo: "", nome: "", cor: "#e0b44c", shape: "square", total: 1, atual: 1 });
-  const [statusDraft, setStatusDraft] = useState({ codigo: "DET", label: "Determinação", cor: "#8dc2ff", val: 10, max: 10, maxFormula: "", valFormula: "" });
+  const [statusDraft, setStatusDraft] = useState({ codigo: "DET", label: "Determinação", cor: "#8dc2ff", val: 10, max: 10 });
   const [statusEditor, setStatusEditor] = useState(null);
 
   const formulaBaseFicha = formulaFicha || ficha;
@@ -995,9 +953,6 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
     if (normalizedStatus.CONSC && !normalizedStatus.CONS) normalizedStatus.CONS = normalizedStatus.CONSC;
     return appendResourceFormulaVars(buildFormulaVars(formulaBaseFicha, normalizedStatus), list || []);
   };
-  const formulaVars = useMemo(() => buildVars(statusState), [formulaBaseFicha, statusState, list]);
-  const formulaSuggestions = useMemo(() => Object.keys(formulaVars).sort().map((k) => ({ key: k, value: formulaVars[k] })), [formulaVars]);
-
   const localStatusDefs = useMemo(() => {
     const allCodes = Array.from(new Set([
       ...Object.keys(statusState || {}).map((k) => normalizeStatusCode(k)),
@@ -1045,38 +1000,6 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
     return next;
   };
 
-  const statusEditorPreview = useMemo(() => {
-    if (!statusEditor) return null;
-    const draftCode = normalizeStatusCode(statusEditor.draft?.code);
-    if (!draftCode) return null;
-
-    const tempMeta = {
-      ...(statusMeta || {}),
-      [draftCode]: {
-        ...(statusMeta?.[draftCode] || (draftCode === "CONSC" ? statusMeta?.CONS : null) || {}),
-        label: statusEditor.draft.label || draftCode,
-        cor: statusEditor.draft.cor || "#9ca3af",
-        maxFormula: statusEditor.draft.maxFormula || "",
-        valFormula: statusEditor.draft.valFormula || "",
-      },
-    };
-
-    const existing = statusState?.[draftCode] || {};
-    const tempStatus = {
-      ...(statusState || {}),
-      [draftCode]: {
-        val: Math.max(0, Number(statusEditor.draft.val ?? statusEditor.draft.initialVal ?? existing.val ?? 0) || 0),
-        max: Math.max(1, Number(statusEditor.draft.max ?? statusEditor.draft.initialMax ?? existing.max ?? 1) || 1),
-      },
-    };
-
-    const tempDefs = localStatusDefs.some((s) => normalizeStatusCode(s.code) === draftCode)
-      ? localStatusDefs
-      : [...localStatusDefs, { key: draftCode, code: draftCode, label: statusEditor.draft.label || draftCode, cor: statusEditor.draft.cor || "#9ca3af" }];
-
-    return recomputeStatusByFormula(tempStatus, tempMeta, tempDefs)[draftCode] || null;
-  }, [statusEditor, statusMeta, statusState, localStatusDefs, formulaBaseFicha, list]);
-
   useEffect(() => {
     setStatusState((prev) => {
       const next = recomputeStatusByFormula(prev, statusMeta, localStatusDefs);
@@ -1123,8 +1046,8 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
                       <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>{st.val}/{st.max}</span>
                     </div>
                     <div style={{ display: "flex", gap: 6 }}>
-                      <HoverButton onClick={() => setStatusEditor({ mode: "edit", status: s, draft: { code: s.code, label: meta.label || s.label, cor: meta.cor || s.cor, val: st.val, max: st.max, initialVal: st.val, initialMax: st.max, maxFormula: meta.maxFormula || "", valFormula: meta.valFormula || "" } })} style={btnStyle({ padding: "4px 8px", borderColor: "#4b6b8a", color: "#98cfff" })}>Editar</HoverButton>
-                      <HoverButton onClick={() => setStatusEditor({ mode: "duplicate", status: s, draft: { code: `${s.code}_2`, label: `${meta.label || s.label} Cópia`, cor: meta.cor || s.cor, val: st.val, max: st.max, initialVal: st.val, initialMax: st.max, maxFormula: meta.maxFormula || "", valFormula: meta.valFormula || "" } })} style={btnStyle({ padding: "4px 8px", borderColor: "#6b5a34", color: "#d8bf8b" })}>Duplicar</HoverButton>
+                      <HoverButton onClick={() => setStatusEditor({ mode: "edit", status: s, draft: { code: s.code, label: meta.label || s.label, cor: meta.cor || s.cor, val: st.val, max: st.max, initialVal: st.val, initialMax: st.max } })} style={btnStyle({ padding: "4px 8px", borderColor: "#4b6b8a", color: "#98cfff" })}>Editar</HoverButton>
+                      <HoverButton onClick={() => setStatusEditor({ mode: "duplicate", status: s, draft: { code: `${s.code}_2`, label: `${meta.label || s.label} Cópia`, cor: meta.cor || s.cor, val: st.val, max: st.max, initialVal: st.val, initialMax: st.max } })} style={btnStyle({ padding: "4px 8px", borderColor: "#6b5a34", color: "#d8bf8b" })}>Duplicar</HoverButton>
                       <HoverButton onClick={() => {
                         setStatusState((p) => { const n = { ...p }; delete n[s.key]; return n; });
                         setStatusMeta((p) => {
@@ -1137,10 +1060,6 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
                       }} style={btnStyle({ padding: "4px 8px", borderColor: "#87413a", color: "#ff9990" })}>Excluir</HoverButton>
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 8, color: G.muted, fontFamily: "monospace", fontSize: 10, flexWrap: "wrap" }}>
-                    <span>MAX: {meta.maxFormula || "—"}</span>
-                    <span>ATUAL: {meta.valFormula || "—"}</span>
-                  </div>
                 </div>
               );
             })}
@@ -1148,14 +1067,12 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
 
           <div style={{ marginTop: 8, borderTop: "1px solid #3d2f1f", paddingTop: 8 }}>
             <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 11, marginBottom: 6 }}>Adicionar nova barra</div>
-            <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 56px 84px 84px 1fr 1fr auto", gap: 6 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 56px 84px 84px auto", gap: 6 }}>
               <input value={statusDraft.codigo} onChange={(e) => setStatusDraft((p) => ({ ...p, codigo: e.target.value.toUpperCase() }))} style={inpStyle()} placeholder="Cód" />
               <input value={statusDraft.label} onChange={(e) => setStatusDraft((p) => ({ ...p, label: e.target.value }))} style={inpStyle()} placeholder="Nome" />
               <input type="color" value={statusDraft.cor} onChange={(e) => setStatusDraft((p) => ({ ...p, cor: e.target.value }))} style={inpStyle({ padding: 2 })} />
               <input type="number" min={0} value={statusDraft.val} onChange={(e) => setStatusDraft((p) => ({ ...p, val: Math.max(0, Number(e.target.value) || 0) }))} style={inpStyle()} placeholder="Atual" />
               <input type="number" min={1} value={statusDraft.max} onChange={(e) => setStatusDraft((p) => ({ ...p, max: Math.max(1, Number(e.target.value) || 1) }))} style={inpStyle()} placeholder="Max" />
-              <FormulaInput value={statusDraft.maxFormula || ""} onChange={(v) => setStatusDraft((p) => ({ ...p, maxFormula: v }))} suggestions={formulaSuggestions} placeholder="Fórmula do MAX" />
-              <FormulaInput value={statusDraft.valFormula || ""} onChange={(v) => setStatusDraft((p) => ({ ...p, valFormula: v }))} suggestions={formulaSuggestions} placeholder="Fórmula do ATUAL" />
               <HoverButton onClick={() => {
                 const key = normalizeStatusCode(statusDraft.codigo);
                 if (!key) return;
@@ -1165,8 +1082,6 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
                     ...(statusMeta?.[key] || (key === "CONSC" ? statusMeta?.CONS : null) || {}),
                     label: statusDraft.label || key,
                     cor: statusDraft.cor,
-                    maxFormula: statusDraft.maxFormula || "",
-                    valFormula: statusDraft.valFormula || "",
                   },
                 };
                 const seeded = { ...(statusState || {}), [key]: { ...(statusState?.[key] || {}), val: Math.max(0, Number(statusDraft.val || 0)), max: Math.max(1, Number(statusDraft.max || 1)) } };
@@ -1196,7 +1111,6 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
           ))}
         </div>
 
-        <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 10 }}>Autocomplete: ↑/↓ navega, Enter completa variável (VIG, FOR, est, laminas_grandes...).</div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <HoverButton onClick={onClose} style={btnStyle({ borderColor: "#4f4f4f", color: "#b8b8b8" })}>Fechar</HoverButton>
           <HoverButton onClick={() => {
@@ -1218,13 +1132,6 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
               <input type="number" min={0} value={statusEditor.draft.val} onChange={(e) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, val: Math.max(0, Number(e.target.value) || 0) } }))} style={inpStyle()} placeholder="Atual base" />
               <input type="number" min={1} value={statusEditor.draft.max} onChange={(e) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, max: Math.max(1, Number(e.target.value) || 1) } }))} style={inpStyle()} placeholder="Max base" />
             </div>
-            <FormulaInput value={statusEditor.draft.maxFormula || ""} onChange={(v) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, maxFormula: v } }))} suggestions={formulaSuggestions} placeholder="Fórmula do MAX" />
-            <FormulaInput value={statusEditor.draft.valFormula || ""} onChange={(v) => setStatusEditor((p) => ({ ...p, draft: { ...p.draft, valFormula: v } }))} suggestions={formulaSuggestions} placeholder="Fórmula do ATUAL" />
-            {statusEditorPreview && (
-              <div style={{ color: "#9fe3a1", fontFamily: "monospace", fontSize: 11 }}>
-                Prévia: {statusEditorPreview.val}/{statusEditorPreview.max}
-              </div>
-            )}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <HoverButton onClick={() => setStatusEditor(null)} style={btnStyle({ borderColor: "#4f4f4f", color: "#b8b8b8" })}>Cancelar</HoverButton>
               <HoverButton onClick={() => {
@@ -1244,8 +1151,6 @@ function SettingsModal({ combate, statusDefs, ficha, formulaFicha, onClose, onSa
                   ...(nextStatusMeta[code] || (code === "CONSC" ? nextStatusMeta.CONS : null) || {}),
                   label: statusEditor.draft.label || code,
                   cor: statusEditor.draft.cor,
-                  maxFormula: statusEditor.draft.maxFormula || "",
-                  valFormula: statusEditor.draft.valFormula || "",
                 };
 
                 const nextStatusState = { ...(statusState || {}) };
