@@ -80,6 +80,12 @@ function readAsDataUrl(file) {
   });
 }
 
+function getClientPoint(ev) {
+  if (ev?.touches?.[0]) return { x: ev.touches[0].clientX, y: ev.touches[0].clientY };
+  if (ev?.changedTouches?.[0]) return { x: ev.changedTouches[0].clientX, y: ev.changedTouches[0].clientY };
+  return { x: ev?.clientX ?? 0, y: ev?.clientY ?? 0 };
+}
+
 export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClose, onConfirm }) {
   const [mode, setMode] = useState(initial?.mode || "upload");
   const [url, setUrl] = useState(initial?.url || "");
@@ -87,7 +93,6 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
   const [adjust, setAdjust] = useState(() => normalizeImageAdjust(initial?.adjust));
   const [dragging, setDragging] = useState(false);
   const dragStateRef = useRef(null);
-  const previewDragRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
@@ -112,49 +117,24 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
 
   const canConfirm = !!src;
 
-  const safeSetPointerCapture = (pointerId) => {
-    if (pointerId === undefined || pointerId === null) return;
-    const el = previewDragRef.current;
-    if (!el?.setPointerCapture) return;
-    try {
-      el.setPointerCapture(pointerId);
-    } catch (_) {
-      // Evita crash caso o ponteiro não esteja mais ativo no elemento.
-    }
-  };
-
-  const safeReleasePointerCapture = (pointerId) => {
-    if (pointerId === undefined || pointerId === null) return;
-    const el = previewDragRef.current;
-    if (!el?.releasePointerCapture) return;
-    try {
-      if (!el.hasPointerCapture || el.hasPointerCapture(pointerId)) {
-        el.releasePointerCapture(pointerId);
-      }
-    } catch (_) {
-      // Evita crash caso a captura já tenha sido perdida/liberada.
-    }
-  };
-
   const startDrag = (ev) => {
     if (!src) return;
+    const point = getClientPoint(ev);
     dragStateRef.current = {
-      pointerId: ev.pointerId,
-      x: ev.clientX,
-      y: ev.clientY,
+      x: point.x,
+      y: point.y,
       baseX: adjust.offsetX,
       baseY: adjust.offsetY,
     };
-    safeSetPointerCapture(ev.pointerId);
     setDragging(true);
   };
 
   const onDrag = (ev) => {
     const state = dragStateRef.current;
     if (!state) return;
-    if (state.pointerId !== undefined && ev.pointerId !== undefined && state.pointerId !== ev.pointerId) return;
-    const deltaX = ev.clientX - state.x;
-    const deltaY = ev.clientY - state.y;
+    const point = getClientPoint(ev);
+    const deltaX = point.x - state.x;
+    const deltaY = point.y - state.y;
     setAdjust((p) => ({
       ...p,
       offsetX: state.baseX + (deltaX / 280) * 100,
@@ -162,11 +142,8 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
     }));
   };
 
-  const stopDrag = (ev) => {
-    const state = dragStateRef.current;
-    if (!state) return;
-    if (state.pointerId !== undefined && ev?.pointerId !== undefined && state.pointerId !== ev.pointerId) return;
-    safeReleasePointerCapture(state.pointerId);
+  const stopDrag = () => {
+    if (!dragStateRef.current) return;
     dragStateRef.current = null;
     setDragging(false);
   };
@@ -174,14 +151,18 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
   useEffect(() => {
     if (!dragging) return undefined;
     const handleMove = (ev) => onDrag(ev);
-    const handleUp = (ev) => stopDrag(ev);
-    window.addEventListener("pointermove", handleMove);
-    window.addEventListener("pointerup", handleUp);
-    window.addEventListener("pointercancel", handleUp);
+    const handleUp = () => stopDrag();
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    window.addEventListener("touchmove", handleMove, { passive: true });
+    window.addEventListener("touchend", handleUp);
+    window.addEventListener("touchcancel", handleUp);
     return () => {
-      window.removeEventListener("pointermove", handleMove);
-      window.removeEventListener("pointerup", handleUp);
-      window.removeEventListener("pointercancel", handleUp);
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+      window.removeEventListener("touchmove", handleMove);
+      window.removeEventListener("touchend", handleUp);
+      window.removeEventListener("touchcancel", handleUp);
     };
   }, [dragging]);
 
@@ -190,7 +171,7 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
       <div style={{ width: 900, maxWidth: "95vw", maxHeight: "92vh", overflow: "auto", background: G.bg2, border: `1px solid ${G.border2}`, borderRadius: 12, padding: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <div style={{ fontFamily: "'Cinzel',serif", color: G.gold, letterSpacing: 1 }}>{title}</div>
-          <button onClick={(ev) => { stopDrag(ev); onClose?.(); }} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>✕</button>
+          <button onClick={() => { stopDrag(); onClose?.(); }} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>✕</button>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 260px", gap: 14 }}>
@@ -231,11 +212,9 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
             <div style={{ border: "1px solid #262626", borderRadius: 10, minHeight: 360, background: "#070707", display: "grid", placeItems: "center", position: "relative" }}>
               {src ? (
                 <div
-                  ref={previewDragRef}
-                  onPointerDown={startDrag}
-                  onPointerUp={stopDrag}
-                  onPointerCancel={stopDrag}
-                  style={{ cursor: dragging ? "grabbing" : "grab", touchAction: "none", userSelect: "none" }}
+                  onMouseDown={startDrag}
+                  onTouchStart={startDrag}
+                  style={{ cursor: dragging ? "grabbing" : "grab", userSelect: "none" }}
                 >
                   <ImageViewport src={src} alt="Prévia" size={280} radius={10} adjust={adjust} />
                 </div>
@@ -299,7 +278,7 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
-          <button onClick={(ev) => { stopDrag(ev); onClose?.(); }} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button>
+          <button onClick={() => { stopDrag(); onClose?.(); }} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button>
           <button disabled={!canConfirm} onClick={() => canConfirm && onConfirm?.({ mode, url: mode === "url" ? url : "", data: mode === "upload" ? data : "", adjust: normalizeImageAdjust(adjust) })} style={btnStyle({ opacity: canConfirm ? 1 : 0.6, cursor: canConfirm ? "pointer" : "not-allowed" })}>Confirmar imagem</button>
         </div>
       </div>
