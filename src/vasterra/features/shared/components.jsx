@@ -44,7 +44,7 @@ export function Modal({ title, children, onClose, wide, closeOnBackdrop = false 
   );
 }
 
-const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "", maxExpr = "", onValExpr, onMaxExpr }) => {
+const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "", maxExpr = "", onValExpr, onMaxExpr, onSaveExpressions }) => {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [draftValExpr, setDraftValExpr] = useState(valExpr || "");
   const [draftMaxExpr, setDraftMaxExpr] = useState(maxExpr || "");
@@ -168,8 +168,12 @@ const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "",
                 style={btnStyle({ borderColor: "#2f8f5a", color: "#9ff2c8" })}
                 disabled={!dirty}
                 onClick={() => {
-                  onMaxExpr?.(draftMaxExpr);
-                  onValExpr?.(draftValExpr);
+                  if (onSaveExpressions) {
+                    onSaveExpressions(draftValExpr, draftMaxExpr);
+                  } else {
+                    onMaxExpr?.(draftMaxExpr);
+                    onValExpr?.(draftValExpr);
+                  }
                   setDirty(false);
                   setDetailsOpen(false);
                 }}

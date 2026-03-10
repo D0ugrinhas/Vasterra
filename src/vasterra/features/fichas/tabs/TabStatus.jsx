@@ -119,6 +119,32 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
     onUpdate({ status: { ...ficha.status, [key]: patch } });
   }, [ficha.status, onUpdate]);
 
+
+  const saveStatusExpressions = useCallback((sigla, valExpr, maxExpr) => {
+    const code = normalizeStatusCode(sigla);
+    const key = Object.keys(ficha.status || {}).find((k) => normalizeStatusCode(k) === code) || code;
+    const current = ficha.status?.[key] || {};
+
+    const rawMax = Number(current?.max || 1);
+    const nextMax = evaluateMathExpression(maxExpr, { fallback: rawMax, min: 1 }).value;
+
+    const rawVal = Number(current?.val || 0);
+    const nextVal = evaluateMathExpression(valExpr, { fallback: rawVal, min: 0, max: nextMax }).value;
+
+    onUpdate({
+      status: {
+        ...ficha.status,
+        [key]: {
+          ...current,
+          maxExpr,
+          valExpr,
+          max: nextMax,
+          val: nextVal,
+        },
+      },
+    });
+  }, [ficha.status, onUpdate]);
+
   const rolarConfronto = useCallback(() => {
     const v1 = (ficha.atributos[c1]?.val || 5) + (attrBonus[c1] || 0);
     const v2 = (ficha.atributos[c2]?.val || 5) + (attrBonus[c2] || 0);
@@ -149,6 +175,7 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
               onMax={(v) => upStatus(s.sigla, "max", v - delta.base - delta.max)}
               onValExpr={(expr) => upStatusExpr(s.sigla, "val", expr)}
               onMaxExpr={(expr) => upStatusExpr(s.sigla, "max", expr)}
+              onSaveExpressions={(valExpr, maxExpr) => saveStatusExpressions(s.sigla, valExpr, maxExpr)}
             />
           );
         })}
