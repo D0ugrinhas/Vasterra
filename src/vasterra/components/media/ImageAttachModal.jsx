@@ -30,8 +30,8 @@ function toNum(v, fallback = 0) {
 export function normalizeImageAdjust(adjust) {
   return {
     zoom: clamp(toNum(adjust?.zoom, 1), 0.5, 4),
-    offsetX: clamp(toNum(adjust?.offsetX, 0), -50, 50),
-    offsetY: clamp(toNum(adjust?.offsetY, 0), -50, 50),
+    offsetX: toNum(adjust?.offsetX, 0),
+    offsetY: toNum(adjust?.offsetY, 0),
     rotate: clamp(toNum(adjust?.rotate, 0), -180, 180),
     fit: adjust?.fit === "cover" ? "cover" : "contain",
     filterPreset: Object.keys(FILTER_PRESETS).includes(adjust?.filterPreset) ? adjust.filterPreset : "none",
@@ -120,8 +120,8 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
     const deltaY = ev.clientY - dragStateRef.current.y;
     setAdjust((p) => ({
       ...p,
-      offsetX: clamp(dragStateRef.current.baseX + (deltaX / 280) * 100, -50, 50),
-      offsetY: clamp(dragStateRef.current.baseY + (deltaY / 280) * 100, -50, 50),
+      offsetX: dragStateRef.current.baseX + (deltaX / 280) * 100,
+      offsetY: dragStateRef.current.baseY + (deltaY / 280) * 100,
     }));
   };
   const stopDrag = () => {
@@ -168,7 +168,7 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
                 style={{ border: "1px dashed #3a3a3a", borderRadius: 10, padding: 10, color: G.muted, fontSize: 12 }}
               >
                 <input type="file" accept="image/*" onChange={(e) => applyFile(e.target.files?.[0])} style={inpStyle({ marginBottom: 8 })} />
-                Cole imagem (Ctrl+V), arraste no preview para precisão, ou cole URL.
+                Cole imagem (Ctrl+V), arraste no preview sem limite de eixo, ou cole URL.
               </div>
             )}
 
@@ -185,23 +185,30 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
                 </div>
               ) : <span style={{ color: G.muted }}>Sem imagem selecionada</span>}
 
-              <div style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", display: "grid", gap: 4, alignItems: "center" }}>
-                <span style={{ color: G.muted, fontSize: 10, textAlign: "center" }}>Y</span>
-                <input
-                  type="range"
-                  min={-50}
-                  max={50}
-                  step={0.1}
-                  value={adjust.offsetY}
-                  onChange={(e) => setAdjust((p) => ({ ...p, offsetY: Number(e.target.value) }))}
-                  style={{ writingMode: "vertical-lr", direction: "rtl", height: 220 }}
-                />
-              </div>
+
             </div>
 
-            <div style={{ display: "grid", gap: 4 }}>
-              <label style={{ color: G.muted, fontSize: 11 }}>Mover horizontal (X): {adjust.offsetX.toFixed(1)}%</label>
-              <input type="range" min={-50} max={50} step={0.1} value={adjust.offsetX} onChange={(e) => setAdjust((p) => ({ ...p, offsetX: Number(e.target.value) }))} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div style={{ display: "grid", gap: 4 }}>
+                <label style={{ color: G.muted, fontSize: 11 }}>Offset X (%)</label>
+                <input
+                  type="number"
+                  step={0.1}
+                  value={adjust.offsetX}
+                  onChange={(e) => setAdjust((p) => ({ ...p, offsetX: toNum(e.target.value, 0) }))}
+                  style={inpStyle()}
+                />
+              </div>
+              <div style={{ display: "grid", gap: 4 }}>
+                <label style={{ color: G.muted, fontSize: 11 }}>Offset Y (%)</label>
+                <input
+                  type="number"
+                  step={0.1}
+                  value={adjust.offsetY}
+                  onChange={(e) => setAdjust((p) => ({ ...p, offsetY: toNum(e.target.value, 0) }))}
+                  style={inpStyle()}
+                />
+              </div>
             </div>
           </div>
 
