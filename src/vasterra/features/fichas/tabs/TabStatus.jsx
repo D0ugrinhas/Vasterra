@@ -73,6 +73,14 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
   };
 
   const baseStatusDefs = useMemo(() => STATUS_CFG.map((s) => ({ ...s, sigla: normalizeStatusCode(s.sigla) })), []);
+  const buildStatusVars = (statusMap) => {
+    const vars = appendResourceFormulaVars(buildFormulaVars(ficha, statusMap), ficha?.combate?.recursos || []);
+    if (vars.CONSC != null && vars.CONS == null) vars.CONS = vars.CONSC;
+    if (vars.consc != null && vars.cons == null) vars.cons = vars.consc;
+    if (vars.CONSCMAX != null && vars.CONSMAX == null) vars.CONSMAX = vars.CONSCMAX;
+    if (vars.conscmax != null && vars.consmax == null) vars.consmax = vars.conscmax;
+    return vars;
+  };
   const statusCodes = useMemo(() => Array.from(new Set([
     ...baseStatusDefs.map((s) => s.sigla),
     ...Object.keys(ficha?.status || {}).map((k) => normalizeStatusCode(k)),
@@ -88,7 +96,7 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
     }));
     let next = { ...seeded };
     for (let i = 0; i < 2; i += 1) {
-      const vars = appendResourceFormulaVars(buildFormulaVars(ficha, next), ficha?.combate?.recursos || []);
+      const vars = buildStatusVars(next);
       statusCodes.forEach((code) => {
         const curr = next[code] || { val: 0, max: 1 };
         const m = meta[code] || (code === "CONSC" ? meta.CONS : null) || {};
@@ -153,7 +161,7 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
     ]));
     let nextStatus = { ...seeded };
     for (let i = 0; i < 2; i += 1) {
-      const vars = appendResourceFormulaVars(buildFormulaVars(ficha, nextStatus), ficha?.combate?.recursos || []);
+      const vars = buildStatusVars(nextStatus);
       statusCodes.forEach((code) => {
         const curr = nextStatus[code] || { val: 0, max: 1 };
         const m = nextMeta[code] || {};
