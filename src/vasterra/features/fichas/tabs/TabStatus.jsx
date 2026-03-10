@@ -65,7 +65,7 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
 
   const normalizeStatusCode = (raw) => {
     const up = String(raw || "").trim().toUpperCase();
-    return up === "CONS" ? "CONSC" : up;
+    return up === "CONSC" ? "CONS" : up;
   };
 
   const baseStatusDefs = useMemo(() => STATUS_CFG.map((s) => ({ ...s, sigla: normalizeStatusCode(s.sigla) })), []);
@@ -105,7 +105,7 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
         {statusCodes.map((code) => {
           const baseCfg = baseStatusDefs.find((x) => x.sigla === code) || {};
           const s = { sigla: code, nome: baseCfg.nome || code, cor: baseCfg.cor || "#9ca3af", msg: baseCfg.msg };
-          const delta = statusBonus[code] || (code === "CONSC" ? statusBonus.CONS : null) || { base: 0, current: 0, max: 0 };
+          const delta = statusBonus[code] || (code === "CONS" ? statusBonus.CONSC : null) || { base: 0, current: 0, max: 0 };
           const val = Number(computedStatusBase?.[code]?.val || 0) + delta.base + delta.current;
           const max = Number(computedStatusBase?.[code]?.max || 1) + delta.base + delta.max;
           return (

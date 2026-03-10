@@ -29,12 +29,12 @@ const CORE_STATUS_META = {
   EST: { label: "EST", cor: "#d7d748" },
   MAN: { label: "MAN", cor: "#4a7dff" },
   SAN: { label: "SAN", cor: "#c15cff" },
-  CONSC: { label: "CONSC", cor: "#50c5aa" },
+  CONS: { label: "CONS", cor: "#50c5aa" },
 };
 
 const normalizeStatusCode = (raw) => {
   const up = String(raw || "").trim().toUpperCase();
-  if (up === "CONS") return "CONSC";
+  if (up === "CONSC") return "CONS";
   return up;
 };
 
@@ -289,7 +289,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     ])).filter(Boolean);
     const all = allCodes.map((up) => {
       const existingKey = Object.keys(ficha?.status || {}).find((k) => normalizeStatusCode(k) === up) || up;
-      const fromCombate = combate.statusMeta?.[up] || (up === "CONSC" ? combate.statusMeta?.CONS : null) || {};
+      const fromCombate = combate.statusMeta?.[up] || (up === "CONS" ? combate.statusMeta?.CONSC : null) || {};
       const base = CORE_STATUS_META[up] || {};
       return {
         key: existingKey,
@@ -908,7 +908,7 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
     ])).filter(Boolean);
     return allCodes.map((code) => {
       const base = (statusDefs || []).find((s) => normalizeStatusCode(s.code) === code) || { label: code, cor: "#9ca3af" };
-      const meta = statusMeta?.[code] || (code === "CONSC" ? statusMeta?.CONS : null) || {};
+      const meta = statusMeta?.[code] || (code === "CONS" ? statusMeta?.CONSC : null) || {};
       return { key: code, code, label: meta.label || base.label || code, cor: meta.cor || base.cor || "#9ca3af" };
     }).sort((a, b) => {
       const ia = (statusDefs || []).findIndex((x) => normalizeStatusCode(x.code) === a.code);
@@ -973,7 +973,7 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
           <div style={{ color: G.gold, marginBottom: 6, fontFamily: "'Cinzel',serif" }}>Barras de status</div>
           <div style={{ display: "grid", gap: 8, maxHeight: 260, overflow: "auto" }}>
             {localStatusDefs.map((s) => {
-              const meta = statusMeta[s.code] || (s.code === "CONSC" ? statusMeta.CONS : null) || { label: s.label, cor: s.cor };
+              const meta = statusMeta[s.code] || (s.code === "CONS" ? statusMeta.CONSC : null) || { label: s.label, cor: s.cor };
               const st = statusState[s.key] || { val: 0, max: 1 };
               return (
                 <div key={s.key} style={{ border: "1px solid #3f3121", borderRadius: 8, padding: 8, background: "#120f0b", display: "grid", gap: 6 }}>
@@ -991,7 +991,7 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
                         setStatusMeta((p) => {
                           const n = { ...p };
                           delete n[s.code];
-                          if (s.code === "CONSC") delete n.CONS;
+                          if (s.code === "CONS") delete n.CONSC;
                           return n;
                         });
                         setStatusInput((p) => { const n = { ...p }; delete n[s.key]; return n; });
@@ -1017,7 +1017,7 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
                 const nextMeta = {
                   ...(statusMeta || {}),
                   [key]: {
-                    ...(statusMeta?.[key] || (key === "CONSC" ? statusMeta?.CONS : null) || {}),
+                    ...(statusMeta?.[key] || (key === "CONS" ? statusMeta?.CONSC : null) || {}),
                     label: statusDraft.label || key,
                     cor: statusDraft.cor,
                   },
@@ -1083,10 +1083,10 @@ function SettingsModal({ combate, statusDefs, ficha, onClose, onSave }) {
                 const nextStatusMeta = { ...(statusMeta || {}) };
                 if (code !== oldCode) {
                   delete nextStatusMeta[oldCode];
-                  if (oldCode === "CONSC") delete nextStatusMeta.CONS;
+                  if (oldCode === "CONS") delete nextStatusMeta.CONSC;
                 }
                 nextStatusMeta[code] = {
-                  ...(nextStatusMeta[code] || (code === "CONSC" ? nextStatusMeta.CONS : null) || {}),
+                  ...(nextStatusMeta[code] || (code === "CONS" ? nextStatusMeta.CONSC : null) || {}),
                   label: statusEditor.draft.label || code,
                   cor: statusEditor.draft.cor,
                 };
