@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { STATUS_CFG, ARSENAL_RANKS, RANK_COR } from "../../../data/gameData";
-import { aggregateStatusModifiers } from "../../../core/effects";
+import { aggregateModifiers, aggregateStatusModifiers } from "../../../core/effects";
 import { inventoryItemModifiers } from "../../../core/inventory";
 import { uid } from "../../../core/factories";
 import { evaluateMathExpression } from "../../../core/mathExpression";
@@ -62,6 +62,8 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
   const mergedMods = [...globalEffects, ...itemMods];
 
   const statusBonus = aggregateStatusModifiers(mergedMods);
+  const attributeBonus = useMemo(() => aggregateModifiers(mergedMods, "atributos"), [mergedMods]);
+  const skillBonus = useMemo(() => aggregateModifiers(mergedMods, "pericias"), [mergedMods]);
 
   const normalizeStatusCode = (raw) => {
     const up = String(raw || "").trim().toUpperCase();
@@ -74,7 +76,12 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
     ...Object.keys(ficha?.status || {}).map((k) => normalizeStatusCode(k)),
     ...Object.keys(ficha?.combate?.statusMeta || {}).map((k) => normalizeStatusCode(k)),
   ])).filter(Boolean), [baseStatusDefs, ficha?.status, ficha?.combate?.statusMeta]);
-  const statusExpressionVars = useMemo(() => buildFichaExpressionVars(ficha), [ficha?.atributos, ficha?.pericias, ficha?.status, ficha?.recursos, ficha?.combate?.recursos]);
+  const statusExpressionVars = useMemo(() => buildFichaExpressionVars(ficha, {
+    attributeMods: attributeBonus,
+    skillMods: skillBonus,
+    statusMods: statusBonus,
+    effects: mergedMods,
+  }), [ficha?.atributos, ficha?.pericias, ficha?.status, ficha?.recursos, ficha?.combate?.recursos, attributeBonus, skillBonus, statusBonus, mergedMods]);
   const variableSuggestions = useMemo(() => Object.keys(statusExpressionVars).filter((v) => /[A-Za-z]/.test(v)).sort((a, b) => a.localeCompare(b)), [statusExpressionVars]);
 
   const computedStatusBase = useMemo(() => {
@@ -173,6 +180,7 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
               onSaveExpressions={(valExpr, maxExpr) => saveStatusExpressions(s.sigla, valExpr, maxExpr)}
               expressionVariables={statusExpressionVars}
               variableSuggestions={variableSuggestions}
+              variableValues={statusExpressionVars}
             />
           );
         })}

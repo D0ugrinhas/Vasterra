@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { uid } from "../../../core/factories";
 import { instantiateEffectFromTemplate, parseMechanicalEffects } from "../../../core/effects";
-import { aggregateResourceModifiers, aggregateStatusModifiers } from "../../../core/effects";
+import { aggregateModifiers, aggregateResourceModifiers, aggregateStatusModifiers } from "../../../core/effects";
 import { evaluateStatusFormula, getMechanicalText, parseDurationRounds, toNumber } from "./combate/utils";
 import { buildFichaExpressionVars } from "../../../core/fichaFormula";
 import { evaluateMathExpression } from "../../../core/mathExpression";
@@ -251,12 +251,22 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
   const [logDetail, setLogDetail] = useState(null);
 
   const combate = useMemo(() => normalizeCombateState(ficha?.combate || {}, ficha), [ficha]);
-  const formulaVars = useMemo(() => buildFichaExpressionVars(ficha), [ficha?.atributos, ficha?.pericias, ficha?.status, ficha?.recursos, ficha?.combate?.recursos]);
+  const activeEffects = useMemo(() => (Array.isArray(ficha?.modificadores?.efeitos) ? ficha.modificadores.efeitos : []).filter((e) => e && e.ativo !== false), [ficha?.modificadores?.efeitos]);
+  const attributeBonus = useMemo(() => aggregateModifiers(activeEffects, "atributos"), [activeEffects]);
+  const skillBonus = useMemo(() => aggregateModifiers(activeEffects, "pericias"), [activeEffects]);
+  const statusBonusForFormula = useMemo(() => aggregateStatusModifiers(activeEffects), [activeEffects]);
+  const resourceBonusForFormula = useMemo(() => aggregateResourceModifiers(activeEffects), [activeEffects]);
+  const formulaVars = useMemo(() => buildFichaExpressionVars(ficha, {
+    attributeMods: attributeBonus,
+    skillMods: skillBonus,
+    statusMods: statusBonusForFormula,
+    resourceMods: resourceBonusForFormula,
+    effects: activeEffects,
+  }), [ficha?.atributos, ficha?.pericias, ficha?.status, ficha?.recursos, ficha?.combate?.recursos, attributeBonus, skillBonus, statusBonusForFormula, resourceBonusForFormula, activeEffects]);
   const tagsById = useMemo(() => Object.fromEntries((skillTags || []).map((t) => [t.id, t])), [skillTags]);
   const assigned = useMemo(() => (ficha?.skills || []).map((entry) => ({ entry, skill: skillFromEntry(entry) })), [ficha?.skills]);
   const filteredSkills = useMemo(() => assigned.filter(({ skill }) => (`${skill.nome || ""} ${skill.descricao || ""} ${(skill.custos || []).map((c) => c.codigo).join(" ")}`).toLowerCase().includes(query.toLowerCase())), [assigned, query]);
 
-  const activeEffects = useMemo(() => (Array.isArray(ficha?.modificadores?.efeitos) ? ficha.modificadores.efeitos : []).filter((e) => e && e.ativo !== false), [ficha?.modificadores?.efeitos]);
   const activeStatusMods = useMemo(() => { try { return aggregateStatusModifiers(activeEffects); } catch { return {}; } }, [activeEffects]);
   const activeResourceMods = useMemo(() => { try { return aggregateResourceModifiers(activeEffects); } catch { return {}; } }, [activeEffects]);
   const pendingCounts = combate.pendingSkillCounts && Object.keys(combate.pendingSkillCounts).length ? combate.pendingSkillCounts : Object.fromEntries((combate.pendingSkillIds || []).map((id) => [id, 1]));
@@ -505,24 +515,6 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     updateResourceById(resource.id, { atual: Math.max(0, Math.min(Number(resource.total || 0), next)) });
   };
 
-  const setStatusValue = (key, field, effectiveValue) => {
-    const curr = ficha?.status?.[key] || { val: 0, max: 1 };
-    const code = String(key || "").toUpperCase();
-    const runtime = combatStatus[code] || { mods: { base: 0, current: 0, max: 0 }, overflowMax: 0 };
-    const mods = runtime.mods || { base: 0, current: 0, max: 0 };
-    const baseShift = Number(mods.base || 0) + Number(mods.current || 0);
-    const maxShift = Number(mods.max || 0) + Number(runtime.overflowMax || 0);
-    if (field === "max") {
-      const nextBaseMax = Math.max(1, Math.floor(Number(effectiveValue || 1) - maxShift));
-      const nextBaseVal = Math.max(0, Math.min(nextBaseMax, Number(curr.val || 0)));
-      onUpdate({ status: { ...(ficha.status || {}), [key]: { ...curr, max: nextBaseMax, val: nextBaseVal, maxExpr: "" } } });
-      return;
-    }
-    const nextEffectiveMax = Math.max(1, Math.floor(Number(runtime.max || curr.max || 1)));
-    const clampedEffectiveVal = Math.max(0, Math.min(nextEffectiveMax, Number(effectiveValue || 0)));
-    const nextBaseVal = Math.max(0, Math.min(Number(curr.max || 1), Math.floor(clampedEffectiveVal - baseShift)));
-    onUpdate({ status: { ...(ficha.status || {}), [key]: { ...curr, val: nextBaseVal, valExpr: "" } } });
-  };
 
   const saveStatusValues = (key, nextValues = {}) => {
     const curr = ficha?.status?.[key] || { val: 0, max: 1 };
@@ -541,7 +533,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     onUpdate({
       status: {
         ...(ficha.status || {}),
-        [key]: { ...curr, max: nextBaseMax, val: nextBaseVal, maxExpr: "", valExpr: "" },
+        [key]: { ...curr, max: nextBaseMax, val: nextBaseVal },
       },
     });
   };

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { resolverNomeRaca } from "../../data/gameData";
 import { uid, novaFicha } from "../../core/factories";
 import { G, inpStyle, btnStyle } from "../../ui/theme";
@@ -35,6 +35,20 @@ export function FichasSection({ fichas, onFichas, arsenal, efeitosCaldeirao = []
   const [deleteMode, setDeleteMode] = useState(false);
   const [selectedForDelete, setSelectedForDelete] = useState([]);
   const [filters, setFilters] = useState({ tempo: "all", essencia: "all", classe: "all", raca: "all" });
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
+  const [tabsCollapsed, setTabsCollapsed] = useState(false);
+
+  useEffect(() => {
+    const updateMobile = () => setIsMobile(window.innerWidth <= 768);
+    updateMobile();
+    window.addEventListener("resize", updateMobile);
+    return () => window.removeEventListener("resize", updateMobile);
+  }, []);
+
+  useEffect(() => {
+    if (isMobile) setTabsCollapsed(true);
+    else setTabsCollapsed(false);
+  }, [isMobile]);
 
   const classesDisponiveis = [...new Set(fichas.flatMap((f) => f.classes || []))].sort();
   const essenciasDisponiveis = [...new Set(fichas.map((f) => f.essencia?.nome).filter(Boolean))].sort();
@@ -213,28 +227,43 @@ export function FichasSection({ fichas, onFichas, arsenal, efeitosCaldeirao = []
             )}
           </div>
 
-          <div style={{ display: "flex", borderBottom: "1px solid " + G.border, background: G.bg2, flexShrink: 0, overflowX: "auto" }}>
-            {FICHA_TABS.map((t) => (
-              <button
-                className="v-tab-btn"
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                style={{
-                  padding: "10px 16px",
-                  background: "transparent",
-                  border: "none",
-                  borderBottom: tab === t.id ? "2px solid #c8a96e" : "2px solid transparent",
-                  color: tab === t.id ? G.gold : G.muted,
-                  fontFamily: "'Cinzel',serif",
-                  fontSize: 11,
-                  letterSpacing: 1,
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {t.label}
-              </button>
-            ))}
+          <div style={{ borderBottom: "1px solid " + G.border, background: G.bg2, flexShrink: 0 }}>
+            {isMobile && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px" }}>
+                <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Aba ativa: {FICHA_TABS.find((t) => t.id === tab)?.label || tab}</span>
+                <HoverButton onClick={() => setTabsCollapsed((prev) => !prev)} style={btnStyle({ padding: "4px 10px", fontSize: 11 })}>
+                  {tabsCollapsed ? "Mostrar abas" : "Ocultar abas"}
+                </HoverButton>
+              </div>
+            )}
+            {!tabsCollapsed && (
+              <div style={{ display: "flex", overflowX: "auto" }}>
+                {FICHA_TABS.map((t) => (
+                  <button
+                    className="v-tab-btn"
+                    key={t.id}
+                    onClick={() => {
+                      setTab(t.id);
+                      if (isMobile) setTabsCollapsed(true);
+                    }}
+                    style={{
+                      padding: "10px 16px",
+                      background: "transparent",
+                      border: "none",
+                      borderBottom: tab === t.id ? "2px solid #c8a96e" : "2px solid transparent",
+                      color: tab === t.id ? G.gold : G.muted,
+                      fontFamily: "'Cinzel',serif",
+                      fontSize: 11,
+                      letterSpacing: 1,
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="v-fade" style={{ flex: 1, overflow: "auto", padding: 16 }}>

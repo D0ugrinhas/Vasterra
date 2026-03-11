@@ -111,7 +111,7 @@ export function ConfiguradorFichaModal({ open, ficha, onClose, onApply }) {
           )}
           <div style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
             <label style={{ color: G.muted, fontSize: 11 }}>Valor Máximo (fórmula)</label>
-            <ExpressionInput value={maxFormula} onChange={setMaxFormula} suggestions={varSuggestions} style={inpStyle({ fontFamily: "monospace" })} placeholder="Ex: max(10, VIG*2)" />
+            <ExpressionInput value={maxFormula} onChange={setMaxFormula} suggestions={varSuggestions} suggestionValues={vars} style={inpStyle({ fontFamily: "monospace" })} placeholder="Ex: max(10, VIG*2)" />
             <div style={{ fontFamily: "monospace", fontSize: 11, color: previewMax.valid ? "#9ee0aa" : "#ff8f8f" }}>
               {previewMax.valid ? `Máximo calculado: ${previewMax.value}` : `Fórmula inválida (${previewMax.error})`}
             </div>
@@ -144,7 +144,7 @@ export function ConfiguradorFichaModal({ open, ficha, onClose, onApply }) {
     </Modal>
   );
 }
-function ExpressionInput({ value, onChange, placeholder, style, suggestions = [] }) {
+function ExpressionInput({ value, onChange, placeholder, style, suggestions = [], suggestionValues = {} }) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const rootRef = useRef(null);
@@ -217,6 +217,7 @@ function ExpressionInput({ value, onChange, placeholder, style, suggestions = []
               style={{ width: "100%", textAlign: "left", background: idx === activeIndex ? "#13324a" : "transparent", color: idx === activeIndex ? "#e3f3ff" : "#9cc8ff", border: "none", borderBottom: "1px solid #173046", padding: "6px 8px", cursor: "pointer", fontFamily: "monospace", fontSize: 12 }}
             >
               {item}
+              {Number.isFinite(Number(suggestionValues?.[item])) && <span style={{ float: "right", color: "#7fd6a5", fontSize: 11 }}>{Number(suggestionValues[item])}</span>}
             </button>
           ))}
         </div>
@@ -225,7 +226,7 @@ function ExpressionInput({ value, onChange, placeholder, style, suggestions = []
   );
 }
 
-export function FormulaAutocompleteModal({ open, title = "Autocomplete de fórmula", suggestions = [], onClose, onPick }) {
+export function FormulaAutocompleteModal({ open, title = "Autocomplete de fórmula", suggestions = [], variableValues = {}, onClose, onPick }) {
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
 
@@ -279,6 +280,7 @@ export function FormulaAutocompleteModal({ open, title = "Autocomplete de fórmu
               style={{ width: "100%", textAlign: "left", border: "none", borderBottom: "1px solid #173046", padding: "6px 8px", background: idx === cursor ? "#13324a" : "transparent", color: idx === cursor ? "#e3f3ff" : "#9cc8ff", cursor: "pointer", fontFamily: "monospace", fontSize: 12 }}
             >
               {item}
+              {Number.isFinite(Number(variableValues?.[item])) && <span style={{ float: "right", color: "#7fd6a5", fontSize: 11 }}>{Number(variableValues[item])}</span>}
             </button>
           ))}
           {filtered.length === 0 && <div style={{ padding: "10px 8px", color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Nenhuma variável encontrada.</div>}
@@ -288,7 +290,7 @@ export function FormulaAutocompleteModal({ open, title = "Autocomplete de fórmu
   );
 }
 
-const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "", maxExpr = "", onValExpr, onMaxExpr, onSaveExpressions, expressionVariables = {}, variableSuggestions = [] }) => {
+const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "", maxExpr = "", onValExpr, onMaxExpr, onSaveExpressions, expressionVariables = {}, variableSuggestions = [], variableValues = {} }) => {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [draftValExpr, setDraftValExpr] = useState(valExpr || "");
   const [draftMaxExpr, setDraftMaxExpr] = useState(maxExpr || "");
@@ -391,6 +393,7 @@ const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "",
                     setDirty(true);
                   }}
                   suggestions={variableSuggestions}
+                  suggestionValues={variableValues}
                   placeholder="Ex: (VIG * 2) / (MENT + Fortitude)"
                   style={inpStyle({ fontFamily: "monospace" })}
                 />
@@ -409,6 +412,7 @@ const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "",
                     setDirty(true);
                   }}
                   suggestions={variableSuggestions}
+                  suggestionValues={variableValues}
                   placeholder="Ex: max(ESTMAX, REAMAX) + DET"
                   style={inpStyle({ fontFamily: "monospace" })}
                 />
@@ -420,6 +424,7 @@ const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "",
             <FormulaAutocompleteModal
               open={Boolean(autocompleteTarget)}
               suggestions={variableSuggestions}
+              variableValues={variableValues}
               onClose={() => setAutocompleteTarget(null)}
               onPick={(picked) => {
                 if (autocompleteTarget === "val") {
