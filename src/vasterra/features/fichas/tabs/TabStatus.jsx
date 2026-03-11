@@ -1,11 +1,11 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { STATUS_CFG, ATRIBUTOS, ARSENAL_RANKS, RANK_COR } from "../../../data/gameData";
-import { aggregateModifiers, aggregateStatusModifiers } from "../../../core/effects";
+import { STATUS_CFG, ARSENAL_RANKS, RANK_COR } from "../../../data/gameData";
+import { aggregateStatusModifiers } from "../../../core/effects";
 import { inventoryItemModifiers } from "../../../core/inventory";
 import { evaluateMathExpression } from "../../../core/mathExpression";
 import { G, inpStyle, btnStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
-import { StatusBar } from "../../shared/components";
+import { ConfiguradorFichaModal, StatusBar } from "../../shared/components";
 import { ImageAttachModal, ImageViewport } from "../../../components/media/ImageAttachModal";
 
 const normalizeVarToken = (value) => String(value || "")
@@ -53,11 +53,9 @@ function AvatarPreview({ info }) {
 }
 
 export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
-  const [c1, setC1] = useState("FOR");
-  const [c2, setC2] = useState("FOR");
-  const [cRes, setCRes] = useState(null);
-  const [burstRes, setBurstRes] = useState(null);
   const [imageModalOpen, setImageModalOpen] = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
+  const [burstRes, setBurstRes] = useState(null);
 
   const info = { ...defaultInfo, ...(ficha.informacoes || {}) };
   const avatarModeUI = (info.avatarModo === "url" || info.avatarModo === "upload") ? "image" : (info.avatarModo || "fallback");
@@ -67,7 +65,6 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
   const mergedMods = [...globalEffects, ...itemMods];
 
   const statusBonus = aggregateStatusModifiers(mergedMods);
-  const attrBonus = aggregateModifiers(mergedMods, "atributos");
 
   const normalizeStatusCode = (raw) => {
     const up = String(raw || "").trim().toUpperCase();
@@ -188,21 +185,14 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
     });
   }, [ficha.status, onUpdate, statusExpressionVars]);
 
-  const rolarConfronto = useCallback(() => {
-    const v1 = (ficha.atributos[c1]?.val || 5) + (attrBonus[c1] || 0);
-    const v2 = (ficha.atributos[c2]?.val || 5) + (attrBonus[c2] || 0);
-    const diff = v1 - v2;
-    setCRes({ r1: Math.max(1, Math.ceil(Math.random() * 20) + diff), r2: Math.ceil(Math.random() * 20) });
-  }, [attrBonus, c1, c2, ficha.atributos]);
-
-
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
       <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 16 }}>
-        <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 14, paddingBottom: 8, borderBottom: "1px solid " + G.border }}><span>◈ INFORMAÇÕES · STATUS VITAIS</span></div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 14, paddingBottom: 8, borderBottom: "1px solid " + G.border }}><span>◈ INFORMAÇÕES · STATUS VITAIS</span><HoverButton style={btnStyle({ padding: "4px 8px", fontSize: 11 })} onClick={() => setConfigOpen(true)}>Configurador de Ficha</HoverButton></div>
         {statusCodes.map((code) => {
           const baseCfg = baseStatusDefs.find((x) => x.sigla === code) || {};
-          const s = { sigla: code, nome: baseCfg.nome || code, cor: baseCfg.cor || "#9ca3af", msg: baseCfg.msg };
+          const meta = ficha?.combate?.statusMeta?.[code] || (code === "CONS" ? ficha?.combate?.statusMeta?.CONSC : null) || {};
+          const s = { sigla: code, nome: meta.label || baseCfg.nome || code, cor: meta.cor || baseCfg.cor || "#9ca3af", msg: baseCfg.msg };
           const delta = statusBonus[code] || (code === "CONS" ? statusBonus.CONSC : null) || { base: 0, current: 0, max: 0 };
           const val = Number(computedStatusBase?.[code]?.val || 0) + delta.base + delta.current;
           const max = Number(computedStatusBase?.[code]?.max || 1) + delta.base + delta.max;
@@ -272,14 +262,20 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
         </div>
 
         <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 14 }}>
-          <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 10 }}>⚔ CONFRONTO (Atributo vs Atributo)</div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
-            <select value={c1} onChange={(e) => { setC1(e.target.value); setCRes(null); }}>{ATRIBUTOS.map((a) => <option key={a.sigla}>{a.sigla}</option>)}</select>
-            <span style={{ color: G.gold, fontFamily: "'Cinzel',serif" }}>vs</span>
-            <select value={c2} onChange={(e) => { setC2(e.target.value); setCRes(null); }}>{ATRIBUTOS.map((a) => <option key={a.sigla}>{a.sigla}</option>)}</select>
-            <HoverButton style={btnStyle({ padding: "7px 12px" })} onClick={rolarConfronto}>🎲</HoverButton>
+          <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 10 }}>◉ RECURSOS DA FICHA</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))", gap: 8 }}>
+            {(Array.isArray(ficha?.combate?.recursos) ? ficha.combate.recursos : Object.entries(ficha?.recursos || {}).map(([codigo, payload]) => ({ id: codigo, codigo, nome: codigo, cor: "#6e7d91", total: Number(payload?.total || 0), atual: Math.max(0, Number(payload?.total || 0) - Number(payload?.usado || 0)) }))).map((r) => (
+              <div key={r.id || r.codigo} style={{ border: "1px solid #2b3d52", borderRadius: 8, padding: 8, background: "#0b1118" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "monospace", fontSize: 11, color: r.cor || "#9fb3c8" }}>
+                  <span>{r.codigo || r.nome}</span>
+                  <span style={{ color: G.muted }}>{Number(r.atual || 0)}/{Number(r.total || 0)}</span>
+                </div>
+                <div style={{ height: 6, borderRadius: 6, background: "#13202d", marginTop: 6, overflow: "hidden" }}>
+                  <div style={{ width: `${Math.max(0, Math.min(100, (Number(r.atual || 0) / Math.max(1, Number(r.total || 1))) * 100))}%`, height: "100%", background: r.cor || "#6e7d91" }} />
+                </div>
+              </div>
+            ))}
           </div>
-          {cRes && <div style={{ display: "flex", gap: 8 }}>{[{ v: cRes.r1, lbl: c1, win: cRes.r1 > cRes.r2 }, { v: cRes.r2, lbl: c2, win: cRes.r2 > cRes.r1 }].map((x, i) => <div key={i} style={{ flex: 1, textAlign: "center", padding: "10px 6px", background: x.win ? "#0a2a0a" : "#1a0a0a", border: "1px solid " + (x.win ? "#2ecc7144" : "#e74c3c44"), borderRadius: 8 }}><div style={{ fontSize: 10, color: G.muted, fontFamily: "monospace", marginBottom: 2 }}>{x.lbl}</div><div style={{ fontFamily: "'Cinzel',serif", fontSize: 28, color: x.win ? "#2ecc71" : "#e74c3c" }}>{x.v}</div></div>)}</div>}
         </div>
 
         <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 14 }}>
@@ -288,6 +284,33 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
           {burstRes !== null && <div style={{ marginTop: 10, textAlign: "center", padding: 12, background: "#0a1a0a", border: "1px solid #2ecc7144", borderRadius: 8 }}><div style={{ fontFamily: "'Cinzel',serif", fontSize: 36, color: "#2ecc71" }}>{burstRes}</div></div>}
         </div>
       </div>
+      <ConfiguradorFichaModal
+        open={configOpen}
+        ficha={ficha}
+        onClose={() => setConfigOpen(false)}
+        onApply={(payload) => {
+          if (payload.tipo === "status") {
+            const code = payload.codigo;
+            onUpdate({
+              status: { ...(ficha.status || {}), [code]: { ...(ficha.status?.[code] || {}), val: payload.max, max: payload.max, maxExpr: payload.maxFormula || "" } },
+              combate: { ...(ficha.combate || {}), statusMeta: { ...(ficha.combate?.statusMeta || {}), [code]: { label: payload.nome || code, cor: payload.cor } } },
+            });
+            return;
+          }
+          const exists = (ficha?.combate?.recursos || []).some((r) => String(r.codigo || "").toUpperCase() === payload.codigo);
+          if (exists) return;
+          onUpdate({
+            combate: {
+              ...(ficha.combate || {}),
+              recursos: [
+                ...((ficha.combate?.recursos || [])),
+                { id: Math.random().toString(36).slice(2, 10), codigo: payload.codigo, nome: payload.nome, cor: payload.cor, shape: "square", total: payload.max, atual: payload.max, custom: true, totalExpr: payload.maxFormula || "" },
+              ],
+            },
+            recursos: { ...(ficha.recursos || {}), [payload.codigo]: { total: payload.max, usado: 0, totalExpr: payload.maxFormula || "" } },
+          });
+        }}
+      />
       <ImageAttachModal
         open={imageModalOpen}
         title="Anexar Avatar"

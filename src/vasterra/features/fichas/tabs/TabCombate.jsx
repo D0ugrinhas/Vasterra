@@ -6,7 +6,7 @@ import { evaluateStatusFormula, getMechanicalText, parseDurationRounds, toNumber
 import { RANK_COR } from "../../../data/gameData";
 import { G, btnStyle, inpStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
-import { Modal, EffectDetailsModal } from "../../shared/components";
+import { ConfiguradorFichaModal, Modal, EffectDetailsModal } from "../../shared/components";
 import { SkillDetalhe } from "../../biblioteca/SkillDetalhe";
 import { ImageViewport } from "../../../components/media/ImageAttachModal";
 
@@ -236,6 +236,7 @@ function parseExpressionValue(raw, fallback, context = {}) {
 export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags = [], onNotify }) {
   const [query, setQuery] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [fichaConfigOpen, setFichaConfigOpen] = useState(false);
   const [skillModal, setSkillModal] = useState(null);
   const [effectsOpen, setEffectsOpen] = useState(false);
   const [remindersOpen, setRemindersOpen] = useState(false);
@@ -645,7 +646,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
         <div style={{ border: "1px solid #52422b", borderRadius: 8, background: "#0d0a07", padding: 8, marginBottom: 8 }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
             <div style={{ color: G.gold, fontFamily: "'Cinzel',serif", fontSize: 12 }}>Recursos (toque para painel mobile)</div>
-            <HoverButton style={btnStyle({ padding: "4px 8px", borderColor: "#695532", color: "#e2c38a" })} onClick={() => setSettingsOpen(true)}>Configurações</HoverButton>
+            <HoverButton style={btnStyle({ padding: "4px 8px", borderColor: "#695532", color: "#e2c38a" })} onClick={() => setFichaConfigOpen(true)}>Configurador de Ficha</HoverButton>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 8 }}>
             {Object.values(effectiveResources).map((r) => {
@@ -747,6 +748,38 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
         </div>
       </div>
 
+      <ConfiguradorFichaModal
+        open={fichaConfigOpen}
+        ficha={ficha}
+        onClose={() => setFichaConfigOpen(false)}
+        onApply={(payload) => {
+          if (payload.tipo === "status") {
+            const code = normalizeStatusCode(payload.codigo);
+            onUpdate({
+              status: { ...(ficha.status || {}), [code]: { ...(ficha.status?.[code] || {}), val: payload.max, max: payload.max, maxExpr: payload.maxFormula || "" } },
+              combate: { ...(ficha.combate || {}), statusMeta: { ...(combate.statusMeta || {}), [code]: { label: payload.nome || code, cor: payload.cor } } },
+            });
+            return;
+          }
+          const exists = (combate.recursos || []).some((r) => String(r.codigo || "").toUpperCase() === payload.codigo);
+          if (exists) return;
+          const nextResources = [...(combate.recursos || []), {
+            id: uid(),
+            codigo: payload.codigo,
+            nome: payload.nome || payload.codigo,
+            cor: payload.cor,
+            shape: "square",
+            total: payload.max,
+            atual: payload.max,
+            custom: true,
+            totalExpr: payload.maxFormula || "",
+          }];
+          onUpdate({
+            combate: { ...(ficha.combate || {}), recursos: nextResources },
+            recursos: { ...(ficha.recursos || {}), [payload.codigo]: { total: payload.max, usado: 0, totalExpr: payload.maxFormula || "" } },
+          });
+        }}
+      />
       {settingsOpen && <SettingsModal
         combate={combate}
         statusDefs={statusDefs}

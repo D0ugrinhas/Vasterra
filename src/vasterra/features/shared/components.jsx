@@ -44,6 +44,122 @@ export function Modal({ title, children, onClose, wide, closeOnBackdrop = false 
   );
 }
 
+
+
+function normalizeCode(raw = "") {
+  return String(raw || "").trim().toUpperCase().replace(/[^A-Z0-9_]/g, "");
+}
+
+function buildFichaExpressionVars(ficha = {}) {
+  const vars = {};
+  const put = (key, value) => {
+    const code = String(key || "").trim();
+    const n = Number(value);
+    if (!code || !Number.isFinite(n)) return;
+    vars[code] = n;
+    const compact = code.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\p{L}\p{N}_]/gu, "");
+    if (compact) vars[compact] = n;
+    if (compact) vars[compact.toUpperCase()] = n;
+  };
+
+  Object.entries(ficha?.atributos || {}).forEach(([k, v]) => put(k, Number(v?.val || 0)));
+  Object.entries(ficha?.pericias || {}).forEach(([k, v]) => put(k, Number(v || 0)));
+  Object.entries(ficha?.status || {}).forEach(([k, v]) => {
+    const code = normalizeCode(k);
+    put(code, Number(v?.val || 0));
+    put(`${code}MAX`, Number(v?.max || 1));
+  });
+  Object.entries(ficha?.recursos || {}).forEach(([k, v]) => {
+    const total = Number(v?.total || 0);
+    const used = Number(v?.usado || 0);
+    put(k, Math.max(0, total - used));
+    put(`${k}MAX`, total);
+  });
+  return vars;
+}
+
+export function ConfiguradorFichaModal({ open, ficha, onClose, onApply }) {
+  const [tipo, setTipo] = useState("status");
+  const [nome, setNome] = useState("");
+  const [codigo, setCodigo] = useState("");
+  const [cor, setCor] = useState("#8dc2ff");
+  const [maxFormula, setMaxFormula] = useState("10");
+
+  useEffect(() => {
+    if (!open) return;
+    setTipo("status");
+    setNome("");
+    setCodigo("");
+    setCor("#8dc2ff");
+    setMaxFormula("10");
+  }, [open]);
+
+  if (!open) return null;
+
+  const safeCode = normalizeCode(codigo);
+  const vars = buildFichaExpressionVars(ficha);
+  const previewMax = evaluateMathExpression(maxFormula, { fallback: 10, min: 1, variables: vars });
+
+  return (
+    <Modal title="Configurador de Ficha" onClose={onClose} wide>
+      <div style={{ display: "grid", gap: 10 }}>
+        <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>
+          Crie um novo <b>Status</b> ou <b>Recurso</b>. Máximo aceita fórmula (ex: <b>(VIG*2)+(MENT)</b>).
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 8 }}>
+          <div style={{ display: "grid", gap: 4 }}>
+            <label style={{ color: G.muted, fontSize: 11 }}>Tipo</label>
+            <select value={tipo} onChange={(e) => setTipo(e.target.value)} style={inpStyle()}>
+              <option value="status">Status</option>
+              <option value="recurso">Recurso</option>
+            </select>
+          </div>
+          <div style={{ display: "grid", gap: 4 }}>
+            <label style={{ color: G.muted, fontSize: 11 }}>Nome</label>
+            <input value={nome} onChange={(e) => setNome(e.target.value)} style={inpStyle()} placeholder="Ex: Determinação" />
+          </div>
+          <div style={{ display: "grid", gap: 4 }}>
+            <label style={{ color: G.muted, fontSize: 11 }}>Código (abreviação)</label>
+            <input value={codigo} onChange={(e) => setCodigo(normalizeCode(e.target.value))} style={inpStyle()} placeholder="Ex: DET" />
+          </div>
+          <div style={{ display: "grid", gap: 4 }}>
+            <label style={{ color: G.muted, fontSize: 11 }}>Cor</label>
+            <input type="color" value={cor} onChange={(e) => setCor(e.target.value)} style={{ ...inpStyle({ padding: 2 }), height: 36 }} />
+          </div>
+          <div style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
+            <label style={{ color: G.muted, fontSize: 11 }}>Valor Máximo (fórmula)</label>
+            <input value={maxFormula} onChange={(e) => setMaxFormula(e.target.value)} style={inpStyle({ fontFamily: "monospace" })} placeholder="Ex: max(10, VIG*2)" />
+            <div style={{ fontFamily: "monospace", fontSize: 11, color: previewMax.valid ? "#9ee0aa" : "#ff8f8f" }}>
+              {previewMax.valid ? `Máximo calculado: ${previewMax.value}` : `Fórmula inválida (${previewMax.error})`}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <HoverButton onClick={onClose} style={btnStyle({ borderColor: "#555", color: "#ddd" })}>Cancelar</HoverButton>
+          <HoverButton
+            disabled={!safeCode}
+            onClick={() => {
+              if (!safeCode) return;
+              onApply?.({
+                tipo,
+                nome: nome || safeCode,
+                codigo: safeCode,
+                cor,
+                maxFormula,
+                max: Math.max(1, Number(previewMax.value || 1)),
+              });
+              onClose?.();
+            }}
+            style={btnStyle({ opacity: safeCode ? 1 : 0.5 })}
+          >
+            Criar na Ficha
+          </HoverButton>
+        </div>
+      </div>
+    </Modal>
+  );
+}
 function ExpressionInput({ value, onChange, placeholder, style, suggestions = [] }) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
