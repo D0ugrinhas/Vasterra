@@ -1,4 +1,5 @@
 import { evaluateMathExpression } from "../../core/mathExpression";
+import { buildFichaExpressionVars, normalizeFichaCode } from "../../core/fichaFormula";
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { MOD_ORIGENS, STATUS_CFG } from "../../data/gameData";
 import { uid } from "../../core/factories";
@@ -46,44 +47,13 @@ export function Modal({ title, children, onClose, wide, closeOnBackdrop = false 
 
 
 
-function normalizeCode(raw = "") {
-  return String(raw || "").trim().toUpperCase().replace(/[^A-Z0-9_]/g, "");
-}
-
-function buildFichaExpressionVars(ficha = {}) {
-  const vars = {};
-  const put = (key, value) => {
-    const code = String(key || "").trim();
-    const n = Number(value);
-    if (!code || !Number.isFinite(n)) return;
-    vars[code] = n;
-    const compact = code.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\p{L}\p{N}_]/gu, "");
-    if (compact) vars[compact] = n;
-    if (compact) vars[compact.toUpperCase()] = n;
-  };
-
-  Object.entries(ficha?.atributos || {}).forEach(([k, v]) => put(k, Number(v?.val || 0)));
-  Object.entries(ficha?.pericias || {}).forEach(([k, v]) => put(k, Number(v || 0)));
-  Object.entries(ficha?.status || {}).forEach(([k, v]) => {
-    const code = normalizeCode(k);
-    put(code, Number(v?.val || 0));
-    put(`${code}MAX`, Number(v?.max || 1));
-  });
-  Object.entries(ficha?.recursos || {}).forEach(([k, v]) => {
-    const total = Number(v?.total || 0);
-    const used = Number(v?.usado || 0);
-    put(k, Math.max(0, total - used));
-    put(`${k}MAX`, total);
-  });
-  return vars;
-}
-
 export function ConfiguradorFichaModal({ open, ficha, onClose, onApply }) {
   const [tipo, setTipo] = useState("status");
   const [nome, setNome] = useState("");
   const [codigo, setCodigo] = useState("");
   const [cor, setCor] = useState("#8dc2ff");
   const [maxFormula, setMaxFormula] = useState("10");
+  const [shape, setShape] = useState("square");
 
   useEffect(() => {
     if (!open) return;
@@ -92,12 +62,14 @@ export function ConfiguradorFichaModal({ open, ficha, onClose, onApply }) {
     setCodigo("");
     setCor("#8dc2ff");
     setMaxFormula("10");
+    setShape("square");
   }, [open]);
 
   if (!open) return null;
 
-  const safeCode = normalizeCode(codigo);
+  const safeCode = normalizeFichaCode(codigo);
   const vars = buildFichaExpressionVars(ficha);
+  const varSuggestions = Object.keys(vars).filter((v) => /[A-Za-z]/.test(v)).sort((a, b) => a.localeCompare(b));
   const previewMax = evaluateMathExpression(maxFormula, { fallback: 10, min: 1, variables: vars });
 
   return (
@@ -120,15 +92,26 @@ export function ConfiguradorFichaModal({ open, ficha, onClose, onApply }) {
           </div>
           <div style={{ display: "grid", gap: 4 }}>
             <label style={{ color: G.muted, fontSize: 11 }}>Código (abreviação)</label>
-            <input value={codigo} onChange={(e) => setCodigo(normalizeCode(e.target.value))} style={inpStyle()} placeholder="Ex: DET" />
+            <input value={codigo} onChange={(e) => setCodigo(normalizeFichaCode(e.target.value))} style={inpStyle()} placeholder="Ex: DET" />
           </div>
           <div style={{ display: "grid", gap: 4 }}>
             <label style={{ color: G.muted, fontSize: 11 }}>Cor</label>
             <input type="color" value={cor} onChange={(e) => setCor(e.target.value)} style={{ ...inpStyle({ padding: 2 }), height: 36 }} />
           </div>
+          {tipo === "recurso" && (
+            <div style={{ display: "grid", gap: 4 }}>
+              <label style={{ color: G.muted, fontSize: 11 }}>Aparência do recurso</label>
+              <select value={shape} onChange={(e) => setShape(e.target.value)} style={inpStyle()}>
+                <option value="square">Quadrado</option>
+                <option value="circle">Círculo</option>
+                <option value="triangle">Triângulo</option>
+                <option value="hexagon">Hexágono</option>
+              </select>
+            </div>
+          )}
           <div style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
             <label style={{ color: G.muted, fontSize: 11 }}>Valor Máximo (fórmula)</label>
-            <input value={maxFormula} onChange={(e) => setMaxFormula(e.target.value)} style={inpStyle({ fontFamily: "monospace" })} placeholder="Ex: max(10, VIG*2)" />
+            <ExpressionInput value={maxFormula} onChange={setMaxFormula} suggestions={varSuggestions} style={inpStyle({ fontFamily: "monospace" })} placeholder="Ex: max(10, VIG*2)" />
             <div style={{ fontFamily: "monospace", fontSize: 11, color: previewMax.valid ? "#9ee0aa" : "#ff8f8f" }}>
               {previewMax.valid ? `Máximo calculado: ${previewMax.value}` : `Fórmula inválida (${previewMax.error})`}
             </div>
@@ -148,6 +131,7 @@ export function ConfiguradorFichaModal({ open, ficha, onClose, onApply }) {
                 cor,
                 maxFormula,
                 max: Math.max(1, Number(previewMax.value || 1)),
+                shape,
               });
               onClose?.();
             }}

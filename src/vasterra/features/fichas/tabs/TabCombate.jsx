@@ -3,6 +3,8 @@ import { uid } from "../../../core/factories";
 import { instantiateEffectFromTemplate, parseMechanicalEffects } from "../../../core/effects";
 import { aggregateResourceModifiers, aggregateStatusModifiers } from "../../../core/effects";
 import { evaluateStatusFormula, getMechanicalText, parseDurationRounds, toNumber } from "./combate/utils";
+import { buildFichaExpressionVars } from "../../../core/fichaFormula";
+import { evaluateMathExpression } from "../../../core/mathExpression";
 import { RANK_COR } from "../../../data/gameData";
 import { G, btnStyle, inpStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
@@ -47,14 +49,16 @@ function durationInfo(effect, rodadaAtual) {
   return { total, restante, inicio: ini };
 }
 
-function normalizeCombateState(combate = {}) {
+function normalizeCombateState(combate = {}, ficha = {}) {
+  const formulaVars = buildFichaExpressionVars(ficha);
   const rawResources = Array.isArray(combate?.recursos) ? combate.recursos : [];
   const byCode = new Map(rawResources.map((r) => [String(r.codigo || r.nome || "").toUpperCase(), r]));
 
   const base = CORE_RESOURCES.map((core) => {
     const old = byCode.get(core.codigo);
     const oldTotal = toNumber(old?.total ?? old?.max ?? NaN, NaN);
-    const total = oldTotal > 0 ? Math.max(0, Math.floor(oldTotal)) : core.total;
+    const exprTotal = evaluateMathExpression(old?.totalExpr, { fallback: oldTotal, min: 0, variables: formulaVars }).value;
+    const total = exprTotal > 0 ? Math.max(0, Math.floor(exprTotal)) : (oldTotal > 0 ? Math.max(0, Math.floor(oldTotal)) : core.total);
     const atual = Math.max(0, Math.min(total, Math.floor(toNumber(old?.atual ?? old?.max ?? total, total))));
     return {
       id: old?.id || uid(),
@@ -71,7 +75,8 @@ function normalizeCombateState(combate = {}) {
   const custom = rawResources
     .filter((r) => !CORE_RESOURCES.some((core) => core.codigo === String(r.codigo || r.nome || "").toUpperCase()))
     .map((r) => {
-      const total = Math.max(0, Math.floor(toNumber(r.total ?? r.max ?? 0, 0)));
+      const baseTotal = Math.max(0, Math.floor(toNumber(r.total ?? r.max ?? 0, 0)));
+      const total = Math.max(0, Math.floor(evaluateMathExpression(r.totalExpr, { fallback: baseTotal, min: 0, variables: formulaVars }).value));
       return {
         id: r.id || uid(),
         codigo: String(r.codigo || r.nome || "").toUpperCase() || "NOVO",
@@ -245,7 +250,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
   const [statusModal, setStatusModal] = useState(null);
   const [logDetail, setLogDetail] = useState(null);
 
-  const combate = useMemo(() => normalizeCombateState(ficha?.combate || {}), [ficha?.combate]);
+  const combate = useMemo(() => normalizeCombateState(ficha?.combate || {}, ficha), [ficha]);
   const tagsById = useMemo(() => Object.fromEntries((skillTags || []).map((t) => [t.id, t])), [skillTags]);
   const assigned = useMemo(() => (ficha?.skills || []).map((entry) => ({ entry, skill: skillFromEntry(entry) })), [ficha?.skills]);
   const filteredSkills = useMemo(() => assigned.filter(({ skill }) => (`${skill.nome || ""} ${skill.descricao || ""} ${(skill.custos || []).map((c) => c.codigo).join(" ")}`).toLowerCase().includes(query.toLowerCase())), [assigned, query]);
@@ -768,7 +773,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
             codigo: payload.codigo,
             nome: payload.nome || payload.codigo,
             cor: payload.cor,
-            shape: "square",
+            shape: payload.shape || "square",
             total: payload.max,
             atual: payload.max,
             custom: true,

@@ -2,16 +2,13 @@ import React, { useCallback, useMemo, useState } from "react";
 import { STATUS_CFG, ARSENAL_RANKS, RANK_COR } from "../../../data/gameData";
 import { aggregateStatusModifiers } from "../../../core/effects";
 import { inventoryItemModifiers } from "../../../core/inventory";
+import { uid } from "../../../core/factories";
 import { evaluateMathExpression } from "../../../core/mathExpression";
+import { buildFichaExpressionVars } from "../../../core/fichaFormula";
 import { G, inpStyle, btnStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
 import { ConfiguradorFichaModal, StatusBar } from "../../shared/components";
 import { ImageAttachModal, ImageViewport } from "../../../components/media/ImageAttachModal";
-
-const normalizeVarToken = (value) => String(value || "")
-  .normalize("NFD")
-  .replace(/[\u0300-\u036f]/g, "")
-  .replace(/[^\p{L}\p{N}_]/gu, "");
 
 const defaultInfo = {
   peso: "",
@@ -77,43 +74,7 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
     ...Object.keys(ficha?.status || {}).map((k) => normalizeStatusCode(k)),
     ...Object.keys(ficha?.combate?.statusMeta || {}).map((k) => normalizeStatusCode(k)),
   ])).filter(Boolean), [baseStatusDefs, ficha?.status, ficha?.combate?.statusMeta]);
-
-  const statusExpressionVars = useMemo(() => {
-    const vars = {};
-    const putVar = (key, value) => {
-      if (!key) return;
-      const num = Number(value);
-      if (!Number.isFinite(num)) return;
-      vars[key] = num;
-      const normalized = normalizeVarToken(key);
-      if (normalized && !Object.prototype.hasOwnProperty.call(vars, normalized)) vars[normalized] = num;
-      const upper = normalized.toUpperCase();
-      if (upper && !Object.prototype.hasOwnProperty.call(vars, upper)) vars[upper] = num;
-    };
-
-    Object.entries(ficha?.atributos || {}).forEach(([sigla, payload]) => {
-      putVar(sigla, payload?.val || 0);
-    });
-
-    Object.entries(ficha?.pericias || {}).forEach(([name, value]) => {
-      putVar(name, value || 0);
-    });
-
-    Object.entries(ficha?.recursos || {}).forEach(([sigla, payload]) => {
-      const max = Number(payload?.total || 0);
-      const used = Number(payload?.usado || 0);
-      putVar(sigla, Math.max(0, max - used));
-      putVar(`${sigla}MAX`, max);
-    });
-
-    Object.entries(ficha?.status || {}).forEach(([key, payload]) => {
-      const code = normalizeStatusCode(key);
-      putVar(code, Number(payload?.val || 0));
-      putVar(`${code}MAX`, Math.max(1, Number(payload?.max || 1)));
-    });
-
-    return vars;
-  }, [ficha?.atributos, ficha?.pericias, ficha?.recursos, ficha?.status]);
+  const statusExpressionVars = useMemo(() => buildFichaExpressionVars(ficha), [ficha]);
 
   const computedStatusBase = useMemo(() => {
     const statusEntries = Object.entries(ficha?.status || {});
@@ -264,17 +225,20 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
         <div style={{ background: G.bg2, border: "1px solid " + G.border, borderRadius: 10, padding: 14 }}>
           <div style={{ fontFamily: "'Cinzel',serif", fontSize: 12, color: G.gold, letterSpacing: 3, marginBottom: 10 }}>◉ RECURSOS DA FICHA</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))", gap: 8 }}>
-            {(Array.isArray(ficha?.combate?.recursos) ? ficha.combate.recursos : Object.entries(ficha?.recursos || {}).map(([codigo, payload]) => ({ id: codigo, codigo, nome: codigo, cor: "#6e7d91", total: Number(payload?.total || 0), atual: Math.max(0, Number(payload?.total || 0) - Number(payload?.usado || 0)) }))).map((r) => (
+            {(Array.isArray(ficha?.combate?.recursos) ? ficha.combate.recursos : Object.entries(ficha?.recursos || {}).map(([codigo, payload]) => ({ id: codigo, codigo, nome: codigo, cor: "#6e7d91", total: Number(payload?.total || 0), atual: Math.max(0, Number(payload?.total || 0) - Number(payload?.usado || 0)) }))).map((r) => {
+              const totalResolved = evaluateMathExpression(r.totalExpr, { fallback: Number(r.total || 0), min: 0, variables: statusExpressionVars }).value;
+              const atualResolved = evaluateMathExpression(r.atualExpr, { fallback: Number(r.atual || totalResolved), min: 0, max: totalResolved, variables: statusExpressionVars }).value;
+              return (
               <div key={r.id || r.codigo} style={{ border: "1px solid #2b3d52", borderRadius: 8, padding: 8, background: "#0b1118" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "monospace", fontSize: 11, color: r.cor || "#9fb3c8" }}>
                   <span>{r.codigo || r.nome}</span>
-                  <span style={{ color: G.muted }}>{Number(r.atual || 0)}/{Number(r.total || 0)}</span>
+                  <span style={{ color: G.muted }}>{Number(atualResolved || 0)}/{Number(totalResolved || 0)}</span>
                 </div>
                 <div style={{ height: 6, borderRadius: 6, background: "#13202d", marginTop: 6, overflow: "hidden" }}>
-                  <div style={{ width: `${Math.max(0, Math.min(100, (Number(r.atual || 0) / Math.max(1, Number(r.total || 1))) * 100))}%`, height: "100%", background: r.cor || "#6e7d91" }} />
+                  <div style={{ width: `${Math.max(0, Math.min(100, (Number(atualResolved || 0) / Math.max(1, Number(totalResolved || 1))) * 100))}%`, height: "100%", background: r.cor || "#6e7d91" }} />
                 </div>
               </div>
-            ))}
+            );})}
           </div>
         </div>
 
@@ -304,7 +268,7 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
               ...(ficha.combate || {}),
               recursos: [
                 ...((ficha.combate?.recursos || [])),
-                { id: Math.random().toString(36).slice(2, 10), codigo: payload.codigo, nome: payload.nome, cor: payload.cor, shape: "square", total: payload.max, atual: payload.max, custom: true, totalExpr: payload.maxFormula || "" },
+                { id: uid(), codigo: payload.codigo, nome: payload.nome, cor: payload.cor, shape: payload.shape || "square", total: payload.max, atual: payload.max, custom: true, totalExpr: payload.maxFormula || "" },
               ],
             },
             recursos: { ...(ficha.recursos || {}), [payload.codigo]: { total: payload.max, usado: 0, totalExpr: payload.maxFormula || "" } },
