@@ -74,7 +74,8 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
     ...Object.keys(ficha?.status || {}).map((k) => normalizeStatusCode(k)),
     ...Object.keys(ficha?.combate?.statusMeta || {}).map((k) => normalizeStatusCode(k)),
   ])).filter(Boolean), [baseStatusDefs, ficha?.status, ficha?.combate?.statusMeta]);
-  const statusExpressionVars = useMemo(() => buildFichaExpressionVars(ficha), [ficha]);
+  const statusExpressionVars = useMemo(() => buildFichaExpressionVars(ficha), [ficha?.atributos, ficha?.pericias, ficha?.status, ficha?.recursos, ficha?.combate?.recursos]);
+  const variableSuggestions = useMemo(() => Object.keys(statusExpressionVars).filter((v) => /[A-Za-z]/.test(v)).sort((a, b) => a.localeCompare(b)), [statusExpressionVars]);
 
   const computedStatusBase = useMemo(() => {
     const statusEntries = Object.entries(ficha?.status || {});
@@ -171,7 +172,7 @@ export function TabStatus({ ficha, onUpdate, arsenal = [] }) {
               onMaxExpr={(expr) => upStatusExpr(s.sigla, "max", expr)}
               onSaveExpressions={(valExpr, maxExpr) => saveStatusExpressions(s.sigla, valExpr, maxExpr)}
               expressionVariables={statusExpressionVars}
-              variableSuggestions={Object.keys(statusExpressionVars).filter((v) => /[A-Za-z]/.test(v)).sort((a, b) => a.localeCompare(b))}
+              variableSuggestions={variableSuggestions}
             />
           );
         })}

@@ -229,14 +229,18 @@ const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "",
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [draftValExpr, setDraftValExpr] = useState(valExpr || "");
   const [draftMaxExpr, setDraftMaxExpr] = useState(maxExpr || "");
+  const [quickVal, setQuickVal] = useState(String(val));
+  const [quickMax, setQuickMax] = useState(String(max));
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     if (detailsOpen) return;
     setDraftValExpr(valExpr || "");
     setDraftMaxExpr(maxExpr || "");
+    setQuickVal(String(val));
+    setQuickMax(String(max));
     setDirty(false);
-  }, [valExpr, maxExpr, detailsOpen]);
+  }, [valExpr, maxExpr, detailsOpen, val, max]);
 
   const pct = max > 0 ? Math.min(100, (val / max) * 100) : 0;
 
@@ -254,15 +258,27 @@ const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "",
         </span>
         <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
           <input
-            type="number" min={0} max={max} value={val}
-            onChange={e => onVal(Math.max(0, Math.min(max, Number(e.target.value) || 0)))}
-            style={inpStyle({ width: 48, textAlign: "center", padding: "2px 4px", fontSize: 13, color: cor })}
+            type="number" min={0} max={max} value={quickVal}
+            onChange={(e) => setQuickVal(e.target.value)}
+            onBlur={() => {
+              const parsed = Math.max(0, Math.min(max, Number(quickVal) || 0));
+              setQuickVal(String(parsed));
+              onVal(parsed);
+            }}
+            onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+            style={inpStyle({ width: 56, textAlign: "center", padding: "2px 4px", fontSize: 13, color: cor })}
           />
           <span style={{ color: G.muted }}>/</span>
           <input
-            type="number" min={1} value={max}
-            onChange={e => onMax(Math.max(1, Number(e.target.value) || 1))}
-            style={inpStyle({ width: 48, textAlign: "center", padding: "2px 4px", fontSize: 13 })}
+            type="number" min={1} value={quickMax}
+            onChange={(e) => setQuickMax(e.target.value)}
+            onBlur={() => {
+              const parsed = Math.max(1, Number(quickMax) || 1);
+              setQuickMax(String(parsed));
+              onMax(parsed);
+            }}
+            onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+            style={inpStyle({ width: 56, textAlign: "center", padding: "2px 4px", fontSize: 13 })}
           />
           <button
             onClick={() => setDetailsOpen(true)}

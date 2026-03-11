@@ -251,6 +251,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
   const [logDetail, setLogDetail] = useState(null);
 
   const combate = useMemo(() => normalizeCombateState(ficha?.combate || {}, ficha), [ficha]);
+  const formulaVars = useMemo(() => buildFichaExpressionVars(ficha), [ficha?.atributos, ficha?.pericias, ficha?.status, ficha?.recursos, ficha?.combate?.recursos]);
   const tagsById = useMemo(() => Object.fromEntries((skillTags || []).map((t) => [t.id, t])), [skillTags]);
   const assigned = useMemo(() => (ficha?.skills || []).map((entry) => ({ entry, skill: skillFromEntry(entry) })), [ficha?.skills]);
   const filteredSkills = useMemo(() => assigned.filter(({ skill }) => (`${skill.nome || ""} ${skill.descricao || ""} ${(skill.custos || []).map((c) => c.codigo).join(" ")}`).toLowerCase().includes(query.toLowerCase())), [assigned, query]);
@@ -269,9 +270,13 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     ])).filter(Boolean);
     return Object.fromEntries(allStatusKeys.map((code) => {
       const fromStatus = statusEntries.find(([k]) => normalizeStatusCode(k) === code)?.[1] || {};
-      return [code, { val: Number(fromStatus?.val || 0), max: Math.max(1, Number(fromStatus?.max || 1)) }];
+      const rawVal = Number(fromStatus?.val || 0);
+      const rawMax = Math.max(1, Number(fromStatus?.max || 1));
+      const resolvedMax = evaluateMathExpression(fromStatus?.maxExpr, { fallback: rawMax, min: 1, variables: formulaVars }).value;
+      const resolvedVal = evaluateMathExpression(fromStatus?.valExpr, { fallback: rawVal, min: 0, max: resolvedMax, variables: formulaVars }).value;
+      return [code, { val: resolvedVal, max: resolvedMax }];
     }));
-  }, [ficha?.status, combate.statusMeta]);
+  }, [ficha?.status, combate.statusMeta, formulaVars]);
 
   const combatStatus = useMemo(() => {
     const out = {};
