@@ -225,6 +225,69 @@ function ExpressionInput({ value, onChange, placeholder, style, suggestions = []
   );
 }
 
+export function FormulaAutocompleteModal({ open, title = "Autocomplete de fórmula", suggestions = [], onClose, onPick }) {
+  const [query, setQuery] = useState("");
+  const [cursor, setCursor] = useState(0);
+
+  useEffect(() => {
+    if (!open) return;
+    setQuery("");
+    setCursor(0);
+  }, [open]);
+
+  const filtered = useMemo(() => {
+    const token = String(query || "").trim().toLowerCase();
+    const pool = Array.from(new Set(suggestions || []));
+    if (!token) return pool.slice(0, 80);
+    return pool.filter((item) => String(item).toLowerCase().includes(token)).slice(0, 80);
+  }, [query, suggestions]);
+
+  useEffect(() => {
+    setCursor((prev) => Math.min(prev, Math.max(0, filtered.length - 1)));
+  }, [filtered.length]);
+
+  if (!open) return null;
+
+  return (
+    <Modal title={title} onClose={onClose}>
+      <div style={{ display: "grid", gap: 8 }}>
+        <input
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (!filtered.length) return;
+            if (e.key === "ArrowDown") { e.preventDefault(); setCursor((c) => (c + 1) % filtered.length); }
+            if (e.key === "ArrowUp") { e.preventDefault(); setCursor((c) => (c - 1 + filtered.length) % filtered.length); }
+            if (e.key === "Enter") {
+              e.preventDefault();
+              const picked = filtered[cursor];
+              if (!picked) return;
+              onPick?.(picked);
+              onClose?.();
+            }
+          }}
+          placeholder="Buscar variável..."
+          style={inpStyle({ fontFamily: "monospace" })}
+        />
+        <div style={{ maxHeight: 260, overflowY: "auto", border: "1px solid #2b4c68", borderRadius: 8, background: "#0a141f" }}>
+          {filtered.map((item, idx) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => { onPick?.(item); onClose?.(); }}
+              style={{ width: "100%", textAlign: "left", border: "none", borderBottom: "1px solid #173046", padding: "6px 8px", background: idx === cursor ? "#13324a" : "transparent", color: idx === cursor ? "#e3f3ff" : "#9cc8ff", cursor: "pointer", fontFamily: "monospace", fontSize: 12 }}
+            >
+              {item}
+            </button>
+          ))}
+          {filtered.length === 0 && <div style={{ padding: "10px 8px", color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Nenhuma variável encontrada.</div>}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "", maxExpr = "", onValExpr, onMaxExpr, onSaveExpressions, expressionVariables = {}, variableSuggestions = [] }) => {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [draftValExpr, setDraftValExpr] = useState(valExpr || "");
@@ -232,6 +295,7 @@ const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "",
   const [quickVal, setQuickVal] = useState(String(val));
   const [quickMax, setQuickMax] = useState(String(max));
   const [dirty, setDirty] = useState(false);
+  const [autocompleteTarget, setAutocompleteTarget] = useState(null);
 
   useEffect(() => {
     if (detailsOpen) return;
@@ -317,7 +381,9 @@ const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "",
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div style={{ display: "grid", gap: 6 }}>
-                <label style={{ color: cor, fontSize: 12 }}>Valor Atual (expressão)</label>
+                <label style={{ color: cor, fontSize: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>Valor Atual (expressão)
+                  <button type="button" onClick={() => setAutocompleteTarget("val")} style={{ ...btnStyle({ padding: "1px 7px", borderColor: "#3a5f80", color: "#9cc8ff" }), fontSize: 11 }}>Variáveis</button>
+                </label>
                 <ExpressionInput
                   value={draftValExpr}
                   onChange={(next) => {
@@ -333,7 +399,9 @@ const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "",
                 </div>
               </div>
               <div style={{ display: "grid", gap: 6 }}>
-                <label style={{ color: cor, fontSize: 12 }}>Valor Máximo (expressão)</label>
+                <label style={{ color: cor, fontSize: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>Valor Máximo (expressão)
+                  <button type="button" onClick={() => setAutocompleteTarget("max")} style={{ ...btnStyle({ padding: "1px 7px", borderColor: "#3a5f80", color: "#9cc8ff" }), fontSize: 11 }}>Variáveis</button>
+                </label>
                 <ExpressionInput
                   value={draftMaxExpr}
                   onChange={(next) => {
@@ -349,6 +417,19 @@ const StatusBarBase = ({ sigla, nome, cor, val, max, onVal, onMax, valExpr = "",
                 </div>
               </div>
             </div>
+            <FormulaAutocompleteModal
+              open={Boolean(autocompleteTarget)}
+              suggestions={variableSuggestions}
+              onClose={() => setAutocompleteTarget(null)}
+              onPick={(picked) => {
+                if (autocompleteTarget === "val") {
+                  setDraftValExpr((prev) => `${prev || ""}${prev ? " " : ""}${picked}`);
+                } else {
+                  setDraftMaxExpr((prev) => `${prev || ""}${prev ? " " : ""}${picked}`);
+                }
+                setDirty(true);
+              }}
+            />
             <div style={{ fontSize: 11, color: G.muted, fontFamily: "monospace", borderTop: "1px solid #223447", paddingTop: 8 }}>
               Pré-resultado aplicado: {Math.max(0, Math.min(previews.maxPreview.value, previews.valPreview.value))}/{Math.max(1, previews.maxPreview.value)}
             </div>

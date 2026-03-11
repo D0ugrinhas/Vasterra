@@ -515,13 +515,35 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     if (field === "max") {
       const nextBaseMax = Math.max(1, Math.floor(Number(effectiveValue || 1) - maxShift));
       const nextBaseVal = Math.max(0, Math.min(nextBaseMax, Number(curr.val || 0)));
-      onUpdate({ status: { ...(ficha.status || {}), [key]: { ...curr, max: nextBaseMax, val: nextBaseVal } } });
+      onUpdate({ status: { ...(ficha.status || {}), [key]: { ...curr, max: nextBaseMax, val: nextBaseVal, maxExpr: "" } } });
       return;
     }
     const nextEffectiveMax = Math.max(1, Math.floor(Number(runtime.max || curr.max || 1)));
     const clampedEffectiveVal = Math.max(0, Math.min(nextEffectiveMax, Number(effectiveValue || 0)));
     const nextBaseVal = Math.max(0, Math.min(Number(curr.max || 1), Math.floor(clampedEffectiveVal - baseShift)));
-    onUpdate({ status: { ...(ficha.status || {}), [key]: { ...curr, val: nextBaseVal } } });
+    onUpdate({ status: { ...(ficha.status || {}), [key]: { ...curr, val: nextBaseVal, valExpr: "" } } });
+  };
+
+  const saveStatusValues = (key, nextValues = {}) => {
+    const curr = ficha?.status?.[key] || { val: 0, max: 1 };
+    const code = String(key || "").toUpperCase();
+    const runtime = combatStatus[code] || { mods: { base: 0, current: 0, max: 0 }, overflowMax: 0, max: curr.max };
+    const mods = runtime.mods || { base: 0, current: 0, max: 0 };
+    const baseShift = Number(mods.base || 0) + Number(mods.current || 0);
+    const maxShift = Number(mods.max || 0) + Number(runtime.overflowMax || 0);
+
+    const targetEffectiveMax = Math.max(1, Math.floor(Number(nextValues.max ?? runtime.max ?? curr.max ?? 1)));
+    const nextBaseMax = Math.max(1, Math.floor(targetEffectiveMax - maxShift));
+    const maxForEffectiveVal = Math.max(1, targetEffectiveMax);
+    const targetEffectiveVal = Math.max(0, Math.min(maxForEffectiveVal, Math.floor(Number(nextValues.val ?? runtime.val ?? curr.val ?? 0))));
+    const nextBaseVal = Math.max(0, Math.min(nextBaseMax, Math.floor(targetEffectiveVal - baseShift)));
+
+    onUpdate({
+      status: {
+        ...(ficha.status || {}),
+        [key]: { ...curr, max: nextBaseMax, val: nextBaseVal, maxExpr: "", valExpr: "" },
+      },
+    });
   };
 
   const addReminder = () => {
@@ -833,8 +855,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
           statusDef={statusModal}
           previewCost={(previewCosts[statusModal.code] || previewCosts[statusModal.label] || 0)}
           onClose={() => setStatusModal(null)}
-          onApply={(next) => setStatusValue(statusModal.key, "val", next.val)}
-          onSetMax={(nextMax) => setStatusValue(statusModal.key, "max", nextMax)}
+          onApply={(next) => saveStatusValues(statusModal.key, next)}
           onDelete={() => {
             if (!window.confirm(`Apagar status ${statusModal.label || statusModal.code}?`)) return;
             const nextStatus = { ...(ficha.status || {}) };
@@ -881,7 +902,7 @@ function ResourceQuickModal({ resource, previewCost, onClose, onToggle, onDelete
   );
 }
 
-function StatusQuickModal({ status, statusDef, previewCost, onClose, onApply, onSetMax, onDelete }) {
+function StatusQuickModal({ status, statusDef, previewCost, onClose, onApply, onDelete }) {
   const [val, setVal] = useState(Number(status?.val || 0));
   const [max, setMax] = useState(Math.max(1, Number(status?.max || 1)));
   const [delta, setDelta] = useState(0);
@@ -922,7 +943,7 @@ function StatusQuickModal({ status, statusDef, previewCost, onClose, onApply, on
           <HoverButton onClick={onDelete} style={btnStyle({ borderColor: "#87413a", color: "#ff9990" })}>Apagar</HoverButton>
           <div style={{ display: "flex", gap: 8 }}>
             <HoverButton onClick={onClose} style={btnStyle({ borderColor: "#4f4f4f", color: "#b8b8b8" })}>Fechar</HoverButton>
-            <HoverButton onClick={() => { onSetMax(max); onApply({ val: Math.max(0, Math.min(max, val)) }); onClose(); }} style={btnStyle()}>Salvar</HoverButton>
+            <HoverButton onClick={() => { onApply({ max, val: Math.max(0, Math.min(max, val)) }); onClose(); }} style={btnStyle()}>Salvar</HoverButton>
           </div>
         </div>
       </div>

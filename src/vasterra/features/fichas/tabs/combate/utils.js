@@ -64,10 +64,24 @@ export function evaluateStatusFormula(expression, context = {}) {
 
 export function buildFormulaVars(ficha = {}, statusState = {}) {
   const vars = {};
+  const addVar = (key, value) => {
+    const code = String(key || "").trim();
+    const num = Number(value);
+    if (!code || !Number.isFinite(num)) return;
+    vars[code] = num;
+    const clean = code
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9_]/g, "");
+    if (clean) {
+      vars[clean] = num;
+      vars[clean.toLowerCase()] = num;
+      vars[clean.toUpperCase()] = num;
+    }
+  };
   Object.entries(ficha?.atributos || {}).forEach(([k, v]) => {
     const num = Number((v && typeof v === "object") ? (v.val ?? v.valor ?? 0) : (v || 0));
-    vars[String(k).toLowerCase()] = Number.isFinite(num) ? num : 0;
-    vars[String(k).toUpperCase()] = Number.isFinite(num) ? num : 0;
+    addVar(String(k), Number.isFinite(num) ? num : 0);
   });
   const attrAlias = {
     forca: "for", força: "for", vigor: "vig", destreza: "des", agilidade: "des",
@@ -79,15 +93,17 @@ export function buildFormulaVars(ficha = {}, statusState = {}) {
   Object.entries(ficha?.pericias || {}).forEach(([k, v]) => {
     const key = String(k).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
     const num = Number((v && typeof v === "object") ? (v.val ?? v.valor ?? 0) : (v || 0));
-    if (key) vars[key] = Number.isFinite(num) ? num : 0;
+    if (key) addVar(key, Number.isFinite(num) ? num : 0);
   });
 
   Object.entries(statusState || {}).forEach(([k, v]) => {
-    vars[k.toLowerCase()] = Number(v?.val || 0);
-    vars[k.toUpperCase()] = Number(v?.val || 0);
-    vars[`${k.toLowerCase()}max`] = Number(v?.max || 0);
-    vars[`${k.toUpperCase()}MAX`] = Number(v?.max || 0);
+    addVar(k, Number(v?.val || 0));
+    addVar(`${k}MAX`, Number(v?.max || 0));
   });
+
+  const info = ficha?.informacoes || {};
+  addVar("ALTURA", Number(String(info.altura || "").replace(",", ".").replace(/[^0-9.+-]/g, "")) || 0);
+  addVar("PESO", Number(String(info.peso || "").replace(",", ".").replace(/[^0-9.+-]/g, "")) || 0);
 
   const semanticAlias = { vig: "vigor", vit: "vitalidade", ment: "mentalidade", for: "forca", des: "destreza", int: "inteligencia", sab: "sabedoria", car: "carisma", const: "constituicao" };
   Object.entries(semanticAlias).forEach(([sigla, nome]) => {
