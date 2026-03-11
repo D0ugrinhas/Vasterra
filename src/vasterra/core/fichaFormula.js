@@ -2,6 +2,15 @@ import { evaluateMathExpression } from "./mathExpression";
 
 export const normalizeFichaCode = (raw = "") => String(raw || "").trim().toUpperCase().replace(/[^A-Z0-9_]/g, "");
 
+function parseFichaNumber(value, fallback = 0) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
+  const raw = String(value ?? "").trim();
+  if (!raw) return fallback;
+  const normalized = raw.replace(",", ".").replace(/[^0-9.+-]/g, "");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 export function buildFichaExpressionVars(ficha = {}) {
   const vars = {};
   const put = (key, value) => {
@@ -33,6 +42,10 @@ export function buildFichaExpressionVars(ficha = {}) {
     put(code, Number(r?.atual || 0));
     put(`${code}MAX`, Number(r?.total || 0));
   });
+
+  const info = ficha?.informacoes || {};
+  put("ALTURA", parseFichaNumber(info.altura, 0));
+  put("PESO", parseFichaNumber(info.peso, 0));
 
   return vars;
 }
