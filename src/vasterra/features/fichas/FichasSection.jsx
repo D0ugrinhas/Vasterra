@@ -214,43 +214,43 @@ export function FichasSection({ fichas, onFichas, arsenal, efeitosCaldeirao = []
         </div>
       )}
       {ficha && (
-        <>
-          <div style={{ padding: "10px 20px", borderBottom: "1px solid " + G.border, background: G.bg2, display: "flex", alignItems: "center", gap: 12, flexShrink: 0, position: isMobile ? "sticky" : "static", top: 0, zIndex: isMobile ? 12 : "auto" }}>
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: isMobile ? "auto" : "hidden" }}>
+          <div style={{ padding: isMobile ? "8px 10px" : "10px 20px", borderBottom: "1px solid " + G.border, background: G.bg2, display: "flex", alignItems: "center", gap: isMobile ? 6 : 12, flexShrink: 0 }}>
             <div style={{ flex: 1 }}>
               <input
                 value={ficha.nome}
                 onChange={(e) => updateFicha({ nome: e.target.value })}
-                style={{ background: "transparent", border: "none", outline: "none", fontFamily: "'Cinzel',serif", fontSize: 20, color: G.gold2, width: "100%" }}
+                style={{ background: "transparent", border: "none", outline: "none", fontFamily: "'Cinzel',serif", fontSize: isMobile ? 16 : 20, color: G.gold2, width: "100%" }}
               />
-              <div style={{ fontSize: 11, color: G.muted, fontFamily: "monospace" }}>
+              <div style={{ fontSize: isMobile ? 10 : 11, color: G.muted, fontFamily: "monospace" }}>
                 {resolverNomeRaca(ficha.raca, ficha.racasExtras || [])}
                 {ficha.classes.length > 0 ? " · " + ficha.classes.join(" / ") : ""}
                 {ficha.essencia ? " · " + ficha.essencia.nome : ""}
               </div>
             </div>
-            <button onClick={() => duplicarFicha(ficha)} style={btnStyle({ borderColor: "#3498db55", color: "#61b8ff" })}>Duplicar</button>
+            <button onClick={() => duplicarFicha(ficha)} style={btnStyle({ borderColor: "#3498db55", color: "#61b8ff", padding: isMobile ? "4px 8px" : undefined, fontSize: isMobile ? 10 : undefined })}>{isMobile ? "Dup" : "Duplicar"}</button>
             <button
               onClick={() => onConfirmAction?.({ title: "Apagar ficha", message: `Deseja apagar "${ficha.nome}"?`, onConfirm: () => apagar(ficha.id) })}
-              style={btnStyle({ borderColor: "#e74c3c55", color: "#ff6b5f" })}
-            >Apagar</button>
+              style={btnStyle({ borderColor: "#e74c3c55", color: "#ff6b5f", padding: isMobile ? "4px 8px" : undefined, fontSize: isMobile ? 10 : undefined })}
+            >{isMobile ? "Del" : "Apagar"}</button>
             {ficha.essencia && (
-              <div style={{ padding: "5px 12px", borderRadius: 6, background: ficha.essencia.cor + "22", border: "1px solid " + ficha.essencia.cor + "55", color: ficha.essencia.cor, fontFamily: "'Cinzel',serif", fontSize: 10, letterSpacing: 1 }}>
+              <div style={{ padding: isMobile ? "3px 8px" : "5px 12px", borderRadius: 6, background: ficha.essencia.cor + "22", border: "1px solid " + ficha.essencia.cor + "55", color: ficha.essencia.cor, fontFamily: "'Cinzel',serif", fontSize: isMobile ? 9 : 10, letterSpacing: 1 }}>
                 ⬡ {ficha.essencia.nome}
               </div>
             )}
           </div>
 
-          <div style={{ borderBottom: "1px solid " + G.border, background: G.bg2, flexShrink: 0, position: isMobile ? "sticky" : "static", top: isMobile ? 72 : "auto", zIndex: isMobile ? 11 : "auto" }}>
+          <div style={{ borderBottom: "1px solid " + G.border, background: G.bg2, flexShrink: 0 }}>
             {isMobile && (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px" }}>
                 <span style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Aba ativa: {FICHA_TABS.find((t) => t.id === tab)?.label || tab}</span>
-                <HoverButton onClick={() => setTabsCollapsed((prev) => !prev)} style={btnStyle({ padding: "4px 10px", fontSize: 11 })}>
+                <HoverButton onClick={() => setTabsCollapsed((prev) => !prev)} style={btnStyle({ padding: "3px 8px", fontSize: 10 })}>
                   {tabsCollapsed ? "Mostrar abas" : "Ocultar abas"}
                 </HoverButton>
               </div>
             )}
             {!tabsCollapsed && (
-              <div style={{ display: "flex", overflowX: "auto" }}>
+              <div style={isMobile ? { display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 4, padding: "0 8px 8px" } : { display: "flex", overflowX: "auto" }}>
                 {FICHA_TABS.map((t) => (
                   <button
                     className="v-tab-btn"
@@ -259,16 +259,18 @@ export function FichasSection({ fichas, onFichas, arsenal, efeitosCaldeirao = []
                       setTab(t.id);
                     }}
                     style={{
-                      padding: "10px 16px",
+                      padding: isMobile ? "8px 6px" : "10px 16px",
                       background: "transparent",
-                      border: "none",
                       borderBottom: tab === t.id ? "2px solid #c8a96e" : "2px solid transparent",
                       color: tab === t.id ? G.gold : G.muted,
                       fontFamily: "'Cinzel',serif",
-                      fontSize: 11,
+                      fontSize: isMobile ? 10 : 11,
                       letterSpacing: 1,
                       cursor: "pointer",
                       whiteSpace: "nowrap",
+                      textAlign: "center",
+                      borderRadius: isMobile ? 6 : 0,
+                      border: isMobile ? `1px solid ${tab === t.id ? "#c8a96e88" : "#2a2a2a"}` : "none",
                     }}
                   >
                     {t.label}
@@ -278,7 +280,7 @@ export function FichasSection({ fichas, onFichas, arsenal, efeitosCaldeirao = []
             )}
           </div>
 
-          <div className="v-fade" style={{ flex: 1, overflow: "auto", padding: 16 }}>
+          <div className="v-fade" style={{ flex: 1, overflow: isMobile ? "visible" : "auto", padding: isMobile ? 10 : 16 }}>
             {tab === "status" && <TabStatus ficha={ficha} onUpdate={updateFicha} arsenal={arsenal} />}
             {tab === "combate" && <TabCombate ficha={ficha} onUpdate={updateFicha} efeitosCaldeirao={efeitosCaldeirao} skillTags={skillTags} onOpenCaldeirao={onOpenCaldeirao} onNotify={onNotify} createNodeHotkey={createNodeHotkey} />}
             {tab === "corpo" && <TabCorpo ficha={ficha} onUpdate={updateFicha} onNotify={onNotify} />}
@@ -300,7 +302,7 @@ export function FichasSection({ fichas, onFichas, arsenal, efeitosCaldeirao = []
               }}
             />}
           </div>
-        </>
+        </div>
       )}
     </div>
   );
