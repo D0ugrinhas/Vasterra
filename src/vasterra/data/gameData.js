@@ -59,7 +59,7 @@ export const PERICIAS_DESC = {
   Nobreza: "Etiqueta cortesã, linhagens e política aristocrática.",
   Atualidades: "Informações recentes sobre eventos e cenários do mundo.",
   Vontade: "Força mental para resistir coerção e influências externas.",
-  Mentalidade: "Estabilidade psíquica e controle emocional em pressão.",
+  Convicção: "Estabilidade psíquica e controle emocional em pressão.",
   Estratégia: "Planejamento tático para combate e gestão de recursos.",
   Percepção: "Captação de detalhes visuais, sonoros e ambientais.",
   Intuição: "Leitura instintiva de situações e intenções ocultas.",
@@ -110,8 +110,8 @@ export const STATUS_CFG = [
 ];
 
 export const RECURSOS_CFG = [
-  { sigla:"ACO", nome:"Ação",      cor:"#22ee5f" },
-  { sigla:"MOV", nome:"Movimento", cor:"#227de6" },
+  { sigla:"ACO", nome:"Ação",      cor:"#227de6" },
+  { sigla:"MOV", nome:"Movimento", cor:"#22ee5f" },
   { sigla:"REA", nome:"Reação",    cor:"#d31515" },
   { sigla:"ESF", nome:"Esforço",   cor:"#290404" },
 ];
