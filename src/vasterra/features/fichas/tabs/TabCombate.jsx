@@ -1,21 +1,25 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { uid } from "../../../core/factories";
 import { instantiateEffectFromTemplate, parseMechanicalEffects } from "../../../core/effects";
-import { aggregateResourceModifiers, aggregateStatusModifiers } from "../../../core/effects";
+import { aggregateModifiers, aggregateResourceModifiers, aggregateStatusModifiers } from "../../../core/effects";
 import { evaluateStatusFormula, getMechanicalText, parseDurationRounds, toNumber } from "./combate/utils";
+import { buildFichaExpressionVars } from "../../../core/fichaFormula";
+import { evaluateMathExpression } from "../../../core/mathExpression";
 import { RANK_COR } from "../../../data/gameData";
 import { G, btnStyle, inpStyle } from "../../../ui/theme";
 import { HoverButton } from "../../../components/primitives/Interactive";
-import { Modal, EffectDetailsModal } from "../../shared/components";
+import { ConfiguradorFichaModal, Modal, EffectDetailsModal } from "../../shared/components";
 import { SkillDetalhe } from "../../biblioteca/SkillDetalhe";
 import { ImageViewport } from "../../../components/media/ImageAttachModal";
 
 const CORE_RESOURCES = [
-  { codigo: "ACO", nome: "Ação", cor: "#3498db", shape: "circle", total: 2 },
-  { codigo: "MOV", nome: "Movimento", cor: "#2ecc71", shape: "square", total: 1 },
+  { codigo: "ACO", nome: "Ação", cor: "#2ecc71", shape: "circle", total: 2 },
+  { codigo: "MOV", nome: "Movimento", cor: "#3498db", shape: "square", total: 1 },
   { codigo: "REA", nome: "Reação", cor: "#e74c3c", shape: "triangle", total: 1 },
   { codigo: "ESF", nome: "Esforço", cor: "#8b0000", shape: "hexagon", total: 1 },
 ];
+
+const NORMAL_COMBAT_BUTTON = { minHeight: 30, minWidth: 120, width: "fit-content", flex: "0 0 auto", whiteSpace: "nowrap" };
 
 const SHAPE_OPTIONS = [
   { value: "square", label: "Quadrado" },
@@ -47,14 +51,16 @@ function durationInfo(effect, rodadaAtual) {
   return { total, restante, inicio: ini };
 }
 
-function normalizeCombateState(combate = {}) {
+function normalizeCombateState(combate = {}, ficha = {}) {
+  const formulaVars = buildFichaExpressionVars(ficha);
   const rawResources = Array.isArray(combate?.recursos) ? combate.recursos : [];
   const byCode = new Map(rawResources.map((r) => [String(r.codigo || r.nome || "").toUpperCase(), r]));
 
   const base = CORE_RESOURCES.map((core) => {
     const old = byCode.get(core.codigo);
     const oldTotal = toNumber(old?.total ?? old?.max ?? NaN, NaN);
-    const total = oldTotal > 0 ? Math.max(0, Math.floor(oldTotal)) : core.total;
+    const exprTotal = evaluateMathExpression(old?.totalExpr, { fallback: oldTotal, min: 0, variables: formulaVars }).value;
+    const total = exprTotal > 0 ? Math.max(0, Math.floor(exprTotal)) : (oldTotal > 0 ? Math.max(0, Math.floor(oldTotal)) : core.total);
     const atual = Math.max(0, Math.min(total, Math.floor(toNumber(old?.atual ?? old?.max ?? total, total))));
     return {
       id: old?.id || uid(),
@@ -71,7 +77,8 @@ function normalizeCombateState(combate = {}) {
   const custom = rawResources
     .filter((r) => !CORE_RESOURCES.some((core) => core.codigo === String(r.codigo || r.nome || "").toUpperCase()))
     .map((r) => {
-      const total = Math.max(0, Math.floor(toNumber(r.total ?? r.max ?? 0, 0)));
+      const baseTotal = Math.max(0, Math.floor(toNumber(r.total ?? r.max ?? 0, 0)));
+      const total = Math.max(0, Math.floor(evaluateMathExpression(r.totalExpr, { fallback: baseTotal, min: 0, variables: formulaVars }).value));
       return {
         id: r.id || uid(),
         codigo: String(r.codigo || r.nome || "").toUpperCase() || "NOVO",
@@ -236,6 +243,7 @@ function parseExpressionValue(raw, fallback, context = {}) {
 export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags = [], onNotify }) {
   const [query, setQuery] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [fichaConfigOpen, setFichaConfigOpen] = useState(false);
   const [skillModal, setSkillModal] = useState(null);
   const [effectsOpen, setEffectsOpen] = useState(false);
   const [remindersOpen, setRemindersOpen] = useState(false);
@@ -244,12 +252,23 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
   const [statusModal, setStatusModal] = useState(null);
   const [logDetail, setLogDetail] = useState(null);
 
-  const combate = useMemo(() => normalizeCombateState(ficha?.combate || {}), [ficha?.combate]);
+  const combate = useMemo(() => normalizeCombateState(ficha?.combate || {}, ficha), [ficha]);
+  const activeEffects = useMemo(() => (Array.isArray(ficha?.modificadores?.efeitos) ? ficha.modificadores.efeitos : []).filter((e) => e && e.ativo !== false), [ficha?.modificadores?.efeitos]);
+  const attributeBonus = useMemo(() => aggregateModifiers(activeEffects, "atributos"), [activeEffects]);
+  const skillBonus = useMemo(() => aggregateModifiers(activeEffects, "pericias"), [activeEffects]);
+  const statusBonusForFormula = useMemo(() => aggregateStatusModifiers(activeEffects), [activeEffects]);
+  const resourceBonusForFormula = useMemo(() => aggregateResourceModifiers(activeEffects), [activeEffects]);
+  const formulaVars = useMemo(() => buildFichaExpressionVars(ficha, {
+    attributeMods: attributeBonus,
+    skillMods: skillBonus,
+    statusMods: statusBonusForFormula,
+    resourceMods: resourceBonusForFormula,
+    effects: activeEffects,
+  }), [ficha?.atributos, ficha?.pericias, ficha?.status, ficha?.recursos, ficha?.combate?.recursos, attributeBonus, skillBonus, statusBonusForFormula, resourceBonusForFormula, activeEffects]);
   const tagsById = useMemo(() => Object.fromEntries((skillTags || []).map((t) => [t.id, t])), [skillTags]);
   const assigned = useMemo(() => (ficha?.skills || []).map((entry) => ({ entry, skill: skillFromEntry(entry) })), [ficha?.skills]);
   const filteredSkills = useMemo(() => assigned.filter(({ skill }) => (`${skill.nome || ""} ${skill.descricao || ""} ${(skill.custos || []).map((c) => c.codigo).join(" ")}`).toLowerCase().includes(query.toLowerCase())), [assigned, query]);
 
-  const activeEffects = useMemo(() => (Array.isArray(ficha?.modificadores?.efeitos) ? ficha.modificadores.efeitos : []).filter((e) => e && e.ativo !== false), [ficha?.modificadores?.efeitos]);
   const activeStatusMods = useMemo(() => { try { return aggregateStatusModifiers(activeEffects); } catch { return {}; } }, [activeEffects]);
   const activeResourceMods = useMemo(() => { try { return aggregateResourceModifiers(activeEffects); } catch { return {}; } }, [activeEffects]);
   const pendingCounts = combate.pendingSkillCounts && Object.keys(combate.pendingSkillCounts).length ? combate.pendingSkillCounts : Object.fromEntries((combate.pendingSkillIds || []).map((id) => [id, 1]));
@@ -263,9 +282,13 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     ])).filter(Boolean);
     return Object.fromEntries(allStatusKeys.map((code) => {
       const fromStatus = statusEntries.find(([k]) => normalizeStatusCode(k) === code)?.[1] || {};
-      return [code, { val: Number(fromStatus?.val || 0), max: Math.max(1, Number(fromStatus?.max || 1)) }];
+      const rawVal = Number(fromStatus?.val || 0);
+      const rawMax = Math.max(1, Number(fromStatus?.max || 1));
+      const resolvedMax = evaluateMathExpression(fromStatus?.maxExpr, { fallback: rawMax, min: 1, variables: formulaVars }).value;
+      const resolvedVal = evaluateMathExpression(fromStatus?.valExpr, { fallback: rawVal, min: 0, max: resolvedMax, variables: formulaVars }).value;
+      return [code, { val: resolvedVal, max: resolvedMax }];
     }));
-  }, [ficha?.status, combate.statusMeta]);
+  }, [ficha?.status, combate.statusMeta, formulaVars]);
 
   const combatStatus = useMemo(() => {
     const out = {};
@@ -494,23 +517,27 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
     updateResourceById(resource.id, { atual: Math.max(0, Math.min(Number(resource.total || 0), next)) });
   };
 
-  const setStatusValue = (key, field, effectiveValue) => {
+
+  const saveStatusValues = (key, nextValues = {}) => {
     const curr = ficha?.status?.[key] || { val: 0, max: 1 };
     const code = String(key || "").toUpperCase();
-    const runtime = combatStatus[code] || { mods: { base: 0, current: 0, max: 0 }, overflowMax: 0 };
+    const runtime = combatStatus[code] || { mods: { base: 0, current: 0, max: 0 }, overflowMax: 0, max: curr.max };
     const mods = runtime.mods || { base: 0, current: 0, max: 0 };
     const baseShift = Number(mods.base || 0) + Number(mods.current || 0);
     const maxShift = Number(mods.max || 0) + Number(runtime.overflowMax || 0);
-    if (field === "max") {
-      const nextBaseMax = Math.max(1, Math.floor(Number(effectiveValue || 1) - maxShift));
-      const nextBaseVal = Math.max(0, Math.min(nextBaseMax, Number(curr.val || 0)));
-      onUpdate({ status: { ...(ficha.status || {}), [key]: { ...curr, max: nextBaseMax, val: nextBaseVal } } });
-      return;
-    }
-    const nextEffectiveMax = Math.max(1, Math.floor(Number(runtime.max || curr.max || 1)));
-    const clampedEffectiveVal = Math.max(0, Math.min(nextEffectiveMax, Number(effectiveValue || 0)));
-    const nextBaseVal = Math.max(0, Math.min(Number(curr.max || 1), Math.floor(clampedEffectiveVal - baseShift)));
-    onUpdate({ status: { ...(ficha.status || {}), [key]: { ...curr, val: nextBaseVal } } });
+
+    const targetEffectiveMax = Math.max(1, Math.floor(Number(nextValues.max ?? runtime.max ?? curr.max ?? 1)));
+    const nextBaseMax = Math.max(1, Math.floor(targetEffectiveMax - maxShift));
+    const maxForEffectiveVal = Math.max(1, targetEffectiveMax);
+    const targetEffectiveVal = Math.max(0, Math.min(maxForEffectiveVal, Math.floor(Number(nextValues.val ?? runtime.val ?? curr.val ?? 0))));
+    const nextBaseVal = Math.max(0, Math.min(nextBaseMax, Math.floor(targetEffectiveVal - baseShift)));
+
+    onUpdate({
+      status: {
+        ...(ficha.status || {}),
+        [key]: { ...curr, max: nextBaseMax, val: nextBaseVal },
+      },
+    });
   };
 
   const addReminder = () => {
@@ -553,11 +580,11 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
           <HoverButton onClick={() => setRound(combate.rodadaAtual + 1)} style={btnStyle({ padding: "4px 8px" })}>▶</HoverButton>
         </div>
         <div style={{ display: "grid", gap: 6, marginBottom: 8 }}>
-          <HoverButton style={btnStyle()} onClick={closeRound}>Próxima rodada (gastar + recarregar)</HoverButton>
-          <div style={{ display: "flex", gap: 6 }}>
-            <HoverButton style={btnStyle({ flex: 1, borderColor: "#6b5b35", color: "#d7c193" })} onClick={() => setRemindersOpen(true)}>Lembretes</HoverButton>
-            <HoverButton style={btnStyle({ flex: 1, borderColor: "#55739a", color: "#9dcbff" })} onClick={() => setEffectsOpen(true)}>Efeitos</HoverButton>
-            <HoverButton style={btnStyle({ borderColor: "#794940", color: "#ff9d90" })} onClick={resetCombate}>Resetar</HoverButton>
+          <HoverButton style={btnStyle({ ...NORMAL_COMBAT_BUTTON })} onClick={closeRound}>Próxima rodada (gastar + recarregar)</HoverButton>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <HoverButton style={btnStyle({ ...NORMAL_COMBAT_BUTTON, borderColor: "#6b5b35", color: "#d7c193", minWidth: 100 })} onClick={() => setRemindersOpen(true)}>Lembretes</HoverButton>
+            <HoverButton style={btnStyle({ ...NORMAL_COMBAT_BUTTON, borderColor: "#55739a", color: "#9dcbff", minWidth: 100 })} onClick={() => setEffectsOpen(true)}>Efeitos</HoverButton>
+            <HoverButton style={btnStyle({ ...NORMAL_COMBAT_BUTTON, borderColor: "#794940", color: "#ff9d90", minWidth: 100 })} onClick={resetCombate}>Resetar</HoverButton>
           </div>
         </div>
 
@@ -645,7 +672,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
         <div style={{ border: "1px solid #52422b", borderRadius: 8, background: "#0d0a07", padding: 8, marginBottom: 8 }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
             <div style={{ color: G.gold, fontFamily: "'Cinzel',serif", fontSize: 12 }}>Recursos (toque para painel mobile)</div>
-            <HoverButton style={btnStyle({ padding: "4px 8px", borderColor: "#695532", color: "#e2c38a" })} onClick={() => setSettingsOpen(true)}>Configurações</HoverButton>
+            <HoverButton style={btnStyle({ padding: "4px 8px", borderColor: "#695532", color: "#e2c38a" })} onClick={() => setFichaConfigOpen(true)}>Configurador de Ficha</HoverButton>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 8 }}>
             {Object.values(effectiveResources).map((r) => {
@@ -747,6 +774,38 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
         </div>
       </div>
 
+      <ConfiguradorFichaModal
+        open={fichaConfigOpen}
+        ficha={ficha}
+        onClose={() => setFichaConfigOpen(false)}
+        onApply={(payload) => {
+          if (payload.tipo === "status") {
+            const code = normalizeStatusCode(payload.codigo);
+            onUpdate({
+              status: { ...(ficha.status || {}), [code]: { ...(ficha.status?.[code] || {}), val: payload.max, max: payload.max, maxExpr: payload.maxFormula || "" } },
+              combate: { ...(ficha.combate || {}), statusMeta: { ...(combate.statusMeta || {}), [code]: { label: payload.nome || code, cor: payload.cor } } },
+            });
+            return;
+          }
+          const exists = (combate.recursos || []).some((r) => String(r.codigo || "").toUpperCase() === payload.codigo);
+          if (exists) return;
+          const nextResources = [...(combate.recursos || []), {
+            id: uid(),
+            codigo: payload.codigo,
+            nome: payload.nome || payload.codigo,
+            cor: payload.cor,
+            shape: payload.shape || "square",
+            total: payload.max,
+            atual: payload.max,
+            custom: true,
+            totalExpr: payload.maxFormula || "",
+          }];
+          onUpdate({
+            combate: { ...(ficha.combate || {}), recursos: nextResources },
+            recursos: { ...(ficha.recursos || {}), [payload.codigo]: { total: payload.max, usado: 0, totalExpr: payload.maxFormula || "" } },
+          });
+        }}
+      />
       {settingsOpen && <SettingsModal
         combate={combate}
         statusDefs={statusDefs}
@@ -790,8 +849,7 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
           statusDef={statusModal}
           previewCost={(previewCosts[statusModal.code] || previewCosts[statusModal.label] || 0)}
           onClose={() => setStatusModal(null)}
-          onApply={(next) => setStatusValue(statusModal.key, "val", next.val)}
-          onSetMax={(nextMax) => setStatusValue(statusModal.key, "max", nextMax)}
+          onApply={(next) => saveStatusValues(statusModal.key, next)}
           onDelete={() => {
             if (!window.confirm(`Apagar status ${statusModal.label || statusModal.code}?`)) return;
             const nextStatus = { ...(ficha.status || {}) };
@@ -838,7 +896,7 @@ function ResourceQuickModal({ resource, previewCost, onClose, onToggle, onDelete
   );
 }
 
-function StatusQuickModal({ status, statusDef, previewCost, onClose, onApply, onSetMax, onDelete }) {
+function StatusQuickModal({ status, statusDef, previewCost, onClose, onApply, onDelete }) {
   const [val, setVal] = useState(Number(status?.val || 0));
   const [max, setMax] = useState(Math.max(1, Number(status?.max || 1)));
   const [delta, setDelta] = useState(0);
@@ -879,7 +937,7 @@ function StatusQuickModal({ status, statusDef, previewCost, onClose, onApply, on
           <HoverButton onClick={onDelete} style={btnStyle({ borderColor: "#87413a", color: "#ff9990" })}>Apagar</HoverButton>
           <div style={{ display: "flex", gap: 8 }}>
             <HoverButton onClick={onClose} style={btnStyle({ borderColor: "#4f4f4f", color: "#b8b8b8" })}>Fechar</HoverButton>
-            <HoverButton onClick={() => { onSetMax(max); onApply({ val: Math.max(0, Math.min(max, val)) }); onClose(); }} style={btnStyle()}>Salvar</HoverButton>
+            <HoverButton onClick={() => { onApply({ max, val: Math.max(0, Math.min(max, val)) }); onClose(); }} style={btnStyle()}>Salvar</HoverButton>
           </div>
         </div>
       </div>

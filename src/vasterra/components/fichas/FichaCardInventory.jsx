@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { G, btnStyle, inpStyle } from "../../ui/theme";
 import { resolverNomeRaca } from "../../data/gameData";
 
@@ -49,6 +49,17 @@ export function FichaCardInventory({
   onDeleteSelected,
   onSelect,
 }) {
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const cardColumns = isMobile ? "repeat(auto-fill, minmax(140px, 1fr))" : CARD_COLUMNS;
+
   return (
     <div
       style={{
@@ -76,12 +87,23 @@ export function FichaCardInventory({
       `}</style>
 
       <div style={{ position: "relative", padding: 14, display: "flex", flexDirection: "column", height: "100%" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr repeat(4, minmax(140px, 1fr)) auto auto auto", gap: 8, marginBottom: 12 }}>
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: isMobile ? "1fr 1fr" : "2fr repeat(4, minmax(140px, 1fr))",
+          gap: 8,
+          marginBottom: 12,
+          position: "sticky",
+          top: 0,
+          zIndex: 5,
+          paddingBottom: 8,
+          background: "linear-gradient(180deg, rgba(6,6,6,0.96), rgba(6,6,6,0.8))",
+          backdropFilter: "blur(3px)",
+        }}>
           <input
             value={search}
             onChange={(e) => onSearch(e.target.value)}
             placeholder="Pesquisar cartas..."
-            style={inpStyle()}
+            style={inpStyle({ gridColumn: isMobile ? "1 / -1" : "auto" })}
           />
           <select value={filters.tempo} onChange={(e) => onFilter("tempo", e.target.value)} style={inpStyle()}>
             <option value="all">Tempo: todos</option>
@@ -100,15 +122,19 @@ export function FichaCardInventory({
             <option value="all">Raça: todas</option>
             {filters.racasDisponiveis.map((raca) => <option key={raca} value={raca}>{raca}</option>)}
           </select>
-          <button className="v-soft-btn" onClick={onCreate} style={btnStyle({ whiteSpace: "nowrap" })}>+ Nova Ficha</button>
-          <button className="v-soft-btn" onClick={onDuplicate} style={btnStyle({ whiteSpace: "nowrap", borderColor: "#3498db55", color: "#61b8ff" })}>Duplicar</button>
-          <button
-            onClick={deleteMode ? onToggleDeleteMode : onDeleteSelected}
-            className="v-soft-btn"
-            style={btnStyle({ whiteSpace: "nowrap", borderColor: "#e74c3c55", color: "#ff6b5f" })}
-          >
-            {deleteMode ? "Modo normal" : "Apagar"}
-          </button>
+          {!isMobile && (
+            <>
+              <button className="v-soft-btn" onClick={onCreate} style={btnStyle({ whiteSpace: "nowrap" })}>+ Nova Ficha</button>
+              <button className="v-soft-btn" onClick={onDuplicate} style={btnStyle({ whiteSpace: "nowrap", borderColor: "#3498db55", color: "#61b8ff" })}>Duplicar</button>
+              <button
+                onClick={deleteMode ? onToggleDeleteMode : onDeleteSelected}
+                className="v-soft-btn"
+                style={btnStyle({ whiteSpace: "nowrap", borderColor: "#e74c3c55", color: "#ff6b5f" })}
+              >
+                {deleteMode ? "Modo normal" : "Apagar"}
+              </button>
+            </>
+          )}
         </div>
 
         {deleteMode && (
@@ -118,8 +144,8 @@ export function FichaCardInventory({
           </div>
         )}
 
-        <div style={{ overflow: "auto", paddingBottom: 8, flex: 1 }}>
-          <div style={{ minWidth: 1280, display: "grid", gridTemplateColumns: CARD_COLUMNS, gap: 10 }}>
+        <div style={{ overflow: "auto", paddingBottom: isMobile ? 90 : 8, flex: 1 }}>
+          <div style={{ minWidth: isMobile ? 0 : 1280, display: "grid", gridTemplateColumns: cardColumns, gap: 10 }}>
             {fichas.map((ficha) => {
               const selected = selectedId === ficha.id;
               const markedForDelete = selectedForDelete.includes(ficha.id);
@@ -174,6 +200,24 @@ export function FichaCardInventory({
           </div>
           {fichas.length === 0 && <div style={{ textAlign: "center", color: G.muted, padding: 40 }}>Nenhuma carta encontrada com os filtros atuais.</div>}
         </div>
+
+        {isMobile && (
+          <div style={{
+            position: "sticky",
+            bottom: 0,
+            zIndex: 8,
+            display: "flex",
+            justifyContent: "center",
+            gap: 8,
+            padding: "8px 10px 10px",
+            background: "linear-gradient(180deg, rgba(6,6,6,0.25), rgba(6,6,6,0.96))",
+            borderTop: "1px solid #2a2a2a",
+          }}>
+            <button className="v-soft-btn" onClick={onCreate} style={btnStyle({ whiteSpace: "nowrap", padding: "6px 10px" })}>Nova</button>
+            <button className="v-soft-btn" onClick={onDuplicate} style={btnStyle({ whiteSpace: "nowrap", padding: "6px 10px", borderColor: "#3498db55", color: "#61b8ff" })}>Duplicar</button>
+            <button onClick={deleteMode ? onToggleDeleteMode : onDeleteSelected} className="v-soft-btn" style={btnStyle({ whiteSpace: "nowrap", padding: "6px 10px", borderColor: "#e74c3c55", color: "#ff6b5f" })}>{deleteMode ? "Normal" : "Apagar"}</button>
+          </div>
+        )}
       </div>
     </div>
   );

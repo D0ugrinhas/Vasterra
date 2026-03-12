@@ -30,8 +30,8 @@ function toNum(v, fallback = 0) {
 export function normalizeImageAdjust(adjust) {
   return {
     zoom: clamp(toNum(adjust?.zoom, 1), 0.5, 4),
-    offsetX: clamp(toNum(adjust?.offsetX, 0), -50, 50),
-    offsetY: clamp(toNum(adjust?.offsetY, 0), -50, 50),
+    offsetX: toNum(adjust?.offsetX, 0),
+    offsetY: toNum(adjust?.offsetY, 0),
     rotate: clamp(toNum(adjust?.rotate, 0), -180, 180),
     fit: adjust?.fit === "cover" ? "cover" : "contain",
     filterPreset: Object.keys(FILTER_PRESETS).includes(adjust?.filterPreset) ? adjust.filterPreset : "none",
@@ -80,6 +80,12 @@ function readAsDataUrl(file) {
   });
 }
 
+function getClientPoint(ev) {
+  if (ev?.touches?.[0]) return { x: ev.touches[0].clientX, y: ev.touches[0].clientY };
+  if (ev?.changedTouches?.[0]) return { x: ev.changedTouches[0].clientX, y: ev.changedTouches[0].clientY };
+  return { x: ev?.clientX ?? 0, y: ev?.clientY ?? 0 };
+}
+
 export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClose, onConfirm }) {
   const [mode, setMode] = useState(initial?.mode || "upload");
   const [url, setUrl] = useState(initial?.url || "");
@@ -94,6 +100,8 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
     setUrl(initial?.url || "");
     setData(initial?.data || "");
     setAdjust(normalizeImageAdjust(initial?.adjust));
+    dragStateRef.current = null;
+    setDragging(false);
   }, [open, initial]);
 
   const src = useMemo(() => (mode === "url" ? url : data), [mode, url, data]);
@@ -111,22 +119,43 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
 
   const startDrag = (ev) => {
     if (!src) return;
-    dragStateRef.current = { x: ev.clientX, y: ev.clientY, baseX: adjust.offsetX, baseY: adjust.offsetY };
+    const point = getClientPoint(ev);
+    dragStateRef.current = {
+      x: point.x,
+      y: point.y,
+      baseX: adjust.offsetX,
+      baseY: adjust.offsetY,
+    };
     setDragging(true);
   };
+
   const onDrag = (ev) => {
-    if (!dragStateRef.current) return;
-    const deltaX = ev.clientX - dragStateRef.current.x;
-    const deltaY = ev.clientY - dragStateRef.current.y;
+    const state = dragStateRef.current;
+    if (!state) return;
+    const point = getClientPoint(ev);
+    const deltaX = point.x - state.x;
+    const deltaY = point.y - state.y;
     setAdjust((p) => ({
       ...p,
-      offsetX: clamp(dragStateRef.current.baseX + (deltaX / 280) * 100, -50, 50),
-      offsetY: clamp(dragStateRef.current.baseY + (deltaY / 280) * 100, -50, 50),
+      offsetX: state.baseX + (deltaX / 280) * 100,
+      offsetY: state.baseY + (deltaY / 280) * 100,
     }));
   };
+
   const stopDrag = () => {
+    if (!dragStateRef.current) return;
     dragStateRef.current = null;
     setDragging(false);
+  };
+
+  const onMouseMovePreview = (ev) => {
+    if (!dragging) return;
+    onDrag(ev);
+  };
+
+  const onTouchMovePreview = (ev) => {
+    if (!dragging) return;
+    onDrag(ev);
   };
 
   return (
@@ -134,7 +163,7 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
       <div style={{ width: 900, maxWidth: "95vw", maxHeight: "92vh", overflow: "auto", background: G.bg2, border: `1px solid ${G.border2}`, borderRadius: 12, padding: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <div style={{ fontFamily: "'Cinzel',serif", color: G.gold, letterSpacing: 1 }}>{title}</div>
-          <button onClick={onClose} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>✕</button>
+          <button onClick={() => { stopDrag(); onClose?.(); }} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>✕</button>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 260px", gap: 14 }}>
@@ -168,40 +197,51 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
                 style={{ border: "1px dashed #3a3a3a", borderRadius: 10, padding: 10, color: G.muted, fontSize: 12 }}
               >
                 <input type="file" accept="image/*" onChange={(e) => applyFile(e.target.files?.[0])} style={inpStyle({ marginBottom: 8 })} />
-                Cole imagem (Ctrl+V), arraste no preview para precisão, ou cole URL.
+                Cole imagem (Ctrl+V), arraste no preview sem limite de eixo, ou cole URL.
               </div>
             )}
 
             <div style={{ border: "1px solid #262626", borderRadius: 10, minHeight: 360, background: "#070707", display: "grid", placeItems: "center", position: "relative" }}>
               {src ? (
                 <div
-                  onPointerDown={startDrag}
-                  onPointerMove={onDrag}
-                  onPointerUp={stopDrag}
-                  onPointerLeave={stopDrag}
-                  style={{ cursor: dragging ? "grabbing" : "grab", touchAction: "none" }}
+                  onMouseDown={startDrag}
+                  onMouseMove={onMouseMovePreview}
+                  onMouseUp={stopDrag}
+                  onMouseLeave={stopDrag}
+                  onTouchStart={startDrag}
+                  onTouchMove={onTouchMovePreview}
+                  onTouchEnd={stopDrag}
+                  onTouchCancel={stopDrag}
+                  style={{ cursor: dragging ? "grabbing" : "grab", userSelect: "none", touchAction: "none" }}
                 >
                   <ImageViewport src={src} alt="Prévia" size={280} radius={10} adjust={adjust} />
                 </div>
               ) : <span style={{ color: G.muted }}>Sem imagem selecionada</span>}
 
-              <div style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", display: "grid", gap: 4, alignItems: "center" }}>
-                <span style={{ color: G.muted, fontSize: 10, textAlign: "center" }}>Y</span>
-                <input
-                  type="range"
-                  min={-50}
-                  max={50}
-                  step={0.1}
-                  value={adjust.offsetY}
-                  onChange={(e) => setAdjust((p) => ({ ...p, offsetY: Number(e.target.value) }))}
-                  style={{ writingMode: "vertical-lr", direction: "rtl", height: 220 }}
-                />
-              </div>
+
             </div>
 
-            <div style={{ display: "grid", gap: 4 }}>
-              <label style={{ color: G.muted, fontSize: 11 }}>Mover horizontal (X): {adjust.offsetX.toFixed(1)}%</label>
-              <input type="range" min={-50} max={50} step={0.1} value={adjust.offsetX} onChange={(e) => setAdjust((p) => ({ ...p, offsetX: Number(e.target.value) }))} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div style={{ display: "grid", gap: 4 }}>
+                <label style={{ color: G.muted, fontSize: 11 }}>Offset X (%)</label>
+                <input
+                  type="number"
+                  step={0.1}
+                  value={adjust.offsetX}
+                  onChange={(e) => setAdjust((p) => ({ ...p, offsetX: toNum(e.target.value, 0) }))}
+                  style={inpStyle()}
+                />
+              </div>
+              <div style={{ display: "grid", gap: 4 }}>
+                <label style={{ color: G.muted, fontSize: 11 }}>Offset Y (%)</label>
+                <input
+                  type="number"
+                  step={0.1}
+                  value={adjust.offsetY}
+                  onChange={(e) => setAdjust((p) => ({ ...p, offsetY: toNum(e.target.value, 0) }))}
+                  style={inpStyle()}
+                />
+              </div>
             </div>
           </div>
 
@@ -236,7 +276,7 @@ export function ImageAttachModal({ open, title = "Anexar imagem", initial, onClo
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
-          <button onClick={onClose} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button>
+          <button onClick={() => { stopDrag(); onClose?.(); }} style={btnStyle({ background: "transparent", borderColor: "#333", color: G.muted })}>Cancelar</button>
           <button disabled={!canConfirm} onClick={() => canConfirm && onConfirm?.({ mode, url: mode === "url" ? url : "", data: mode === "upload" ? data : "", adjust: normalizeImageAdjust(adjust) })} style={btnStyle({ opacity: canConfirm ? 1 : 0.6, cursor: canConfirm ? "pointer" : "not-allowed" })}>Confirmar imagem</button>
         </div>
       </div>
