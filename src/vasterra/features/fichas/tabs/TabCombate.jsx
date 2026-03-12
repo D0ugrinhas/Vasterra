@@ -13,11 +13,13 @@ import { SkillDetalhe } from "../../biblioteca/SkillDetalhe";
 import { ImageViewport } from "../../../components/media/ImageAttachModal";
 
 const CORE_RESOURCES = [
-  { codigo: "ACO", nome: "Ação", cor: "#3498db", shape: "circle", total: 2 },
-  { codigo: "MOV", nome: "Movimento", cor: "#2ecc71", shape: "square", total: 1 },
+  { codigo: "ACO", nome: "Ação", cor: "#2ecc71", shape: "circle", total: 2 },
+  { codigo: "MOV", nome: "Movimento", cor: "#3498db", shape: "square", total: 1 },
   { codigo: "REA", nome: "Reação", cor: "#e74c3c", shape: "triangle", total: 1 },
   { codigo: "ESF", nome: "Esforço", cor: "#8b0000", shape: "hexagon", total: 1 },
 ];
+
+const NORMAL_COMBAT_BUTTON = { minHeight: 30, minWidth: 120, width: "fit-content", flex: "0 0 auto", whiteSpace: "nowrap" };
 
 const SHAPE_OPTIONS = [
   { value: "square", label: "Quadrado" },
@@ -578,11 +580,11 @@ export function TabCombate({ ficha, onUpdate, efeitosCaldeirao = [], skillTags =
           <HoverButton onClick={() => setRound(combate.rodadaAtual + 1)} style={btnStyle({ padding: "4px 8px" })}>▶</HoverButton>
         </div>
         <div style={{ display: "grid", gap: 6, marginBottom: 8 }}>
-          <HoverButton style={btnStyle()} onClick={closeRound}>Próxima rodada (gastar + recarregar)</HoverButton>
-          <div style={{ display: "flex", gap: 6 }}>
-            <HoverButton style={btnStyle({ flex: 1, borderColor: "#6b5b35", color: "#d7c193" })} onClick={() => setRemindersOpen(true)}>Lembretes</HoverButton>
-            <HoverButton style={btnStyle({ flex: 1, borderColor: "#55739a", color: "#9dcbff" })} onClick={() => setEffectsOpen(true)}>Efeitos</HoverButton>
-            <HoverButton style={btnStyle({ borderColor: "#794940", color: "#ff9d90" })} onClick={resetCombate}>Resetar</HoverButton>
+          <HoverButton style={btnStyle({ ...NORMAL_COMBAT_BUTTON })} onClick={closeRound}>Próxima rodada (gastar + recarregar)</HoverButton>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <HoverButton style={btnStyle({ ...NORMAL_COMBAT_BUTTON, borderColor: "#6b5b35", color: "#d7c193", minWidth: 100 })} onClick={() => setRemindersOpen(true)}>Lembretes</HoverButton>
+            <HoverButton style={btnStyle({ ...NORMAL_COMBAT_BUTTON, borderColor: "#55739a", color: "#9dcbff", minWidth: 100 })} onClick={() => setEffectsOpen(true)}>Efeitos</HoverButton>
+            <HoverButton style={btnStyle({ ...NORMAL_COMBAT_BUTTON, borderColor: "#794940", color: "#ff9d90", minWidth: 100 })} onClick={resetCombate}>Resetar</HoverButton>
           </div>
         </div>
 
