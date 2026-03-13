@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { uid } from "../../../core/factories";
 import { calcVastosTotal, getEntryItem } from "../../../core/inventory";
 import {
@@ -78,11 +78,58 @@ export function TabInventario({ ficha, onUpdate, arsenal, efeitosCaldeirao = [],
   const [gridCreateOpen, setGridCreateOpen] = useState(false);
   const [selectedGridId, setSelectedGridId] = useState(null);
   const [customDraft, setCustomDraft] = useState({ nome: "Novo Item", categoria: "tool", shapeKey: "1x1", cor: "#8b7a5f", peso: 1, valor: 10, partes: "" });
+  const [innerTab, setInnerTab] = useState("inventory");
+  const [dragState, setDragState] = useState(null);
+  const [dragAnchor, setDragAnchor] = useState(null);
+  const gridRef = useRef(null);
   const cfg = ficha.inventarioCfg || { slotsBase: 10, capacidadePorForca: 5, ajustes: [], vastos: { cobre: 0, prata: 0, ouro: 0, platina: 0 } };
   const gridState = useMemo(() => normalizeGridState(ficha.inventarioGrid || {}), [ficha.inventarioGrid]);
   const gridOcc = useMemo(() => buildGridOccupancy(gridState.items || []), [gridState.items]);
   const corpoPartes = useMemo(() => listCorpoPartes(ficha.corpo), [ficha.corpo]);
   const selectedGrid = useMemo(() => (gridState.items || []).find((it) => it.id === selectedGridId) || null, [gridState.items, selectedGridId]);
+  const dragValid = useMemo(() => {
+    if (!dragState || !dragAnchor) return false;
+    const it = (gridState.items || []).find((x) => x.id === dragState.id);
+    if (!it) return false;
+    return canPlaceGridItem(it, dragAnchor.row, dragAnchor.col, gridOcc, gridState.rows, gridState.cols, it.id);
+  }, [dragState, dragAnchor, gridState.items, gridOcc, gridState.rows, gridState.cols]);
+
+  useEffect(() => {
+    if ((gridState.items || []).length > 0) return;
+    const legacy = (ficha.inventario || []).map((entry) => ({ entry, item: getEntryItem(entry, arsenal) })).filter((x) => x.item);
+    if (!legacy.length) return;
+    const seeded = [];
+    legacy.forEach(({ entry, item }) => {
+      const fromTemplate = makeGridItemFromTemplate({
+        id: item.id || uid(),
+        nome: item.nome || "Item",
+        categoria: String(item.tipo || "item").toLowerCase(),
+        shapeKey: item.shapeKey || "1x1",
+        cor: item.cor || "#8b7a5f",
+        peso: Number(item.peso || 0),
+        valor: Number(item.valorTotal || item.valor || 0),
+        partes: Array.isArray(item.regioesDefesa) ? item.regioesDefesa : [],
+        maxQtd: Number(item.quantidadeMax || 0) || null,
+      }, {
+        descricao: item.descricao || "",
+        rank: item.rank || "Comum",
+        tipo: item.tipo || "Item",
+        dano: item.dano || "",
+        danoCritico: item.critico || "",
+        margemCritico: item.critico || "",
+        alcance: item.alcance || "",
+        tamanho: item.tamanho || "",
+        efeitoCaldeirao: item.efeitosCaldeirao || [],
+        bonusOnus: item.efeitosMecanicos || item.bonus || "",
+        qtd: Number(entry?.qtd || 1),
+      });
+      const anchor = autoPlaceGridItem(fromTemplate, seeded, gridState.rows, gridState.cols);
+      if (!anchor) return;
+      fromTemplate.anchor = anchor;
+      seeded.push(fromTemplate);
+    });
+    if (seeded.length) onUpdate({ inventarioGrid: { ...gridState, items: seeded } });
+  }, [ficha.inventario, arsenal]);
 
   const addFromArsenal = (it) => {
     const idx = ficha.inventario.findIndex((x) => x.tipo === "arsenal" && x.itemId === it.id);
@@ -153,6 +200,41 @@ export function TabInventario({ ficha, onUpdate, arsenal, efeitosCaldeirao = [],
     saveGrid([...(gridState.items || []), item]);
     setGridCreateOpen(false);
   };
+
+  const resolveCellFromClient = (clientX, clientY) => {
+    const el = gridRef.current;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    const col = Math.floor((clientX - rect.left) / 28);
+    const row = Math.floor((clientY - rect.top) / 28);
+    if (row < 0 || col < 0 || row >= gridState.rows || col >= gridState.cols) return null;
+    return { row, col };
+  };
+
+  useEffect(() => {
+    if (!dragState) return undefined;
+    const onMove = (e) => {
+      const cell = resolveCellFromClient(e.clientX, e.clientY);
+      if (!cell) {
+        setDragAnchor(null);
+        return;
+      }
+      setDragAnchor({ row: cell.row - dragState.dr, col: cell.col - dragState.dc });
+    };
+    const onUp = () => {
+      if (dragState && dragAnchor && dragValid) {
+        saveGrid(gridState.items.map((it) => (it.id === dragState.id ? { ...it, anchor: dragAnchor } : it)));
+      }
+      setDragState(null);
+      setDragAnchor(null);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [dragState, dragAnchor, dragValid, gridState.items]);
 
   const entries = ficha.inventario
     .map((entry) => ({ entry, item: getEntryItem(entry, arsenal) }))
@@ -256,6 +338,10 @@ export function TabInventario({ ficha, onUpdate, arsenal, efeitosCaldeirao = [],
         </div>
 
         <div style={{ marginTop: 14, border: "1px solid #3b2f1e", borderRadius: 10, padding: 10, background: "#0a0907" }}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+            <button onClick={() => setInnerTab("inventory")} style={btnStyle({ padding: "4px 8px", borderColor: innerTab === "inventory" ? "#c8a96e" : "#3c2e1a", color: innerTab === "inventory" ? G.gold : G.muted })}>Inventário</button>
+            <button onClick={() => setInnerTab("equip")} style={btnStyle({ padding: "4px 8px", borderColor: innerTab === "equip" ? "#c8a96e" : "#3c2e1a", color: innerTab === "equip" ? G.gold : G.muted })}>Equipamentos</button>
+          </div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8, flexWrap: "wrap" }}>
             <div style={{ fontFamily: "'Cinzel',serif", color: G.gold }}>Inventário Grid (novo caminho)</div>
             <div style={{ display: "flex", gap: 6 }}>
@@ -263,8 +349,8 @@ export function TabInventario({ ficha, onUpdate, arsenal, efeitosCaldeirao = [],
               <button style={btnStyle({ padding: "4px 8px", borderColor: "#2ecc7144", color: "#9be8b7" })} onClick={() => setGridCreateOpen(true)}>+ Criar item</button>
             </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 220px", gap: 8 }}>
-            <div style={{ position: "relative", border: "1px solid #4a3b21", borderRadius: 8, overflow: "hidden", background: "#090805", width: "fit-content" }}>
+          {innerTab === "inventory" && <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 320px", gap: 8 }}>
+            <div ref={gridRef} style={{ position: "relative", border: "1px solid #4a3b21", borderRadius: 8, overflow: "hidden", background: "#090805", width: "fit-content" }}>
               {Array.from({ length: gridState.rows * gridState.cols }).map((_, idx) => {
                 const row = Math.floor(idx / gridState.cols);
                 const col = idx % gridState.cols;
@@ -291,20 +377,31 @@ export function TabInventario({ ficha, onUpdate, arsenal, efeitosCaldeirao = [],
                   <div
                     key={`${it.id}-${idx}`}
                     onClick={() => setSelectedGridId(it.id)}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setSelectedGridId(it.id);
+                      setDragState({ id: it.id, dr, dc });
+                      setDragAnchor(it.anchor || null);
+                    }}
                     style={{
                       position: "absolute",
-                      left: (Number(it.anchor?.col || 0) + dc) * 28,
-                      top: (Number(it.anchor?.row || 0) + dr) * 28,
+                      left: ((dragState?.id === it.id && dragAnchor ? Number(dragAnchor.col || 0) : Number(it.anchor?.col || 0)) + dc) * 28,
+                      top: ((dragState?.id === it.id && dragAnchor ? Number(dragAnchor.row || 0) : Number(it.anchor?.row || 0)) + dr) * 28,
                       width: 28,
                       height: 28,
                       border: `1px solid ${selectedGridId === it.id ? "#f5d18a" : "#00000066"}`,
-                      background: `${it.cor || "#888"}cc`,
-                      cursor: "pointer",
+                      background: `${it.cor || "#888"}${dragState?.id === it.id ? "88" : "cc"}`,
+                      cursor: dragState?.id === it.id ? "grabbing" : "grab",
                     }}
                     title={it.nome}
                   />
                 ));
               })}
+              {dragState && dragAnchor && (
+                <div style={{ position: "absolute", left: dragAnchor.col * 28, top: dragAnchor.row * 28, color: dragValid ? "#79e1a0" : "#ff8a8a", fontSize: 10, fontFamily: "monospace", pointerEvents: "none" }}>
+                  {dragValid ? "OK" : "BLOQ"}
+                </div>
+              )}
               <div style={{ width: gridState.cols * 28, height: gridState.rows * 28, pointerEvents: "none" }} />
             </div>
 
@@ -313,8 +410,17 @@ export function TabInventario({ ficha, onUpdate, arsenal, efeitosCaldeirao = [],
               {selectedGrid && (
                 <div style={{ display: "grid", gap: 6 }}>
                   <div style={{ color: G.gold, fontFamily: "'Cinzel',serif" }}>{selectedGrid.nome}</div>
-                  <div style={{ color: G.muted, fontSize: 11, fontFamily: "monospace" }}>{selectedGrid.categoria} · {selectedGrid.shapeKey}</div>
-                  <div style={{ color: "#9fb2ca", fontSize: 11, fontFamily: "monospace" }}>Peso {selectedGrid.peso || 0} · Valor {selectedGrid.valor || 0}</div>
+                  <div style={{ color: G.muted, fontSize: 11, fontFamily: "monospace" }}>{selectedGrid.categoria} · Formato {selectedGrid.shapeKey}</div>
+                  <div style={{ color: "#9fb2ca", fontSize: 11, fontFamily: "monospace" }}>Descrição: {selectedGrid.descricao || "—"}</div>
+                  <div style={{ color: "#9fb2ca", fontSize: 11, fontFamily: "monospace" }}>Tamanho: {selectedGrid.tamanho || "—"}m · Alcance: {selectedGrid.alcance || "—"}m</div>
+                  <div style={{ color: "#9fb2ca", fontSize: 11, fontFamily: "monospace" }}>Peso: {selectedGrid.peso || 0}kg · Rank: {selectedGrid.rank || "Comum"}</div>
+                  <div style={{ color: "#9fb2ca", fontSize: 11, fontFamily: "monospace" }}>Tipo: {selectedGrid.tipo || selectedGrid.categoria || "Item"}</div>
+                  <div style={{ color: "#9fb2ca", fontSize: 11, fontFamily: "monospace" }}>Dano: {selectedGrid.dano || "—"}</div>
+                  <div style={{ color: "#9fb2ca", fontSize: 11, fontFamily: "monospace" }}>Dano crítico: {selectedGrid.danoCritico || "—"}</div>
+                  <div style={{ color: "#9fb2ca", fontSize: 11, fontFamily: "monospace" }}>Margem crítica: {selectedGrid.margemCritico || "—"}</div>
+                  <div style={{ color: "#9fb2ca", fontSize: 11, fontFamily: "monospace" }}>Valor em vastos: {selectedGrid.valor || 0}</div>
+                  <div style={{ color: "#9fb2ca", fontSize: 11, fontFamily: "monospace" }}>Efeito (Caldeirão): {Array.isArray(selectedGrid.efeitoCaldeirao) ? selectedGrid.efeitoCaldeirao.length : 0} vínculo(s)</div>
+                  <div style={{ color: "#9fb2ca", fontSize: 11, fontFamily: "monospace" }}>Bônus/ônus: {selectedGrid.bonusOnus || "—"}</div>
                   <select value={selectedGrid.equipadoEm || ""} onChange={(e) => equipGridItem(e.target.value)} style={inpStyle()}>
                     <option value="">Não equipado</option>
                     {corpoPartes.map((p) => <option key={p} value={p}>{p}</option>)}
@@ -326,7 +432,22 @@ export function TabInventario({ ficha, onUpdate, arsenal, efeitosCaldeirao = [],
                 </div>
               )}
             </div>
-          </div>
+          </div>}
+
+          {innerTab === "equip" && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
+              {corpoPartes.map((p) => {
+                const list = (gridState.items || []).filter((it) => it.equipadoEm === p);
+                return (
+                  <div key={p} style={{ border: "1px solid #3a2e1a", borderRadius: 8, padding: 8, background: "#0e0b08" }}>
+                    <div style={{ color: G.gold, fontFamily: "'Cinzel',serif", fontSize: 12 }}>{p}</div>
+                    {list.length === 0 && <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>— vazio —</div>}
+                    {list.map((it) => <button key={it.id} onClick={() => { setSelectedGridId(it.id); setInnerTab("inventory"); }} style={{ display: "block", width: "100%", textAlign: "left", marginTop: 4, ...btnStyle({ padding: "4px 8px", borderColor: `${it.cor || "#888"}66`, color: it.cor || G.gold }) }}>{it.nome}</button>)}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
