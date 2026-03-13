@@ -406,6 +406,8 @@ export function TabCorpo({ ficha, onUpdate, onNotify }) {
   const livre = Math.max(0, num(state.pontosTotal, 1) - spent);
 
   const inventoryItems = (ficha.inventario || []).map((x) => x.item).filter(Boolean);
+  const gridItems = Array.isArray(ficha?.inventarioGrid?.items) ? ficha.inventarioGrid.items : [];
+  const equippedGridItems = useMemo(() => gridItems.filter((it) => it?.equipadoEm), [gridItems]);
   const characterEffects = ficha.modificadores?.efeitos || [];
 
   const resumoPartes = useMemo(() => parts.map((p) => ({
@@ -483,6 +485,24 @@ export function TabCorpo({ ficha, onUpdate, onNotify }) {
           <HoverButton onClick={() => fileRef.current?.click()}>Importar</HoverButton>
           <input ref={fileRef} type="file" accept="application/json" style={{ display: "none" }} onChange={(e) => e.target.files?.[0] && importJson(e.target.files[0])} />
         </div>
+      </div>
+
+      <div style={{ border: "1px solid #2a3444", borderRadius: 12, background: "#0a121d", padding: 10, display: "grid", gap: 8 }}>
+        <div style={{ color: "#9fd1ff", fontFamily: "'Cinzel',serif" }}>Integração · Inventário Grid</div>
+        {equippedGridItems.length === 0 && <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 11 }}>Nenhum item do novo grid equipado no corpo ainda.</div>}
+        {equippedGridItems.length > 0 && (
+          <div style={{ display: "grid", gap: 6 }}>
+            {equippedGridItems.map((it) => (
+              <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid #2b3c52", borderRadius: 8, padding: "6px 8px", background: "#0d1724" }}>
+                <span style={{ width: 12, height: 12, background: it.cor || "#8aa", borderRadius: 2, border: "1px solid #0006" }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ color: "#c7def8", fontFamily: "'Cinzel',serif", fontSize: 12 }}>{it.nome}</div>
+                  <div style={{ color: G.muted, fontFamily: "monospace", fontSize: 10 }}>{it.categoria} · {it.equipadoEm}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 430px", gap: 10 }}>
